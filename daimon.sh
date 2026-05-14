@@ -7795,9 +7795,9 @@ linux_info() {
 
 
 linux_tools() {
-  local tool_ids=(python npm nodejs bun uv git curl fail2ban tree fzf ranger neofetch vim claude codex)
-  local tool_names=("python" "npm" "nodejs" "bun" "uv" "git" "curl" "fail2ban" "tree" "fzf" "ranger" "neofetch" "vim" "Claude Code" "Codex CLI")
-  local tool_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "下载工具" "SSH 防爆破" "目录树" "模糊搜索" "文件管理" "系统概览" "文本编辑器" "AI 编程助手" "AI 编程助手")
+  local tool_ids=(python npm nodejs bun uv git curl fail2ban tree fzf ranger neofetch vim wget sudo socat htop iftop unzip tar tmux ffmpeg btop ncdu claude codex)
+  local tool_names=("python" "npm" "nodejs" "bun" "uv" "git" "curl" "fail2ban" "tree" "fzf" "ranger" "neofetch" "vim" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "btop" "ncdu" "Claude Code" "Codex CLI")
+  local tool_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "下载工具" "SSH 防爆破" "目录树" "模糊搜索" "文件管理" "系统概览" "文本编辑器" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "现代监控" "磁盘占用" "AI 编程助手" "AI 编程助手")
 
   tool_installed() {
     local id="$1"
@@ -7860,7 +7860,7 @@ linux_tools() {
           uv --version 2>/dev/null || true
         fi
         ;;
-      git|curl|tree|fzf|ranger|neofetch|vim|npm)
+      git|curl|tree|fzf|ranger|neofetch|vim|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
@@ -7929,9 +7929,6 @@ linux_tools() {
     show_tool_status
     echo -e "${gl_kjlan}1.   ${gl_bai}安装工具（支持多选，输入工具编号，如: 1 4 6）"
     echo -e "${gl_kjlan}2.   ${gl_bai}卸载工具（支持多选，输入工具编号，如: 7 10）"
-    echo -e "${gl_kjlan}3.   ${gl_bai}安装全部常用工具"
-    echo -e "${gl_kjlan}4.   ${gl_bai}安装指定工具名（支持多个包名，如: htop jq）"
-    echo -e "${gl_kjlan}5.   ${gl_bai}卸载指定工具名（支持多个包名，如: htop jq）"
     echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
     echo -e "${gl_kjlan}------------------------${gl_bai}"
     read -e -p "请输入你的选择: " sub_choice
@@ -7943,17 +7940,6 @@ linux_tools() {
       2)
         read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums
         handle_tool_numbers remove "$nums"
-        ;;
-      3)
-        handle_tool_numbers install "1 2 3 4 5 6 7 8 9 10 11 12 13"
-        ;;
-      4)
-        read -e -p "请输入安装的工具名（支持多个，空格分隔）: " installname
-        install $installname
-        ;;
-      5)
-        read -e -p "请输入卸载的工具名（支持多个，空格分隔）: " removename
-        remove $removename
         ;;
       0) kejilion ;;
       *) echo "无效的输入!" ;;
