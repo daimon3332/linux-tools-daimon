@@ -20,7 +20,7 @@ ENABLE_STATS="false"
 DAIMON_NAME="daimon"
 DAIMON_BIN="d"
 DAIMON_SCRIPT_DIR="/root/linux-script"
-DAIMON_UPDATE_URL=""
+DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/daimon.sh"
 mkdir -p "$DAIMON_SCRIPT_DIR" >/dev/null 2>&1 || true
 
 daimon_download() {
@@ -135,16 +135,42 @@ CheckFirstRun_true
 yinsiyuanquan2
 
 
-sed -i '/^alias d=/d' ~/.bashrc > /dev/null 2>&1
-sed -i '/^alias d=/d' ~/.profile > /dev/null 2>&1
-sed -i '/^alias d=/d' ~/.bash_profile > /dev/null 2>&1
-if [ -f ./daimon.sh ]; then
-	cp -f ./daimon.sh ~/daimon.sh > /dev/null 2>&1
-elif [ -f "$0" ]; then
-	cp -f "$0" ~/daimon.sh > /dev/null 2>&1
-fi
-cp -f ~/daimon.sh /usr/local/bin/d > /dev/null 2>&1
-ln -sf /usr/local/bin/d /usr/bin/d > /dev/null 2>&1
+daimon_self_install() {
+	# 直接运行 daimon.sh 时自动安装快捷命令 d，不再需要单独的 install.sh
+	sed -i '/^alias d=/d' ~/.bashrc > /dev/null 2>&1
+	sed -i '/^alias d=/d' ~/.profile > /dev/null 2>&1
+	sed -i '/^alias d=/d' ~/.bash_profile > /dev/null 2>&1
+
+	local tmp_file="/tmp/daimon.sh"
+	local local_source=""
+
+	# 本地执行 ./daimon.sh 时，优先复制本地文件；通过 bash <(curl ...) 运行时，优先重新下载完整脚本。
+	if [ -f ./daimon.sh ] && head -1 ./daimon.sh 2>/dev/null | grep -q '^#!/bin/bash'; then
+		local_source="./daimon.sh"
+	elif [ -n "${BASH_SOURCE[0]}" ] && [ -f "${BASH_SOURCE[0]}" ] && ! echo "${BASH_SOURCE[0]}" | grep -Eq '^/dev/fd/|^/proc/.*/fd/' && head -1 "${BASH_SOURCE[0]}" 2>/dev/null | grep -q '^#!/bin/bash'; then
+		local_source="${BASH_SOURCE[0]}"
+	elif [ -f "$0" ] && ! echo "$0" | grep -Eq '^/dev/fd/|^/proc/.*/fd/' && head -1 "$0" 2>/dev/null | grep -q '^#!/bin/bash'; then
+		local_source="$0"
+	fi
+
+	if [ -n "$local_source" ]; then
+		cp -f "$local_source" ~/daimon.sh > /dev/null 2>&1
+	elif [ -n "$DAIMON_UPDATE_URL" ]; then
+		curl -fsSL --connect-timeout 10 --retry 2 "$DAIMON_UPDATE_URL" -o "$tmp_file" > /dev/null 2>&1 || wget -qO "$tmp_file" "$DAIMON_UPDATE_URL" > /dev/null 2>&1
+		if [ -s "$tmp_file" ] && head -1 "$tmp_file" 2>/dev/null | grep -q '^#!/bin/bash'; then
+			cp -f "$tmp_file" ~/daimon.sh > /dev/null 2>&1
+		fi
+	fi
+
+	if [ -s ~/daimon.sh ]; then
+		chmod +x ~/daimon.sh > /dev/null 2>&1
+		cp -f ~/daimon.sh /usr/local/bin/d > /dev/null 2>&1
+		chmod +x /usr/local/bin/d > /dev/null 2>&1
+		ln -sf /usr/local/bin/d /usr/bin/d > /dev/null 2>&1
+	fi
+}
+
+daimon_self_install
 
 
 
