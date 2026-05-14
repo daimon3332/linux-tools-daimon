@@ -18251,6 +18251,94 @@ net_menu() {
 }
 
 
+journalctl_log_manager() {
+	root_use
+	send_stats "journalctl日志管理"
+	while true; do
+		clear
+		echo "journalctl日志管理"
+		echo "------------------------------------------------"
+		echo "1. 配置自动清理（默认最多500M、保留1G空闲、单文件50M、保留1个月）"
+		echo "2. 查看日志磁盘占用大小"
+		echo "3. 查看某服务的日志（最后200条）"
+		echo "4. 按时间保留日志（默认7天）"
+		echo "5. 按大小保留日志（默认500M）"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " choice
+
+		case "$choice" in
+			1)
+				local system_max_use system_keep_free system_max_file_size max_retention_sec
+				read -e -p "SystemMaxUse 最大总占用（默认 500M）: " system_max_use
+				system_max_use=${system_max_use:-500M}
+				read -e -p "SystemKeepFree 系统至少保留空闲空间（默认 1G）: " system_keep_free
+				system_keep_free=${system_keep_free:-1G}
+				read -e -p "SystemMaxFileSize 单个 journal 文件最大大小（默认 50M）: " system_max_file_size
+				system_max_file_size=${system_max_file_size:-50M}
+				read -e -p "MaxRetentionSec 最长保留时间（默认 1month）: " max_retention_sec
+				max_retention_sec=${max_retention_sec:-1month}
+
+				mkdir -p /etc/systemd
+				if [ -f /etc/systemd/journald.conf ]; then
+					cp /etc/systemd/journald.conf "/etc/systemd/journald.conf.bak.$(date +%Y%m%d%H%M%S)"
+				fi
+
+				sed -i '/^\s*#\?\s*SystemMaxUse=/d' /etc/systemd/journald.conf 2>/dev/null || true
+				sed -i '/^\s*#\?\s*SystemKeepFree=/d' /etc/systemd/journald.conf 2>/dev/null || true
+				sed -i '/^\s*#\?\s*SystemMaxFileSize=/d' /etc/systemd/journald.conf 2>/dev/null || true
+				sed -i '/^\s*#\?\s*MaxRetentionSec=/d' /etc/systemd/journald.conf 2>/dev/null || true
+
+				grep -q '^\[Journal\]' /etc/systemd/journald.conf 2>/dev/null || echo "[Journal]" >> /etc/systemd/journald.conf
+				cat >> /etc/systemd/journald.conf << EOF
+SystemMaxUse=$system_max_use
+SystemKeepFree=$system_keep_free
+SystemMaxFileSize=$system_max_file_size
+MaxRetentionSec=$max_retention_sec
+EOF
+				systemctl restart systemd-journald 2>/dev/null || service systemd-journald restart 2>/dev/null || true
+				echo "journalctl 自动清理配置完成"
+				journalctl --disk-usage
+				break_end
+				;;
+			2)
+				journalctl --disk-usage
+				break_end
+				;;
+			3)
+				local service_name
+				read -e -p "请输入服务名（可以不带 .service）: " service_name
+				[ -z "$service_name" ] && echo "服务名不能为空" && break_end && continue
+				[[ "$service_name" == *.service ]] || service_name="${service_name}.service"
+				journalctl -u "$service_name" -n 200 --no-pager
+				break_end
+				;;
+			4)
+				local keep_time
+				read -e -p "请输入保留时间（默认 7d，例如 3d / 1month）: " keep_time
+				keep_time=${keep_time:-7d}
+				journalctl --vacuum-time="$keep_time"
+				break_end
+				;;
+			5)
+				local keep_size
+				read -e -p "请输入保留大小（默认 500M）: " keep_size
+				keep_size=${keep_size:-500M}
+				journalctl --vacuum-size="$keep_size"
+				break_end
+				;;
+			0)
+				break
+				;;
+			*)
+				echo "无效的输入!"
+				break_end
+				;;
+		esac
+	done
+}
+
+
 
 log_menu() {
 	send_stats "系统日志管理工具"
@@ -18884,7 +18972,8 @@ linux_Settings() {
 	  echo -e "${gl_kjlan}7.   ${gl_bai}系统时区调整                      ${gl_kjlan}8.   ${gl_bai}修改主机名"
 	  echo -e "${gl_kjlan}9.   ${gl_bai}本机host解析                       ${gl_kjlan}10.  ${gl_bai}系统变量管理工具"
 	  echo -e "${gl_kjlan}11.  ${gl_bai}github镜像源                      ${gl_kjlan}12.  ${gl_bai}DD重装系统"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}网卡管理工具"
+	  echo -e "${gl_kjlan}15.  ${gl_bai}journalctl日志管理              ${gl_kjlan}16.  ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -19267,6 +19356,15 @@ EOF
 			  ;;
 
 		  14)
+			  clear
+			  net_menu
+			  ;;
+
+		  15)
+			  journalctl_log_manager
+			  ;;
+
+		  16)
 			  clear
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"
