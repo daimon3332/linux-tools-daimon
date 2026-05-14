@@ -1,4 +1,4 @@
-# linux-tools-daimon 命令教程
+# linux-tools 命令教程
 
 本文按脚本菜单整理每个选项背后的核心命令。说明以 Ubuntu 为例，只列关键命令，不展开 if/else、循环、颜色输出等交互细节。
 
