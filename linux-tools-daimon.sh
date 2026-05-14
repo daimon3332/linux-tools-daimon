@@ -49,6 +49,17 @@ daimon_run_cached_script() {
 }
 
 
+daimon_exec_cached_script() {
+	local url="$1"
+	local name="$2"
+	shift 2
+	daimon_download "$url" "$name" || exit 1
+	clear
+	echo -e "${gl_kjlan}已退出 daimon，正在运行: bash $DAIMON_SCRIPT_DIR/$name $*${gl_bai}"
+	exec bash "$DAIMON_SCRIPT_DIR/$name" "$@"
+}
+
+
 quanju_canshu() {
 if [ "$canshu" = "CN" ]; then
 	zhushi=0
@@ -470,8 +481,10 @@ install_add_docker_cn() {
 {
   "registry-mirrors": [
     "https://docker.1ms.run",
-    "https://docker.m.daocloud.io",
-    "https://hub.1panel.dev"
+    "https://docker.1panel.live",
+    "https://hub.rat.dev",
+    "https://dockerproxy.net",
+    "https://docker-registry.nmqu.com"
   ]
 }
 EOF
@@ -485,28 +498,51 @@ docker_mirror_menu() {
 	mkdir -p /etc/docker
 	local mirrors=(
 		"https://docker.1ms.run"
-		"https://docker.m.ixdev.cn"
+		"https://docker.1panel.live"
 		"https://hub.rat.dev"
 		"https://dockerproxy.net"
+		"https://docker-registry.nmqu.com"
+		"https://docker.m.ixdev.cn"
 		"https://docker.m.daocloud.io"
 		"https://docker.kejilion.pro"
 		"https://hub.1panel.dev"
 		"https://dockerproxy.cool"
 		"https://registry-1.docker.io"
 	)
+	local mirror_names=(
+		"docker.1ms.run"
+		"docker.1panel.live"
+		"hub.rat.dev"
+		"dockerproxy.net"
+		"docker-registry.nmqu.com"
+		"docker.m.ixdev.cn"
+		"docker.m.daocloud.io"
+		"docker.kejilion.pro"
+		"hub.1panel.dev"
+		"dockerproxy.cool"
+		"官方 Docker Hub"
+	)
 	clear
 	echo "Docker 镜像源多选"
 	echo "------------------------"
-	for i in "${!mirrors[@]}"; do printf "%2d. %s\n" "$((i+1))" "${mirrors[$i]}"; done
+	for i in "${!mirrors[@]}"; do
+		printf "%2d. %-24s %s\n" "$((i+1))" "${mirror_names[$i]}" "${mirrors[$i]}"
+	done
 	echo "------------------------"
-	echo "输入编号，使用空格分隔；直接回车使用推荐源：1 5 7"
+	echo "输入编号，使用空格分隔；直接回车使用默认源：1 2 3 4 5"
+	echo "输入 0 返回上一级菜单"
 	read -e -p "请选择: " selected
-	selected=${selected:-"1 5 7"}
+	[ "$selected" = "0" ] && return 0
+	selected=${selected:-"1 2 3 4 5"}
 	{
 		echo '{'
 		echo '  "registry-mirrors": ['
 		local first=1
 		for idx in $selected; do
+			if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt ${#mirrors[@]} ]; then
+				echo -e "${gl_huang}跳过无效编号: $idx${gl_bai}" >&2
+				continue
+			fi
 			local mirror="${mirrors[$((idx-1))]}"
 			[ -z "$mirror" ] && continue
 			if [ "$first" -eq 0 ]; then echo ','; fi
@@ -520,6 +556,7 @@ docker_mirror_menu() {
 	cat /etc/docker/daemon.json
 	restart docker
 }
+
 
 
 
@@ -6492,7 +6529,7 @@ Kernel_optimize() {
 	  echo -e "4. 直播优化模式：       针对直播推流优化，UDP 缓冲区加大，减少延迟。"
 	  echo -e "5. 低延迟优化模式：     针对低延迟服务优化。"
 	  echo -e "6. 还原默认设置：       将系统设置还原为默认配置。"
-	  echo -e "7. 自动调优：           根据测试数据自动调优内核参数。${gl_huang}★${gl_bai}"
+	  echo -e "7. 自动调优：           根据测试数据自动调优内核参数。"
 	  echo "--------------------"
 	  echo "0. 返回上一级选单"
 	  echo "--------------------"
@@ -8341,11 +8378,11 @@ linux_docker() {
 	  echo -e "Docker管理"
 	  docker_tato
 	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}安装更新Docker环境 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}1.   ${gl_bai}安装更新Docker环境"
 	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}2.   ${gl_bai}查看Docker全局状态 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}2.   ${gl_bai}查看Docker全局状态"
 	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}Docker容器管理 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}3.   ${gl_bai}Docker容器管理"
 	  echo -e "${gl_kjlan}4.   ${gl_bai}Docker镜像管理"
 	  echo -e "${gl_kjlan}5.   ${gl_bai}Docker网络管理"
 	  echo -e "${gl_kjlan}6.   ${gl_bai}Docker卷管理"
@@ -8633,7 +8670,7 @@ linux_test() {
 	  echo -e "${gl_kjlan}1.   ${gl_bai}ChatGPT 解锁状态检测"
 	  echo -e "${gl_kjlan}2.   ${gl_bai}Region 流媒体解锁测试"
 	  echo -e "${gl_kjlan}3.   ${gl_bai}yeahwu 流媒体解锁检测"
-	  echo -e "${gl_kjlan}4.   ${gl_bai}xykt IP质量体检脚本 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}4.   ${gl_bai}xykt IP质量体检脚本"
 
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}网络线路测速"
@@ -8644,7 +8681,7 @@ linux_test() {
 	  echo -e "${gl_kjlan}15.  ${gl_bai}nxtrace 指定IP回程测试脚本"
 	  echo -e "${gl_kjlan}16.  ${gl_bai}ludashi2020 三网线路测试"
 	  echo -e "${gl_kjlan}17.  ${gl_bai}i-abc 多功能测速脚本"
-	  echo -e "${gl_kjlan}18.  ${gl_bai}NetQuality 网络质量体检脚本 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}18.  ${gl_bai}NetQuality 网络质量体检脚本"
 
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}硬件性能测试"
@@ -8654,8 +8691,8 @@ linux_test() {
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}综合性测试"
 	  echo -e "${gl_kjlan}31.  ${gl_bai}bench 性能测试"
-	  echo -e "${gl_kjlan}32.  ${gl_bai}spiritysdx 融合怪测评 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}33.  ${gl_bai}nodequality 融合怪测评 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}32.  ${gl_bai}spiritysdx 融合怪测评"
+	  echo -e "${gl_kjlan}33.  ${gl_bai}nodequality 融合怪测评"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -14545,42 +14582,42 @@ while true; do
 	  echo -e "${gl_kjlan}9.   ${color9}Poste.io邮件服务器程序              ${gl_kjlan}10.  ${color10}RocketChat多人在线聊天系统"
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}11.  ${color11}禅道项目管理软件                    ${gl_kjlan}12.  ${color12}青龙面板定时任务管理平台"
-	  echo -e "${gl_kjlan}13.  ${color13}Cloudreve网盘 ${gl_huang}★${gl_bai}                     ${gl_kjlan}14.  ${color14}简单图床图片管理程序"
+	  echo -e "${gl_kjlan}13.  ${color13}Cloudreve网盘                     ${gl_kjlan}14.  ${color14}简单图床图片管理程序"
 	  echo -e "${gl_kjlan}15.  ${color15}emby多媒体管理系统                  ${gl_kjlan}16.  ${color16}Speedtest测速面板"
 	  echo -e "${gl_kjlan}17.  ${color17}AdGuardHome去广告软件               ${gl_kjlan}18.  ${color18}onlyoffice在线办公OFFICE"
 	  echo -e "${gl_kjlan}19.  ${color19}雷池WAF防火墙面板                   ${gl_kjlan}20.  ${color20}portainer容器管理面板"
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}21.  ${color21}VScode网页版                        ${gl_kjlan}22.  ${color22}UptimeKuma监控工具"
-	  echo -e "${gl_kjlan}23.  ${color23}Memos网页备忘录                     ${gl_kjlan}24.  ${color24}Webtop远程桌面网页版 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}23.  ${color23}Memos网页备忘录                     ${gl_kjlan}24.  ${color24}Webtop远程桌面网页版"
 	  echo -e "${gl_kjlan}25.  ${color25}Nextcloud网盘                       ${gl_kjlan}26.  ${color26}QD-Today定时任务管理框架"
 	  echo -e "${gl_kjlan}27.  ${color27}Dockge容器堆栈管理面板              ${gl_kjlan}28.  ${color28}LibreSpeed测速工具"
-	  echo -e "${gl_kjlan}29.  ${color29}searxng聚合搜索站 ${gl_huang}★${gl_bai}                 ${gl_kjlan}30.  ${color30}PhotoPrism私有相册系统"
+	  echo -e "${gl_kjlan}29.  ${color29}searxng聚合搜索站                 ${gl_kjlan}30.  ${color30}PhotoPrism私有相册系统"
 	  echo -e "${gl_kjlan}-------------------------"
-	  echo -e "${gl_kjlan}31.  ${color31}StirlingPDF工具大全                 ${gl_kjlan}32.  ${color32}drawio免费的在线图表软件 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}31.  ${color31}StirlingPDF工具大全                 ${gl_kjlan}32.  ${color32}drawio免费的在线图表软件"
 	  echo -e "${gl_kjlan}33.  ${color33}Sun-Panel导航面板                   ${gl_kjlan}34.  ${color34}Pingvin-Share文件分享平台"
 	  echo -e "${gl_kjlan}35.  ${color35}极简朋友圈                          ${gl_kjlan}36.  ${color36}LobeChatAI聊天聚合网站"
-	  echo -e "${gl_kjlan}37.  ${color37}MyIP工具箱 ${gl_huang}★${gl_bai}                        ${gl_kjlan}38.  ${color38}小雅alist全家桶"
+	  echo -e "${gl_kjlan}37.  ${color37}MyIP工具箱                        ${gl_kjlan}38.  ${color38}小雅alist全家桶"
 	  echo -e "${gl_kjlan}39.  ${color39}Bililive直播录制工具                ${gl_kjlan}40.  ${color40}webssh网页版SSH连接工具"
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}41.  ${color41}耗子管理面板                	 ${gl_kjlan}42.  ${color42}Nexterm远程连接工具"
-	  echo -e "${gl_kjlan}43.  ${color43}RustDesk远程桌面(服务端) ${gl_huang}★${gl_bai}          ${gl_kjlan}44.  ${color44}RustDesk远程桌面(中继端) ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}45.  ${color45}Docker加速站            		 ${gl_kjlan}46.  ${color46}GitHub加速站 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}43.  ${color43}RustDesk远程桌面(服务端)          ${gl_kjlan}44.  ${color44}RustDesk远程桌面(中继端)"
+	  echo -e "${gl_kjlan}45.  ${color45}Docker加速站            		 ${gl_kjlan}46.  ${color46}GitHub加速站"
 	  echo -e "${gl_kjlan}47.  ${color47}普罗米修斯监控			 ${gl_kjlan}48.  ${color48}普罗米修斯(主机监控)"
 	  echo -e "${gl_kjlan}49.  ${color49}普罗米修斯(容器监控)		 ${gl_kjlan}50.  ${color50}补货监控工具"
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}51.  ${color51}PVE开小鸡面板			 ${gl_kjlan}52.  ${color52}DPanel容器管理面板"
 	  echo -e "${gl_kjlan}53.  ${color53}llama3聊天AI大模型                  ${gl_kjlan}54.  ${color54}AMH主机建站管理面板"
-	  echo -e "${gl_kjlan}55.  ${color55}FRP内网穿透(服务端) ${gl_huang}★${gl_bai}	         ${gl_kjlan}56.  ${color56}FRP内网穿透(客户端) ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}57.  ${color57}Deepseek聊天AI大模型                ${gl_kjlan}58.  ${color58}Dify大模型知识库 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}55.  ${color55}FRP内网穿透(服务端)	         ${gl_kjlan}56.  ${color56}FRP内网穿透(客户端)"
+	  echo -e "${gl_kjlan}57.  ${color57}Deepseek聊天AI大模型                ${gl_kjlan}58.  ${color58}Dify大模型知识库"
 	  echo -e "${gl_kjlan}59.  ${color59}NewAPI大模型资产管理                ${gl_kjlan}60.  ${color60}JumpServer开源堡垒机"
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}61.  ${color61}在线翻译服务器			 ${gl_kjlan}62.  ${color62}RAGFlow大模型知识库"
-	  echo -e "${gl_kjlan}63.  ${color63}OpenWebUI自托管AI平台 ${gl_huang}★${gl_bai}             ${gl_kjlan}64.  ${color64}it-tools工具箱"
-	  echo -e "${gl_kjlan}65.  ${color65}n8n自动化工作流平台 ${gl_huang}★${gl_bai}               ${gl_kjlan}66.  ${color66}yt-dlp视频下载工具"
-	  echo -e "${gl_kjlan}67.  ${color67}ddns-go动态DNS管理工具 ${gl_huang}★${gl_bai}            ${gl_kjlan}68.  ${color68}AllinSSL证书管理平台"
+	  echo -e "${gl_kjlan}63.  ${color63}OpenWebUI自托管AI平台             ${gl_kjlan}64.  ${color64}it-tools工具箱"
+	  echo -e "${gl_kjlan}65.  ${color65}n8n自动化工作流平台               ${gl_kjlan}66.  ${color66}yt-dlp视频下载工具"
+	  echo -e "${gl_kjlan}67.  ${color67}ddns-go动态DNS管理工具            ${gl_kjlan}68.  ${color68}AllinSSL证书管理平台"
 	  echo -e "${gl_kjlan}69.  ${color69}SFTPGo文件传输工具                  ${gl_kjlan}70.  ${color70}AstrBot聊天机器人框架"
 	  echo -e "${gl_kjlan}-------------------------"
-	  echo -e "${gl_kjlan}71.  ${color71}Navidrome私有音乐服务器             ${gl_kjlan}72.  ${color72}bitwarden密码管理器 ${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}71.  ${color71}Navidrome私有音乐服务器             ${gl_kjlan}72.  ${color72}bitwarden密码管理器"
 	  echo -e "${gl_kjlan}73.  ${color73}LibreTV私有影视                     ${gl_kjlan}74.  ${color74}MoonTV私有影视"
 	  echo -e "${gl_kjlan}75.  ${color75}Melody音乐精灵                      ${gl_kjlan}76.  ${color76}在线DOS合集"
 	  echo -e "${gl_kjlan}77.  ${color77}迅雷离线下载工具                    ${gl_kjlan}78.  ${color78}PandaWiki智能文档管理系统"
@@ -14605,8 +14642,8 @@ while true; do
 	  echo -e "${gl_kjlan}109. ${color109}ZFile在线网盘                       ${gl_kjlan}110. ${color110}Karakeep书签管理"
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}111. ${color111}多格式文件转换工具                  ${gl_kjlan}112. ${color112}Lucky大内网穿透工具"
-	  echo -e "${gl_kjlan}113. ${color113}Firefox浏览器                       ${gl_kjlan}114. ${color114}OpenClaw机器人管理工具${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}115. ${color115}Hermes机器人管理工具${gl_huang}★${gl_bai}"
+	  echo -e "${gl_kjlan}113. ${color113}Firefox浏览器                       ${gl_kjlan}114. ${color114}OpenClaw机器人管理工具"
+	  echo -e "${gl_kjlan}115. ${color115}Hermes机器人管理工具"
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}第三方应用列表"
   	  echo -e "${gl_kjlan}想要让你的应用出现在这里？查看开发者指南: ${gl_huang}https://dev.kejilion.sh/${gl_bai}"
@@ -18882,6 +18919,207 @@ EOF
 
 
 
+github_proxy_sources_file() {
+	echo "$DAIMON_SCRIPT_DIR/github_proxy_sources.txt"
+}
+
+github_proxy_init_sources() {
+	mkdir -p "$DAIMON_SCRIPT_DIR" >/dev/null 2>&1 || true
+	local file
+	file=$(github_proxy_sources_file)
+	if [ ! -s "$file" ]; then
+		cat > "$file" << 'EOF'
+https://gh-proxy.com
+https://ghproxy.net
+https://testingcf.jsdelivr.net/gh
+https://ghfast.top
+https://ghproxy.homeboyc.cn
+https://github.akams.cn
+EOF
+	fi
+}
+
+github_proxy_build_test_url() {
+	local source="$1"
+	local raw_url="https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh"
+	case "$source" in
+		*'{raw}'*)
+			echo "${source//\{raw\}/$raw_url}"
+			;;
+		*jsdelivr.net/gh*)
+			source="${source%/}"
+			echo "$source/komari-monitor/komari-agent@main/install.sh"
+			;;
+		*)
+			source="${source%/}"
+			echo "$source/$raw_url"
+			;;
+	esac
+}
+
+github_proxy_show_sources() {
+	github_proxy_init_sources
+	local file
+	file=$(github_proxy_sources_file)
+	if [ -s "$file" ]; then
+		nl -w2 -s'. ' "$file"
+	else
+		echo "暂无镜像源"
+	fi
+}
+
+github_proxy_add_source() {
+	github_proxy_init_sources
+	local file source
+	file=$(github_proxy_sources_file)
+	read -e -p "请输入github镜像源地址（例：https://ghproxy.net，支持 {raw} 占位符）: " source
+	[ -z "$source" ] && echo "地址不能为空" && return 1
+	if ! echo "$source" | grep -Eq '^https?://'; then
+		echo "请输入 http:// 或 https:// 开头的地址"
+		return 1
+	fi
+	if grep -qxF "$source" "$file" 2>/dev/null; then
+		echo "该镜像源已存在"
+		return 0
+	fi
+	echo "$source" >> "$file"
+	echo "已添加: $source"
+}
+
+github_proxy_delete_source() {
+	github_proxy_init_sources
+	local file idx total
+	file=$(github_proxy_sources_file)
+	github_proxy_show_sources
+	total=$(wc -l < "$file" 2>/dev/null | tr -d ' ')
+	read -e -p "请输入要删除的镜像源编号（输入0取消）: " idx
+	[ "$idx" = "0" ] && echo "已取消" && return 0
+	if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt "$total" ]; then
+		echo "无效编号"
+		return 1
+	fi
+	sed -i "${idx}d" "$file"
+	echo "已删除编号: $idx"
+}
+
+github_proxy_speed_test() {
+	clear
+	send_stats "github镜像源测速"
+	install curl
+	github_proxy_init_sources
+
+	local file out
+	file=$(github_proxy_sources_file)
+	out="/tmp/daimon_github_proxy_speed_result.txt"
+	: > "$out"
+
+	echo "github镜像源测速"
+	echo "测试文件: komari-agent install.sh（小文件，测试完成会删除临时文件）"
+	echo "超时设置: 连接 4 秒 / 总计 12 秒，避免等待过久"
+	echo "------------------------"
+
+	local idx=0 source url name tmp result http_code time_total speed size
+	while IFS= read -r source; do
+		[ -z "$source" ] && continue
+		idx=$((idx+1))
+		url=$(github_proxy_build_test_url "$source")
+		name=$(echo "$source" | sed 's#^https\?://##; s#/$##')
+		tmp="/tmp/daimon_proxy_test_${idx}_$(echo "$name" | tr -cd 'a-zA-Z0-9_')"
+
+		echo "== Testing: $name"
+		result=$(curl -L \
+			--connect-timeout 4 \
+			--max-time 12 \
+			--retry 0 \
+			-o "$tmp" \
+			-w "%{http_code} %{time_total} %{speed_download} %{size_download}" \
+			-s \
+			"$url" 2>/dev/null)
+
+		http_code=$(echo "$result" | awk '{print $1}')
+		time_total=$(echo "$result" | awk '{print $2}')
+		speed=$(echo "$result" | awk '{print $3}')
+		size=$(echo "$result" | awk '{print $4}')
+		speed=${speed:-0}
+		size=${size:-0}
+		time_total=${time_total:-0}
+		http_code=${http_code:-000}
+
+		if [ "$http_code" = "200" ] && [ "$size" -gt 1000 ]; then
+			printf "%s\t%s\t%s\t%s\t%s\n" "$speed" "$time_total" "$size" "$http_code" "$name" >> "$out"
+			echo "OK    HTTP:$http_code  TIME:${time_total}s  SPEED:${speed}B/s  SIZE:${size}B"
+		else
+			printf "%s\t%s\t%s\t%s\t%s\n" "0" "$time_total" "$size" "$http_code" "$name" >> "$out"
+			echo "FAIL  HTTP:$http_code  TIME:${time_total}s  SIZE:${size}B"
+		fi
+
+		rm -f "$tmp"
+		echo
+	done < "$file"
+
+	echo "=============================="
+	echo "Speed ranking:"
+	echo "=============================="
+	sort -nr "$out" | awk -F '\t' '
+	BEGIN {
+	  printf "%-4s %-34s %-12s %-10s %-10s %-8s\n", "Rank", "Proxy", "Speed", "Time", "Size", "HTTP"
+	}
+	{
+	  speed=$1
+	  time=$2
+	  size=$3
+	  http=$4
+	  name=$5
+
+	  if (speed >= 1048576) {
+	    speed_fmt=sprintf("%.2f MB/s", speed/1048576)
+	  } else if (speed >= 1024) {
+	    speed_fmt=sprintf("%.2f KB/s", speed/1024)
+	  } else {
+	    speed_fmt=sprintf("%.0f B/s", speed)
+	  }
+
+	  printf "%-4d %-34s %-12s %-10ss %-10s %-8s\n", NR, name, speed_fmt, time, size, http
+	}'
+
+	local best
+	best=$(sort -nr "$out" | awk -F '\t' '$1 > 0 {print $5; exit}')
+	if [ -n "$best" ]; then
+		echo "------------------------"
+		echo -e "当前最快可用镜像源: ${gl_lv}$best${gl_bai}"
+	else
+		echo "------------------------"
+		echo -e "${gl_huang}没有检测到可用镜像源，请稍后再试或检查网络。${gl_bai}"
+	fi
+	rm -f "$out"
+}
+
+github_proxy_manager() {
+	while true; do
+		clear
+		echo "github镜像源"
+		echo "------------------------"
+		echo "当前镜像源列表："
+		github_proxy_show_sources
+		echo "------------------------"
+		echo "1. 添加镜像源"
+		echo "2. 删除镜像源"
+		echo "3. 测速"
+		echo "0. 返回上一级菜单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) github_proxy_add_source ;;
+			2) github_proxy_delete_source ;;
+			3) github_proxy_speed_test ;;
+			0) break ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+
 linux_Settings() {
 
 	while true; do
@@ -18889,11 +19127,12 @@ linux_Settings() {
 	  # send_stats "系统工具"
 	  echo -e "系统工具"
 	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}设置脚本启动快捷键                 ${gl_kjlan}7.   ${gl_bai}优化DNS地址"
-	  echo -e "${gl_kjlan}10.  ${gl_bai}切换优先ipv4/ipv6                  ${gl_kjlan}12.  ${gl_bai}修改虚拟内存大小"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}用户管理                           ${gl_kjlan}15.  ${gl_bai}系统时区调整"
-	  echo -e "${gl_kjlan}18.  ${gl_bai}修改主机名                         ${gl_kjlan}21.  ${gl_bai}本机host解析"
-	  echo -e "${gl_kjlan}42.  ${gl_bai}系统变量管理工具                   ${gl_kjlan}102. ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}1.   ${gl_bai}设置脚本启动快捷键                 ${gl_kjlan}2.   ${gl_bai}更换系统软件包镜像源"
+	  echo -e "${gl_kjlan}3.   ${gl_bai}优化DNS地址                        ${gl_kjlan}4.   ${gl_bai}切换优先ipv4/ipv6"
+	  echo -e "${gl_kjlan}5.   ${gl_bai}修改虚拟内存大小                    ${gl_kjlan}6.   ${gl_bai}用户管理"
+	  echo -e "${gl_kjlan}7.   ${gl_bai}系统时区调整                      ${gl_kjlan}8.   ${gl_bai}修改主机名"
+	  echo -e "${gl_kjlan}9.   ${gl_bai}本机host解析                       ${gl_kjlan}10.  ${gl_bai}系统变量管理工具"
+	  echo -e "${gl_kjlan}11.  ${gl_bai}github镜像源                  ${gl_kjlan}12.  ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -18921,11 +19160,20 @@ linux_Settings() {
 			  done
 			  ;;
 
-		  7)
+		  2)
+			root_use
+			send_stats "更换系统软件包镜像源"
+			clear
+			echo "更换系统软件包镜像源"
+			echo "将执行：bash <(curl -sSL https://linuxmirrors.cn/main.sh)"
+			bash <(curl -sSL https://linuxmirrors.cn/main.sh)
+			  ;;
+
+		  3)
 			set_dns_ui
 			  ;;
 
-		  10)
+		  4)
 			root_use
 			send_stats "设置v4/v6优先级"
 			while true; do
@@ -18973,7 +19221,7 @@ linux_Settings() {
 			done
 			;;
 
-		  12)
+		  5)
 			root_use
 			send_stats "设置虚拟内存"
 			while true; do
@@ -19021,7 +19269,7 @@ linux_Settings() {
 			done
 			;;
 
-		  13)
+		  6)
 			  while true; do
 				root_use
 				send_stats "用户管理"
@@ -19096,7 +19344,7 @@ EOF
 			  done
 			  ;;
 
-		  15)
+		  7)
 			root_use
 			send_stats "换时区"
 			while true; do
@@ -19168,7 +19416,7 @@ EOF
 			done
 			  ;;
 
-		  18)
+		  8)
 		  root_use
 		  send_stats "修改主机名"
 
@@ -19212,7 +19460,7 @@ EOF
 		  done
 			  ;;
 
-		  21)
+		  9)
 			  root_use
 			  send_stats "本地host解析"
 			  while true; do
@@ -19248,12 +19496,16 @@ EOF
 			  done
 			  ;;
 
-		  42)
+		  10)
 			  clear
 			  env_menu
 			  ;;
 
-		  102)
+		  11)
+			  github_proxy_manager
+			  ;;
+
+		  12)
 			  clear
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"
@@ -19915,15 +20167,51 @@ common_one_click_scripts() {
 		clear
 		echo -e "常用的一键脚本"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo -e "${gl_kjlan}IP相关脚本${gl_bai}"
 		echo -e "${gl_kjlan}1.   ${gl_bai}NodeQuality 网络质量测试"
-		echo -e "${gl_kjlan}2.   ${gl_bai}勇哥 x-ui-yg 脚本"
+		echo -e "${gl_kjlan}2.   ${gl_bai}IPQuality IP纯净度/流媒体解锁（可附加 -i/-x 参数）"
+		echo -e "${gl_kjlan}3.   ${gl_bai}融合怪 spiritLHLS 综合测评"
+		echo -e "${gl_kjlan}4.   ${gl_bai}NetQuality 三网回程路由和延迟"
+		echo -e "${gl_kjlan}5.   ${gl_bai}RegionRestrictionCheck 流媒体解锁测试"
+		echo -e "${gl_kjlan}6.   ${gl_bai}bench.sh 系统信息/I-O/网络测速"
+		echo -e "${gl_kjlan}7.   ${gl_bai}YABS GeekBench/fio/网络测试"
+		echo -e "${gl_kjlan}8.   ${gl_bai}HardwareQuality 硬件质量检测"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo -e "${gl_kjlan}其他脚本${gl_bai}"
+		echo -e "${gl_kjlan}9.   ${gl_bai}勇哥 x-ui-yg 脚本"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
 		case $sub_choice in
-			1) daimon_run_cached_script "https://run.NodeQuality.com" "NodeQuality.sh" ;;
-			2) daimon_run_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh" ;;
+			1)
+				daimon_exec_cached_script "https://run.NodeQuality.com" "NodeQuality.sh"
+				;;
+			2)
+				read -e -p "请输入附加参数（可空；例：-i eth0 或 -x socks5://user:pass@host:port）: " extra_args
+				daimon_exec_cached_script "https://IP.Check.Place" "IPQuality.sh" $extra_args
+				;;
+			3)
+				daimon_exec_cached_script "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" "ecs.sh"
+				;;
+			4)
+				daimon_exec_cached_script "https://Net.Check.Place" "NetQuality.sh"
+				;;
+			5)
+				daimon_exec_cached_script "https://check.unlock.media" "RegionRestrictionCheck.sh"
+				;;
+			6)
+				daimon_exec_cached_script "https://bench.sh" "bench.sh"
+				;;
+			7)
+				daimon_exec_cached_script "https://yabs.sh" "yabs.sh"
+				;;
+			8)
+				daimon_exec_cached_script "https://Check.Place" "HardwareQuality.sh" -H
+				;;
+			9)
+				daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh"
+				;;
 			0) kejilion ;;
 			*) echo "无效的输入!" ;;
 		esac
@@ -20477,19 +20765,18 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}1.   ${gl_bai}系统信息查询"
 echo -e "${gl_kjlan}2.   ${gl_bai}系统更新"
 echo -e "${gl_kjlan}3.   ${gl_bai}系统清理"
-echo -e "${gl_kjlan}4.   ${gl_bai}基础工具"
-echo -e "${gl_kjlan}5.   ${gl_bai}BBR管理"
-echo -e "${gl_kjlan}6.   ${gl_bai}Docker管理"
-echo -e "${gl_kjlan}7.   ${gl_bai}WARP管理"
-echo -e "${gl_kjlan}8.   ${gl_bai}测试脚本合集"
-echo -e "${gl_kjlan}9.   ${gl_bai}甲骨文云脚本合集"
-echo -e "${gl_kjlan}10.  ${gl_bai}常用的一键脚本 ${gl_huang}★${gl_bai}"
-echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理 ${gl_huang}★${gl_bai}"
-echo -e "${gl_kjlan}12.  ${gl_bai}应用市场"
-echo -e "${gl_kjlan}13.  ${gl_bai}系统工具"
-echo -e "${gl_kjlan}14.  ${gl_bai}rclone配置"
-echo -e "${gl_kjlan}15.  ${gl_bai}SSH配置"
-echo -e "${gl_kjlan}16.  ${gl_bai}UFW防火墙管理"
+echo -e "${gl_kjlan}4.   ${gl_bai}系统工具"
+echo -e "${gl_kjlan}5.   ${gl_bai}Docker管理"
+echo -e "${gl_kjlan}6.   ${gl_bai}基础工具"
+echo -e "${gl_kjlan}7.   ${gl_bai}BBR管理"
+echo -e "${gl_kjlan}8.   ${gl_bai}SSH配置"
+echo -e "${gl_kjlan}9.   ${gl_bai}UFW防火墙管理"
+echo -e "${gl_kjlan}10.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}常用的一键脚本"
+echo -e "${gl_kjlan}12.  ${gl_bai}测试脚本合集"
+echo -e "${gl_kjlan}13.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}14.  ${gl_bai}甲骨文云脚本合集"
+echo -e "${gl_kjlan}15.  ${gl_bai}应用市场"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -20500,19 +20787,18 @@ case $choice in
   1) linux_info ;;
   2) clear ; send_stats "系统更新" ; linux_update ;;
   3) clear ; send_stats "系统清理" ; linux_clean ;;
-  4) linux_tools ;;
-  5) linux_bbr ;;
-  6) linux_docker ;;
-  7) clear ; send_stats "warp管理" ; install wget curl; daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh" ;;
-  8) linux_test ;;
-  9) linux_Oracle ;;
-  10) common_one_click_scripts ;;
-  11) ssl_nginx_manager ;;
-  12) linux_panel ;;
-  13) linux_Settings ;;
-  14) rclone_manager ;;
-  15) ssh_config_manager ;;
-  16) ufw_manager ;;
+  4) linux_Settings ;;
+  5) linux_docker ;;
+  6) linux_tools ;;
+  7) linux_bbr ;;
+  8) ssh_config_manager ;;
+  9) ufw_manager ;;
+  10) ssl_nginx_manager ;;
+  11) common_one_click_scripts ;;
+  12) linux_test ;;
+  13) clear ; send_stats "warp管理" ; install wget curl; daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh" ;;
+  14) linux_Oracle ;;
+  15) linux_panel ;;
   00) kejilion_update ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
