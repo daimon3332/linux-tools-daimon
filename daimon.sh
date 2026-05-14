@@ -17,7 +17,7 @@ permission_granted="false"
 ENABLE_STATS="false"
 
 # daimon 本地脚本缓存目录：除 daimon.sh 主脚本外，所有需要落地保存的外部脚本统一放这里
-DAIMON_NAME="daimon"
+DAIMON_NAME="linux-tools-daimon"
 DAIMON_BIN="d"
 DAIMON_SCRIPT_DIR="/root/daimon"
 DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/daimon.sh"
@@ -194,9 +194,9 @@ CheckFirstRun_false() {
 # 提示用户同意条款
 UserLicenseAgreement() {
 	clear
-	echo -e "${gl_kjlan}欢迎使用daimon脚本工具箱${gl_bai}"
+	echo -e "${gl_kjlan}欢迎使用linux-tools-daimon${gl_bai}"
 	echo "首次使用脚本，请先阅读并确认以下说明。"
-	echo "项目名称: daimon脚本工具箱"
+	echo "项目名称: linux-tools-daimon"
 	echo "开源仓库: ${DAIMON_REPO_URL}"
 	echo "用户说明: ${DAIMON_AGREEMENT_URL}"
 	echo "使用说明: 本脚本为个人开源工具，按现状提供，请在了解命令作用后自行决定是否执行。"
@@ -7795,15 +7795,17 @@ linux_info() {
 
 
 linux_tools() {
-  local tool_ids=(python npm nodejs bun uv git curl fail2ban tree fzf ranger neofetch vim wget sudo socat htop iftop unzip tar tmux ffmpeg btop ncdu claude codex)
-  local tool_names=("python" "npm" "nodejs" "bun" "uv" "git" "curl" "fail2ban" "tree" "fzf" "ranger" "neofetch" "vim" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "btop" "ncdu" "Claude Code" "Codex CLI")
-  local tool_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "下载工具" "SSH 防爆破" "目录树" "模糊搜索" "文件管理" "系统概览" "文本编辑器" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "现代监控" "磁盘占用" "AI 编程助手" "AI 编程助手")
+  local tool_ids=(python npm nodejs bun uv git curl iptables-persistent ufw firewalld fail2ban tree fzf ranger neofetch vim wget sudo socat htop iftop unzip tar tmux ffmpeg btop ncdu claude codex)
+  local tool_names=("python" "npm" "nodejs" "bun" "uv" "git" "curl" "iptables-persistent" "ufw" "firewalld" "fail2ban" "tree" "fzf" "ranger" "neofetch" "vim" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "btop" "ncdu" "Claude Code" "Codex CLI")
+  local tool_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "下载工具" "iptables 持久化" "UFW 防火墙" "firewalld 防火墙" "SSH 防爆破" "目录树" "模糊搜索" "文件管理" "系统概览" "文本编辑器" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "现代监控" "磁盘占用" "AI 编程助手" "AI 编程助手")
 
   tool_installed() {
     local id="$1"
     case "$id" in
       python) command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 ;;
       nodejs) command -v node >/dev/null 2>&1 ;;
+      iptables-persistent) command -v netfilter-persistent >/dev/null 2>&1 || dpkg -s iptables-persistent >/dev/null 2>&1 ;;
+      firewalld) command -v firewall-cmd >/dev/null 2>&1 ;;
       claude) command -v claude >/dev/null 2>&1 ;;
       codex) command -v codex >/dev/null 2>&1 ;;
       *) command -v "$id" >/dev/null 2>&1 ;;
@@ -7860,6 +7862,27 @@ linux_tools() {
           uv --version 2>/dev/null || true
         fi
         ;;
+      iptables-persistent)
+        if command -v apt >/dev/null 2>&1; then
+          DEBIAN_FRONTEND=noninteractive apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y iptables-persistent
+        elif command -v dnf >/dev/null 2>&1; then
+          dnf install -y iptables-services
+        elif command -v yum >/dev/null 2>&1; then
+          yum install -y iptables-services
+        else
+          install iptables-persistent
+        fi
+        ;;
+      ufw)
+        install ufw
+        ufw status 2>/dev/null || true
+        ;;
+      firewalld)
+        install firewalld
+        systemctl enable firewalld >/dev/null 2>&1 || true
+        systemctl start firewalld >/dev/null 2>&1 || true
+        firewall-cmd --state 2>/dev/null || true
+        ;;
       git|curl|tree|fzf|ranger|neofetch|vim|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
@@ -7897,6 +7920,7 @@ linux_tools() {
     case "$id" in
       python) remove python3 python3-pip python3-venv python-is-python3 ;;
       nodejs) remove nodejs ;;
+      iptables-persistent) remove iptables-persistent iptables-services ;;
       claude) npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true ;;
       codex) npm uninstall -g @openai/codex 2>/dev/null || true ;;
       bun) rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true ;;
@@ -7923,12 +7947,18 @@ linux_tools() {
     done
   }
 
+  all_tool_numbers() {
+    seq 1 ${#tool_ids[@]} | tr '\n' ' '
+  }
+
   while true; do
     clear
     echo -e "基础工具"
     show_tool_status
     echo -e "${gl_kjlan}1.   ${gl_bai}安装工具（支持多选，输入工具编号，如: 1 4 6）"
     echo -e "${gl_kjlan}2.   ${gl_bai}卸载工具（支持多选，输入工具编号，如: 7 10）"
+    echo -e "${gl_kjlan}3.   ${gl_bai}全部安装"
+    echo -e "${gl_kjlan}4.   ${gl_bai}全部卸载"
     echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
     echo -e "${gl_kjlan}------------------------${gl_bai}"
     read -e -p "请输入你的选择: " sub_choice
@@ -7940,6 +7970,17 @@ linux_tools() {
       2)
         read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums
         handle_tool_numbers remove "$nums"
+        ;;
+      3)
+        handle_tool_numbers install "$(all_tool_numbers)"
+        ;;
+      4)
+        read -e -p "确认卸载基础工具列表中的全部工具？(y/N): " confirm
+        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+          handle_tool_numbers remove "$(all_tool_numbers)"
+        else
+          echo "已取消"
+        fi
         ;;
       0) kejilion ;;
       *) echo "无效的输入!" ;;
@@ -8966,7 +9007,7 @@ fix_phpfpm_conf() {
 
 linux_ldnmp() {
 	clear
-	echo "LDNMP建站模块已从 daimon 个人版移除。"
+	echo "LDNMP建站模块已从 linux-tools-daimon 个人版移除。"
 	break_end
 }
 
@@ -18331,7 +18372,7 @@ done
 
 linux_work() {
 	clear
-	echo "后台工作区模块已从 daimon 个人版移除。"
+	echo "后台工作区模块已从 linux-tools-daimon 个人版移除。"
 	break_end
 }
 
@@ -20222,7 +20263,7 @@ run_commands_on_servers() {
 
 linux_cluster() {
 	clear
-	echo "服务器集群控制模块已从 daimon 个人版移除。"
+	echo "服务器集群控制模块已从 linux-tools-daimon 个人版移除。"
 	break_end
 }
 
@@ -20233,7 +20274,7 @@ linux_cluster() {
 
 kejilion_Affiliates() {
 	clear
-	echo "广告专栏已从 daimon 个人版移除。"
+	echo "广告专栏已从 linux-tools-daimon 个人版移除。"
 	break_end
 }
 
@@ -20244,7 +20285,7 @@ kejilion_Affiliates() {
 
 games_server_tools() {
 	clear
-	echo "相关开服脚本合集已从 daimon 个人版移除。"
+	echo "相关开服脚本合集已从 linux-tools-daimon 个人版移除。"
 	break_end
 }
 
@@ -20628,10 +20669,452 @@ common_one_click_scripts() {
 
 
 
+SSH_CONFIG_FILE="/etc/ssh/sshd_config"
+
+ssh_backup_config() {
+	local backup="${SSH_CONFIG_FILE}.bak.$(date +%Y%m%d%H%M%S)"
+	cp "$SSH_CONFIG_FILE" "$backup"
+	echo "$backup"
+}
+
+ssh_set_option() {
+	local key="$1"
+	local value="$2"
+	local file="${3:-$SSH_CONFIG_FILE}"
+	if grep -Eq "^[#[:space:]]*${key}[[:space:]]+" "$file"; then
+		sed -i "s|^[#[:space:]]*${key}[[:space:]].*|${key} ${value}|" "$file"
+	else
+		echo "${key} ${value}" >> "$file"
+	fi
+}
+
+ssh_test_config() {
+	if command -v sshd >/dev/null 2>&1; then
+		sshd -t
+	else
+		/usr/sbin/sshd -t
+	fi
+}
+
+ssh_disable_socket_activation() {
+	systemctl stop ssh.socket sshd.socket >/dev/null 2>&1 || true
+	systemctl disable ssh.socket sshd.socket >/dev/null 2>&1 || true
+}
+
+ssh_restart_service() {
+	ssh_disable_socket_activation
+	if systemctl list-unit-files | grep -q '^sshd\.service'; then
+		systemctl restart sshd
+	elif systemctl list-unit-files | grep -q '^ssh\.service'; then
+		systemctl restart ssh
+	else
+		systemctl restart sshd 2>/dev/null || systemctl restart ssh 2>/dev/null
+	fi
+}
+
+ssh_apply_or_restore() {
+	local backup="$1"
+	if ssh_test_config; then
+		ssh_restart_service
+		echo -e "${gl_lv}SSH 配置已应用${gl_bai}"
+	else
+		echo -e "${gl_hong}SSH 配置语法错误，正在恢复备份: $backup${gl_bai}"
+		cp "$backup" "$SSH_CONFIG_FILE"
+		ssh_restart_service
+		return 1
+	fi
+}
+
+ssh_prepare_authorized_keys() {
+	mkdir -p /root/.ssh
+	chmod 700 /root/.ssh
+	touch /root/.ssh/authorized_keys
+	chmod 600 /root/.ssh/authorized_keys
+}
+
+ssh_add_public_key_value() {
+	local public_key="$1"
+	if [ -z "$public_key" ]; then
+		echo -e "${gl_hong}公钥不能为空${gl_bai}"
+		return 1
+	fi
+	if ! echo "$public_key" | grep -Eq '^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp[0-9]+)[[:space:]]+'; then
+		echo -e "${gl_hong}公钥格式不正确，应以 ssh-ed25519、ssh-rsa 或 ecdsa-sha2 开头${gl_bai}"
+		return 1
+	fi
+	ssh_prepare_authorized_keys
+	if grep -qxF "$public_key" /root/.ssh/authorized_keys 2>/dev/null; then
+		echo -e "${gl_huang}公钥已存在，跳过添加${gl_bai}"
+	else
+		echo "$public_key" >> /root/.ssh/authorized_keys
+		echo -e "${gl_lv}公钥已添加${gl_bai}"
+	fi
+	chmod 600 /root/.ssh/authorized_keys
+}
+
+ssh_add_public_key_prompt() {
+	read -e -p "请粘贴 SSH 公钥: " public_key
+	ssh_add_public_key_value "$public_key"
+}
+
+ssh_change_port() {
+	root_use
+	read -e -p "请输入新的 SSH 端口: " new_port
+	if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [ "$new_port" -lt 1 ] || [ "$new_port" -gt 65535 ]; then
+		echo -e "${gl_hong}端口无效${gl_bai}"
+		return 1
+	fi
+	local backup
+	backup=$(ssh_backup_config)
+	ssh_set_option "Port" "$new_port"
+	ssh_apply_or_restore "$backup"
+	if command -v ufw >/dev/null 2>&1; then
+		ufw allow "${new_port}/tcp" >/dev/null 2>&1 || true
+	fi
+}
+
+ssh_password_login_toggle() {
+	root_use
+	echo "1. 关闭密码登录"
+	echo "2. 开启密码登录"
+	read -e -p "请选择: " choice
+	local backup
+	backup=$(ssh_backup_config)
+	case "$choice" in
+		1)
+			ssh_set_option "PasswordAuthentication" "no"
+			ssh_set_option "KbdInteractiveAuthentication" "no"
+			ssh_set_option "ChallengeResponseAuthentication" "no"
+			ssh_set_option "PermitEmptyPasswords" "no"
+			;;
+		2)
+			ssh_set_option "PasswordAuthentication" "yes"
+			ssh_set_option "KbdInteractiveAuthentication" "yes"
+			ssh_set_option "ChallengeResponseAuthentication" "yes"
+			;;
+		*) echo "无效选择"; return 1 ;;
+	esac
+	ssh_apply_or_restore "$backup"
+}
+
+ssh_pubkey_login_toggle() {
+	root_use
+	echo "1. 开启密钥登录"
+	echo "2. 禁用密钥登录"
+	read -e -p "请选择: " choice
+	local backup
+	backup=$(ssh_backup_config)
+	case "$choice" in
+		1)
+			read -e -p "请粘贴 SSH 公钥: " public_key
+			ssh_add_public_key_value "$public_key" || return 1
+			ssh_set_option "PubkeyAuthentication" "yes"
+			ssh_set_option "AuthorizedKeysFile" ".ssh/authorized_keys"
+			;;
+		2)
+			ssh_set_option "PubkeyAuthentication" "no"
+			;;
+		*) echo "无效选择"; return 1 ;;
+	esac
+	ssh_apply_or_restore "$backup"
+}
+
+ssh_one_click_config() {
+	root_use
+	local ssh_port="64400"
+	echo -e "${gl_huang}将执行：关闭密码登录、关闭22端口、改用64400端口、开启密钥登录、启用UFW防火墙。${gl_bai}"
+	read -e -p "请粘贴 SSH 公钥: " public_key
+	ssh_add_public_key_value "$public_key" || return 1
+	local backup
+	backup=$(ssh_backup_config)
+	ssh_set_option "Port" "$ssh_port"
+	ssh_set_option "PubkeyAuthentication" "yes"
+	ssh_set_option "AuthorizedKeysFile" ".ssh/authorized_keys"
+	ssh_set_option "PasswordAuthentication" "no"
+	ssh_set_option "KbdInteractiveAuthentication" "no"
+	ssh_set_option "ChallengeResponseAuthentication" "no"
+	ssh_set_option "PermitEmptyPasswords" "no"
+	ssh_set_option "PermitRootLogin" "prohibit-password"
+	ssh_apply_or_restore "$backup" || return 1
+	install ufw
+	ufw allow "${ssh_port}/tcp" >/dev/null 2>&1 || true
+	yes | ufw delete allow "22/tcp" >/dev/null 2>&1 || true
+	yes | ufw delete allow "22" >/dev/null 2>&1 || true
+	yes | ufw delete allow "OpenSSH" >/dev/null 2>&1 || true
+	ufw deny "22/tcp" >/dev/null 2>&1 || true
+	ufw --force enable >/dev/null 2>&1 || true
+	ufw reload >/dev/null 2>&1 || true
+	echo -e "${gl_lv}SSH 一键配置完成。新端口: ${ssh_port}${gl_bai}"
+	echo -e "${gl_huang}请新开终端测试：ssh -p ${ssh_port} root@服务器IP，确认可登录后再关闭当前连接。${gl_bai}"
+}
+
+ssh_show_keys() {
+	echo -e "${gl_kjlan}公钥 authorized_keys:${gl_bai}"
+	if [ -s /root/.ssh/authorized_keys ]; then
+		nl -ba /root/.ssh/authorized_keys
+	else
+		echo "无"
+	fi
+	echo ""
+	echo -e "${gl_kjlan}私钥文件:${gl_bai}"
+	find /root/.ssh -maxdepth 1 -type f ! -name '*.pub' ! -name 'authorized_keys' ! -name 'known_hosts' ! -name 'config' -printf '%f\n' 2>/dev/null | nl -ba
+}
+
+ssh_delete_public_key() {
+	ssh_prepare_authorized_keys
+	nl -ba /root/.ssh/authorized_keys
+	read -e -p "请输入要删除的公钥行号: " line_no
+	if [[ "$line_no" =~ ^[0-9]+$ ]]; then
+		sed -i "${line_no}d" /root/.ssh/authorized_keys
+		echo "已删除"
+	else
+		echo "无效行号"
+	fi
+}
+
+ssh_add_private_key() {
+	mkdir -p /root/.ssh
+	chmod 700 /root/.ssh
+	read -e -p "请输入私钥文件名（例如 id_ed25519）: " key_name
+	[ -z "$key_name" ] && echo "文件名不能为空" && return 1
+	key_name=$(basename "$key_name")
+	echo "请粘贴私钥内容，输入单独一行 EOF 结束："
+	cat > "/root/.ssh/$key_name" <<'KEY_PLACEHOLDER'
+KEY_PLACEHOLDER
+	while IFS= read -r line; do
+		[ "$line" = "EOF" ] && break
+		echo "$line" >> "/root/.ssh/$key_name"
+	done
+	chmod 600 "/root/.ssh/$key_name"
+	echo "私钥已保存: /root/.ssh/$key_name"
+}
+
+ssh_delete_private_key() {
+	local keys=()
+	local f
+	while IFS= read -r f; do keys+=("$f"); done < <(find /root/.ssh -maxdepth 1 -type f ! -name '*.pub' ! -name 'authorized_keys' ! -name 'known_hosts' ! -name 'config' -printf '%f\n' 2>/dev/null)
+	[ ${#keys[@]} -eq 0 ] && echo "暂无私钥" && return 0
+	for i in "${!keys[@]}"; do echo "$((i+1)). ${keys[$i]}"; done
+	read -e -p "请输入要删除的私钥编号: " idx
+	if [[ "$idx" =~ ^[0-9]+$ ]] && [ "$idx" -ge 1 ] && [ "$idx" -le ${#keys[@]} ]; then
+		rm -f "/root/.ssh/${keys[$((idx-1))]}"
+		echo "已删除"
+	else
+		echo "无效编号"
+	fi
+}
+
+ssh_key_manager() {
+	root_use
+	while true; do
+		clear
+		echo "SSH 公钥和私钥管理"
+		echo "------------------------"
+		ssh_show_keys
+		echo "------------------------"
+		echo "1. 添加公钥"
+		echo "2. 删除公钥"
+		echo "3. 添加私钥"
+		echo "4. 删除私钥"
+		echo "0. 返回上一级"
+		read -e -p "请选择: " choice
+		case "$choice" in
+			1) ssh_add_public_key_prompt ;;
+			2) ssh_delete_public_key ;;
+			3) ssh_add_private_key ;;
+			4) ssh_delete_private_key ;;
+			0) break ;;
+			*) echo "无效选择" ;;
+		esac
+		break_end
+	done
+}
+
+ssh_edit_config() {
+	root_use
+	local backup
+	backup=$(ssh_backup_config)
+	vim "$SSH_CONFIG_FILE"
+	ssh_apply_or_restore "$backup"
+}
+
+ssh_config_manager() {
+	while true; do
+		clear
+		echo "SSH 配置"
+		echo "------------------------"
+		echo "1. 修改 SSH 端口"
+		echo "2. 禁用/开启密码登录"
+		echo "3. 开启/禁用密钥登录（开启时需要粘贴公钥）"
+		echo "4. 一键配置（端口64400、关闭密码、开启密钥、UFW关闭22端口）"
+		echo "5. 公钥和私钥管理"
+		echo "6. 修改 sshd_config 配置文件"
+		echo "0. 返回主菜单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) ssh_change_port ;;
+			2) ssh_password_login_toggle ;;
+			3) ssh_pubkey_login_toggle ;;
+			4) ssh_one_click_config ;;
+			5) ssh_key_manager ;;
+			6) ssh_edit_config ;;
+			0) kejilion ;;
+			*) echo "无效选择" ;;
+		esac
+		break_end
+	done
+}
+
+ufw_manager() {
+	while true; do
+		clear
+		echo "UFW 防火墙管理"
+		echo "------------------------"
+		if command -v ufw >/dev/null 2>&1; then
+			ufw status 2>/dev/null | head -n 12
+		else
+			echo "当前状态: 未安装"
+		fi
+		echo "------------------------"
+		echo "1. 安装 UFW（安装并启用防火墙）"
+		echo "2. 卸载 UFW（仅卸载程序，不自动清理云厂商安全组）"
+		echo "3. 开放端口（例: 80 或 80/tcp，会执行 ufw allow）"
+		echo "4. 删除端口规则（例: 80 或 80/tcp，会执行 ufw delete allow）"
+		echo "0. 返回主菜单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				root_use
+				install ufw
+				ufw --force enable
+				ufw status
+				;;
+			2)
+				root_use
+				read -e -p "确认卸载 UFW？(y/N): " confirm
+				if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+					ufw disable 2>/dev/null || true
+					remove ufw
+				else
+					echo "已取消"
+				fi
+				;;
+			3)
+				root_use
+				command -v ufw >/dev/null 2>&1 || install ufw
+				read -e -p "请输入要开放的端口/协议（如 80 或 80/tcp）: " port
+				[ -n "$port" ] && ufw allow "$port" && ufw status numbered
+				;;
+			4)
+				root_use
+				command -v ufw >/dev/null 2>&1 || { echo "UFW 未安装"; break_end; continue; }
+				read -e -p "请输入要删除的端口/协议（如 80 或 80/tcp）: " port
+				[ -n "$port" ] && ufw delete allow "$port" && ufw status numbered
+				;;
+			0) kejilion ;;
+			*) echo "无效选择" ;;
+		esac
+		break_end
+	done
+}
+
+
+
+rclone_status_text() {
+	if command -v rclone >/dev/null 2>&1; then
+		rclone version 2>/dev/null | head -n 1 | awk '{print $2}'
+	else
+		echo "未安装"
+	fi
+}
+
+rclone_prepare_config() {
+	local conf_dir="/root/.config/rclone"
+	local conf_file="$conf_dir/rclone.conf"
+	mkdir -p "$conf_dir"
+	touch "$conf_file"
+	chmod 700 "$conf_dir" 2>/dev/null || true
+	chmod 600 "$conf_file" 2>/dev/null || true
+}
+
+rclone_install_tool() {
+	root_use
+	install curl unzip
+	daimon_run_cached_script "https://rclone.org/install.sh" "rclone-install.sh"
+	rclone_prepare_config
+	echo -e "${gl_lv}rclone 安装完成${gl_bai}"
+	rclone version 2>/dev/null || true
+	echo -e "${gl_kjlan}配置文件: /root/.config/rclone/rclone.conf${gl_bai}"
+}
+
+rclone_edit_config() {
+	root_use
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo -e "${gl_huang}rclone 未安装，请先安装。${gl_bai}"
+		return
+	fi
+	rclone_prepare_config
+	vim /root/.config/rclone/rclone.conf
+	chmod 600 /root/.config/rclone/rclone.conf 2>/dev/null || true
+	echo -e "${gl_lv}配置文件权限已设置为 600${gl_bai}"
+	echo -e "${gl_kjlan}当前远程存储:${gl_bai}"
+	rclone listremotes 2>/dev/null || true
+}
+
+rclone_uninstall_tool() {
+	root_use
+	read -e -p "确认卸载 rclone？(y/N): " confirm
+	[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return; }
+	if command -v apt >/dev/null 2>&1; then
+		apt remove -y rclone 2>/dev/null || true
+	elif command -v dnf >/dev/null 2>&1; then
+		dnf remove -y rclone 2>/dev/null || true
+	elif command -v yum >/dev/null 2>&1; then
+		yum remove -y rclone 2>/dev/null || true
+	elif command -v apk >/dev/null 2>&1; then
+		apk del rclone 2>/dev/null || true
+	fi
+	rm -f /usr/bin/rclone /usr/local/bin/rclone 2>/dev/null || true
+	read -e -p "是否同时删除 /root/.config/rclone 配置目录？(y/N): " remove_conf
+	if [ "$remove_conf" = "y" ] || [ "$remove_conf" = "Y" ]; then
+		rm -rf /root/.config/rclone
+	fi
+	echo -e "${gl_lv}rclone 卸载完成${gl_bai}"
+}
+
+rclone_manager() {
+	while true; do
+		clear
+		echo -e "rclone 配置"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo -e "当前版本: ${gl_huang}$(rclone_status_text)${gl_bai}"
+		echo -e "配置文件: ${gl_kjlan}/root/.config/rclone/rclone.conf${gl_bai}"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo -e "${gl_kjlan}1.   ${gl_bai}安装 rclone（自动创建配置文件并设置权限）"
+		echo -e "${gl_kjlan}2.   ${gl_bai}修改配置文件"
+		echo -e "${gl_kjlan}3.   ${gl_bai}卸载 rclone"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		read -e -p "请输入你的选择: " sub_choice
+		case $sub_choice in
+			1) rclone_install_tool ;;
+			2) rclone_edit_config ;;
+			3) rclone_uninstall_tool ;;
+			0) kejilion ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+
+
 
 kejilion_update() {
 	clear
-	echo "daimon 脚本更新"
+	echo "linux-tools-daimon 脚本更新"
 	echo "------------------------"
 	if [ -z "$DAIMON_UPDATE_URL" ]; then
 		echo "当前未配置 DAIMON_UPDATE_URL。"
@@ -20647,7 +21130,7 @@ kejilion_update() {
 		mv -f "$tmp_file" ~/daimon.sh
 		cp -f ~/daimon.sh /usr/local/bin/d >/dev/null 2>&1
 		ln -sf /usr/local/bin/d /usr/bin/d >/dev/null 2>&1
-		echo -e "${gl_lv}daimon 已更新${gl_bai}"
+		echo -e "${gl_lv}linux-tools-daimon 已更新${gl_bai}"
 	else
 		rm -f "$tmp_file"
 		echo -e "${gl_hong}更新失败${gl_bai}"
@@ -20668,7 +21151,7 @@ echo -e "${gl_kjlan}"
 echo "╔╦╗╔═╗╦╔╦╗╔═╗╔╗╔"
 echo " ║║╠═╣║║║║║ ║║║║"
 echo "═╩╝╩ ╩╩╩ ╩╚═╝╝╚╝"
-echo -e "daimon脚本工具箱 v$sh_v"
+echo -e "linux-tools-daimon v$sh_v"
 echo -e "命令行输入${gl_huang}d${gl_kjlan}可快速启动脚本${gl_bai}"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}1.   ${gl_bai}系统信息查询"
@@ -20684,6 +21167,9 @@ echo -e "${gl_kjlan}10.  ${gl_bai}常用的一键脚本 ${gl_huang}★${gl_bai}"
 echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理 ${gl_huang}★${gl_bai}"
 echo -e "${gl_kjlan}12.  ${gl_bai}应用市场"
 echo -e "${gl_kjlan}13.  ${gl_bai}系统工具"
+echo -e "${gl_kjlan}14.  ${gl_bai}rclone配置 ${gl_huang}$(rclone_status_text)${gl_bai}"
+echo -e "${gl_kjlan}15.  ${gl_bai}SSH配置"
+echo -e "${gl_kjlan}16.  ${gl_bai}UFW防火墙管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -20704,6 +21190,9 @@ case $choice in
   11) ssl_nginx_manager ;;
   12) linux_panel ;;
   13) linux_Settings ;;
+  14) rclone_manager ;;
+  15) ssh_config_manager ;;
+  16) ufw_manager ;;
   00) kejilion_update ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
