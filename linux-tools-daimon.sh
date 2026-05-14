@@ -5396,332 +5396,6 @@ clear
 
 
 
-dd_xitong() {
-		send_stats "重装系统"
-		dd_xitong_MollyLau() {
-			daimon_download "${gh_proxy}raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh" "InstallNET.sh"
-
-		}
-
-		dd_xitong_bin456789() {
-			daimon_download "${gh_proxy}raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh" "reinstall.sh"
-		}
-
-		dd_xitong_1() {
-		  echo -e "重装后初始用户名: ${gl_huang}root${gl_bai}  初始密码: ${gl_huang}LeitboGi0ro${gl_bai}  初始端口: ${gl_huang}22${gl_bai}"
-		  echo -e "${gl_huang}重装后请及时修改初始密码，防止暴力入侵。命令行输入passwd修改密码${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  install wget
-		  dd_xitong_MollyLau
-		}
-
-		dd_xitong_2() {
-		  echo -e "重装后初始用户名: ${gl_huang}Administrator${gl_bai}  初始密码: ${gl_huang}Teddysun.com${gl_bai}  初始端口: ${gl_huang}3389${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  install wget
-		  dd_xitong_MollyLau
-		}
-
-		dd_xitong_3() {
-		  echo -e "重装后初始用户名: ${gl_huang}root${gl_bai}  初始密码: ${gl_huang}123@@@${gl_bai}  初始端口: ${gl_huang}22${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  dd_xitong_bin456789
-		}
-
-		dd_xitong_4() {
-		  echo -e "重装后初始用户名: ${gl_huang}Administrator${gl_bai}  初始密码: ${gl_huang}123@@@${gl_bai}  初始端口: ${gl_huang}3389${gl_bai}"
-		  echo -e "按任意键继续..."
-		  read -n 1 -s -r -p ""
-		  dd_xitong_bin456789
-		}
-
-		  while true; do
-			root_use
-			echo "重装系统"
-			echo "--------------------------------"
-			echo -e "${gl_hong}注意: ${gl_bai}重装有风险失联，不放心者慎用。重装预计花费15分钟，请提前备份数据。"
-			echo -e "${gl_hui}感谢bin456789大佬和leitbogioro大佬的脚本支持！${gl_bai} "
-			echo -e "${gl_hui}bin456789项目地址: ${gh_https_url}github.com/bin456789/reinstall${gl_bai}"
-			echo -e "${gl_hui}leitbogioro项目地址: ${gh_https_url}github.com/leitbogioro/Tools${gl_bai}"
-			echo "------------------------"
-			echo "1. Debian 13                  2. Debian 12"
-			echo "3. Debian 11                  4. Debian 10"
-			echo "------------------------"
-			echo "11. Ubuntu 26.04              12. Ubuntu 24.04"
-			echo "13. Ubuntu 22.04              14. Ubuntu 20.04"
-			echo "------------------------"
-			echo "21. Rocky Linux 10            22. Rocky Linux 9"
-			echo "23. Alma Linux 10             24. Alma Linux 9"
-			echo "25. oracle Linux 10           26. oracle Linux 9"
-			echo "27. Fedora Linux 44           28. Fedora Linux 43"
-			echo "29. CentOS 10                 30. CentOS 9"
-			echo "------------------------"
-			echo "31. Alpine Linux              32. Arch Linux"
-			echo "33. Kali Linux                34. openEuler"
-			echo "35. openSUSE Tumbleweed       36. fnos飞牛公测版"
-			echo "------------------------"
-			echo "41. Windows 11                42. Windows 10"
-			echo "43. Windows 7                 44. Windows Server 2025"
-			echo "45. Windows Server 2022       46. Windows Server 2019"
-			echo "47. Windows 11 ARM"
-			echo "------------------------"
-			echo "0. 返回上一级选单"
-			echo "------------------------"
-			read -e -p "请选择要重装的系统: " sys_choice
-			case "$sys_choice" in
-
-
-			  1)
-				send_stats "重装debian 13"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" debian 13
-				reboot
-				exit
-				;;
-
-			  2)
-				send_stats "重装debian 12"
-				dd_xitong_1
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -debian 12
-				reboot
-				exit
-				;;
-			  3)
-				send_stats "重装debian 11"
-				dd_xitong_1
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -debian 11
-				reboot
-				exit
-				;;
-			  4)
-				send_stats "重装debian 10"
-				dd_xitong_1
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -debian 10
-				reboot
-				exit
-				;;
-			  11)
-				send_stats "重装ubuntu 26.04"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" ubuntu 26.04
-				reboot
-				exit
-				;;
-			  12)
-				send_stats "重装ubuntu 24.04"
-				dd_xitong_1
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -ubuntu 24.04
-				reboot
-				exit
-				;;
-			  13)
-				send_stats "重装ubuntu 22.04"
-				dd_xitong_1
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -ubuntu 22.04
-				reboot
-				exit
-				;;
-			  14)
-				send_stats "重装ubuntu 20.04"
-				dd_xitong_1
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -ubuntu 20.04
-				reboot
-				exit
-				;;
-
-			  21)
-				send_stats "重装rockylinux10"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" rocky
-				reboot
-				exit
-				;;
-
-			  22)
-				send_stats "重装rockylinux9"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" rocky 9
-				reboot
-				exit
-				;;
-
-			  23)
-				send_stats "重装alma10"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" almalinux
-				reboot
-				exit
-				;;
-
-			  24)
-				send_stats "重装alma9"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" almalinux 9
-				reboot
-				exit
-				;;
-
-			  25)
-				send_stats "重装oracle10"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" oracle
-				reboot
-				exit
-				;;
-
-			  26)
-				send_stats "重装oracle9"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" oracle 9
-				reboot
-				exit
-				;;
-
-			  27)
-				send_stats "重装fedora44"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" fedora 44
-				reboot
-				exit
-				;;
-
-			  28)
-				send_stats "重装fedora43"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" fedora 43
-				reboot
-				exit
-				;;
-
-			  29)
-				send_stats "重装centos10"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" centos 10
-				reboot
-				exit
-				;;
-
-			  30)
-				send_stats "重装centos9"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" centos 9
-				reboot
-				exit
-				;;
-
-			  31)
-				send_stats "重装alpine"
-				dd_xitong_1
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -alpine
-				reboot
-				exit
-				;;
-
-			  32)
-				send_stats "重装arch"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" arch
-				reboot
-				exit
-				;;
-
-			  33)
-				send_stats "重装kali"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" kali
-				reboot
-				exit
-				;;
-
-			  34)
-				send_stats "重装openeuler"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" openeuler
-				reboot
-				exit
-				;;
-
-			  35)
-				send_stats "重装opensuse"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" opensuse
-				reboot
-				exit
-				;;
-
-			  36)
-				send_stats "重装飞牛"
-				dd_xitong_3
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" fnos
-				reboot
-				exit
-				;;
-
-			  41)
-				send_stats "重装windows11"
-				dd_xitong_2
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 11 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  42)
-				dd_xitong_2
-				send_stats "重装windows10"
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 10 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  43)
-				send_stats "重装windows7"
-				dd_xitong_4
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" windows --iso="https://drive.massgrave.dev/cn_windows_7_professional_with_sp1_x64_dvd_u_677031.iso" --image-name='Windows 7 PROFESSIONAL'
-				reboot
-				exit
-				;;
-
-			  44)
-				send_stats "重装windows server 25"
-				dd_xitong_2
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 2025 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  45)
-				send_stats "重装windows server 22"
-				dd_xitong_2
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 2022 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  46)
-				send_stats "重装windows server 19"
-				dd_xitong_2
-				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 2019 -lang "cn"
-				reboot
-				exit
-				;;
-
-			  47)
-				send_stats "重装windows11 ARM"
-				dd_xitong_4
-				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" dd --img https://r2.hotdog.eu.org/win11-arm-with-pagefile-15g.xz
-				reboot
-				exit
-				;;
-
-			  *)
-				break
-				;;
-			esac
-		  done
-}
 
 
 bbrv3() {
@@ -8848,10 +8522,9 @@ linux_Oracle() {
 	  echo -e "${gl_kjlan}1.   ${gl_bai}安装闲置机器活跃脚本"
 	  echo -e "${gl_kjlan}2.   ${gl_bai}卸载闲置机器活跃脚本"
 	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}DD重装系统脚本"
-	  echo -e "${gl_kjlan}4.   ${gl_bai}R探长开机脚本"
-	  echo -e "${gl_kjlan}5.   ${gl_bai}开启ROOT密码登录模式"
-	  echo -e "${gl_kjlan}6.   ${gl_bai}IPV6恢复工具"
+	  echo -e "${gl_kjlan}3.   ${gl_bai}R探长开机脚本"
+	  echo -e "${gl_kjlan}4.   ${gl_bai}开启ROOT密码登录模式"
+	  echo -e "${gl_kjlan}5.   ${gl_bai}IPV6恢复工具"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -8913,56 +8586,15 @@ linux_Oracle() {
 			  ;;
 
 		  3)
-		  clear
-		  echo "重装系统"
-		  echo "--------------------------------"
-		  echo -e "${gl_hong}注意: ${gl_bai}重装有风险失联，不放心者慎用。重装预计花费15分钟，请提前备份数据。"
-		  read -e -p "确定继续吗？(Y/N): " choice
-
-		  case "$choice" in
-			[Yy])
-			  while true; do
-				read -e -p "请选择要重装的系统:  1. Debian12 | 2. Ubuntu20.04 : " sys_choice
-
-				case "$sys_choice" in
-				  1)
-					local xitong="-d 12"
-					break  # 结束循环
-					;;
-				  2)
-					local xitong="-u 20.04"
-					break  # 结束循环
-					;;
-				  *)
-					echo "无效的选择，请重新输入。"
-					;;
-				esac
-			  done
-
-			  read -e -p "请输入你重装后的密码: " vpspasswd
-			  install wget
-			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/MoeClub/Note/master/InstallNET.sh" "MoeClub-InstallNET.sh" $xitong -v 64 -p "$vpspasswd" -port 22
-			  send_stats "甲骨文云重装系统脚本"
-			  ;;
-			[Nn])
-			  echo "已取消"
-			  ;;
-			*)
-			  echo "无效的选择，请输入 Y 或 N。"
-			  ;;
-		  esac
-			  ;;
-
-		  4)
 			  clear
 			  send_stats "R探长开机脚本"
 			  daimon_run_cached_script "${gh_proxy}github.com/Yohann0617/oci-helper/releases/latest/download/sh_oci-helper_install.sh" "oci-helper-install.sh"
 			  ;;
-		  5)
+		  4)
 			  clear
 			  add_sshpasswd
 			  ;;
-		  6)
+		  5)
 			  clear
 			  daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"
 			  echo "该功能由jhb大神提供，感谢他！"
@@ -18920,169 +18552,6 @@ EOF
 
 
 
-dd_reinstall_show_systems() {
-	cat << 'EOF'
-支持的 DD/重装系统：
-  anolis      7|8|23
-  rocky       8|9|10
-  oracle      8|9|10
-  almalinux   8|9|10
-  opencloudos 8|9|23
-  centos      9|10
-  fnos        1
-  nixos       25.11
-  fedora      43|44
-  debian      9|10|11|12|13
-  opensuse    16.0|tumbleweed
-  openeuler   20.03|22.03|24.03
-  alpine      3.20|3.21|3.22|3.23
-  ubuntu      18.04|20.04|22.04|24.04|26.04 [--minimal]
-  kali
-  arch
-  gentoo
-  aosc
-  redhat      --img="http://access.cdn.redhat.com/xxx.qcow2"
-EOF
-}
-
-dd_reinstall_versions() {
-	case "$1" in
-		anolis) echo "7 8 23" ;;
-		rocky) echo "8 9 10" ;;
-		oracle) echo "8 9 10" ;;
-		almalinux) echo "8 9 10" ;;
-		opencloudos) echo "8 9 23" ;;
-		centos) echo "9 10" ;;
-		fnos) echo "1" ;;
-		nixos) echo "25.11" ;;
-		fedora) echo "43 44" ;;
-		debian) echo "9 10 11 12 13" ;;
-		opensuse) echo "16.0 tumbleweed" ;;
-		openeuler) echo "20.03 22.03 24.03" ;;
-		alpine) echo "3.20 3.21 3.22 3.23" ;;
-		ubuntu) echo "18.04 20.04 22.04 24.04 26.04" ;;
-		kali|arch|gentoo|aosc) echo "" ;;
-		redhat) echo "--img=" ;;
-		*) return 1 ;;
-	esac
-}
-
-dd_reinstall_default_param() {
-	case "$1" in
-		ubuntu) echo "22.04" ;;
-		anolis) echo "7" ;;
-		rocky|oracle|almalinux|opencloudos) echo "8" ;;
-		centos) echo "9" ;;
-		fnos) echo "1" ;;
-		nixos) echo "25.11" ;;
-		fedora) echo "43" ;;
-		debian) echo "12" ;;
-		opensuse) echo "16.0" ;;
-		openeuler) echo "24.03" ;;
-		alpine) echo "3.22" ;;
-		kali|arch|gentoo|aosc) echo "" ;;
-		redhat) echo "" ;;
-	esac
-}
-
-dd_reinstall_validate_params() {
-	local system="$1"
-	local params="$2"
-	local versions version extra
-	versions=$(dd_reinstall_versions "$system") || return 1
-
-	case "$system" in
-		kali|arch|gentoo|aosc)
-			[ -n "$params" ] && { echo "$system 不需要版本参数，请留空。"; return 1; }
-			return 0
-			;;
-		redhat)
-			echo "$params" | grep -Eq '^--img=https?://.+' || { echo 'redhat 必须填写 --img=http(s)://xxx.qcow2'; return 1; }
-			return 0
-			;;
-		ubuntu)
-			version=$(echo "$params" | awk '{print $1}')
-			extra=$(echo "$params" | cut -d' ' -f2-)
-			echo " $versions " | grep -q " $version " || { echo "ubuntu 参数无效，支持：$versions [--minimal]"; return 1; }
-			if [ -n "$extra" ] && [ "$extra" != "$version" ] && [ "$extra" != "--minimal" ]; then
-				echo "ubuntu 只允许额外参数 --minimal"
-				return 1
-			fi
-			return 0
-			;;
-		*)
-			version=$(echo "$params" | awk '{print $1}')
-			[ "$params" != "$version" ] && { echo "$system 只允许一个版本参数，支持：$versions"; return 1; }
-			echo " $versions " | grep -q " $version " || { echo "$system 参数无效，支持：$versions"; return 1; }
-			return 0
-			;;
-	esac
-}
-
-dd_reinstall_manager() {
-	root_use
-	clear
-	send_stats "DD重装系统"
-	echo "DD重装系统（bin456789/reinstall）"
-	echo "------------------------------------------------"
-	echo -e "${gl_hong}注意：DD/重装会清空当前服务器硬盘数据，请确认已备份重要数据！${gl_bai}"
-	echo "------------------------------------------------"
-	dd_reinstall_show_systems
-	echo "------------------------------------------------"
-
-	local source_choice system dd_params default_params ssh_port ssh_password script_url cmd_preview
-	read -e -p "请选择脚本下载源：1. 国内  2. 国外（默认2）: " source_choice
-	source_choice=${source_choice:-2}
-	case "$source_choice" in
-		1) script_url="https://cnb.cool/bin456789/reinstall/-/git/raw/main/reinstall.sh" ;;
-		2) script_url="https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh" ;;
-		*) echo "无效选择"; return 1 ;;
-	esac
-
-	read -e -p "请输入系统名称（默认 ubuntu）: " system
-	system=${system:-ubuntu}
-	system=$(echo "$system" | tr '[:upper:]' '[:lower:]')
-	dd_reinstall_versions "$system" >/dev/null 2>&1 || { echo "不支持的系统：$system"; return 1; }
-
-	default_params=$(dd_reinstall_default_param "$system")
-	if [ -n "$default_params" ]; then
-		read -e -p "请输入系统参数（默认 $default_params；例如 ubuntu 可填：22.04 或 22.04 --minimal）: " dd_params
-		dd_params=${dd_params:-$default_params}
-	else
-		read -e -p "请输入系统参数（默认留空；redhat 必须填 --img=http(s)://xxx.qcow2）: " dd_params
-	fi
-	dd_reinstall_validate_params "$system" "$dd_params" || return 1
-
-	read -e -p "请输入 SSH 端口（默认 22）: " ssh_port
-	ssh_port=${ssh_port:-22}
-	if ! [[ "$ssh_port" =~ ^[0-9]+$ ]] || [ "$ssh_port" -lt 1 ] || [ "$ssh_port" -gt 65535 ]; then
-		echo "SSH端口无效"
-		return 1
-	fi
-
-	read -e -p "请输入 root 密码（默认 Hopasd123Uh2）: " ssh_password
-	ssh_password=${ssh_password:-Hopasd123Uh2}
-
-	local -a param_arr cmd_arr
-	# 这里只做交互界面，不把 reinstall.sh 保存到本地，直接通过 bash 运行远程脚本
-	read -r -a param_arr <<< "$dd_params"
-	cmd_arr=("$system" "${param_arr[@]}" --password "$ssh_password" --ssh-port "$ssh_port")
-	printf -v cmd_preview 'bash <(curl -fsSL %q)' "$script_url"
-	local arg
-	for arg in "${cmd_arr[@]}"; do
-		printf -v cmd_preview '%s %q' "$cmd_preview" "$arg"
-	done
-	echo "------------------------------------------------"
-	echo "即将执行："
-	echo "$cmd_preview"
-	echo "------------------------------------------------"
-	echo -e "${gl_hong}再次确认：该操作会清空当前系统硬盘数据！${gl_bai}"
-	read -e -p "确认开始DD/重装吗？请输入 YES 确认: " confirm
-	[ "$confirm" != "YES" ] && echo "已取消" && return 0
-
-	bash <(curl -fsSL "$script_url") "${cmd_arr[@]}"
-}
-
 github_proxy_sources_file() {
 	echo "$DAIMON_SCRIPT_DIR/github_proxy_sources.txt"
 }
@@ -19281,6 +18750,71 @@ github_proxy_manager() {
 		esac
 		break_end
 	done
+}
+
+
+dd_installnet_manager() {
+	root_use
+	clear
+	send_stats "DD重装系统"
+	echo "DD重装系统（leitbogioro/Tools InstallNET）"
+	echo "------------------------------------------------"
+	echo -e "${gl_hong}注意：DD/重装会清空当前服务器硬盘数据，请确认已备份重要数据！${gl_bai}"
+	echo "脚本来源：https://github.com/leitbogioro/Tools"
+	echo "默认系统：Ubuntu 22.04"
+	echo "默认登录：root / LeitboGi0ro / 原 SSH 端口"
+	echo "------------------------------------------------"
+
+	local ubuntu_version root_pwd script_url script_path cmd_preview confirm reboot_choice
+	read -e -p "请输入 Ubuntu 版本（默认 22.04）: " ubuntu_version
+	ubuntu_version=${ubuntu_version:-22.04}
+
+	case "$ubuntu_version" in
+		18.04|20.04|22.04|24.04)
+			;;
+		*)
+			echo "暂只支持 Ubuntu 18.04 / 20.04 / 22.04 / 24.04"
+			return 1
+			;;
+	esac
+
+	read -e -p "请输入重装后的 root 密码（默认 LeitboGi0ro）: " root_pwd
+	root_pwd=${root_pwd:-LeitboGi0ro}
+
+	script_url="https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh"
+	script_path="/root/InstallNET.sh"
+
+	if command -v apt >/dev/null 2>&1; then
+		apt update -y
+	fi
+	install wget
+
+	echo "正在下载 InstallNET.sh 到: $script_path"
+	wget --no-check-certificate -qO "$script_path" "$script_url" || {
+		echo "InstallNET.sh 下载失败"
+		return 1
+	}
+	chmod a+x "$script_path"
+
+	printf -v cmd_preview 'bash %q -ubuntu %q -pwd %q' "$script_path" "$ubuntu_version" "$root_pwd"
+	echo "------------------------------------------------"
+	echo "即将执行："
+	echo "$cmd_preview"
+	echo "------------------------------------------------"
+	echo -e "${gl_hong}再次确认：该操作会重装系统并清空当前数据！${gl_bai}"
+	read -e -p "确认开始 DD/重装吗？请输入 YES 确认: " confirm
+	[ "$confirm" != "YES" ] && echo "已取消" && return 0
+
+	bash "$script_path" -ubuntu "$ubuntu_version" -pwd "$root_pwd"
+
+	echo "------------------------------------------------"
+	echo "InstallNET.sh 已执行完成。通常需要重启后等待 7-8 分钟左右。"
+	echo "重装后使用 root / $root_pwd / 原 SSH 端口登录。"
+	read -e -p "是否现在重启服务器？(Y/N): " reboot_choice
+	case "$reboot_choice" in
+		[Yy]) reboot ;;
+		*) echo "已取消自动重启，请确认无误后手动执行 reboot" ;;
+	esac
 }
 
 
@@ -19724,7 +19258,7 @@ EOF
 			  ;;
 
 		  12)
-			  dd_reinstall_manager
+			  dd_installnet_manager
 			  ;;
 
 		  13)
@@ -21081,9 +20615,6 @@ else
 			;;
 		clean|清理)
 			linux_clean
-			;;
-		dd|重装)
-			dd_xitong
 			;;
 		bbr3|bbrv3)
 			bbrv3
