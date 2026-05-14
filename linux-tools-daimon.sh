@@ -18919,6 +18919,170 @@ EOF
 
 
 
+
+dd_reinstall_show_systems() {
+	cat << 'EOF'
+支持的 DD/重装系统：
+  anolis      7|8|23
+  rocky       8|9|10
+  oracle      8|9|10
+  almalinux   8|9|10
+  opencloudos 8|9|23
+  centos      9|10
+  fnos        1
+  nixos       25.11
+  fedora      43|44
+  debian      9|10|11|12|13
+  opensuse    16.0|tumbleweed
+  openeuler   20.03|22.03|24.03
+  alpine      3.20|3.21|3.22|3.23
+  ubuntu      18.04|20.04|22.04|24.04|26.04 [--minimal]
+  kali
+  arch
+  gentoo
+  aosc
+  redhat      --img="http://access.cdn.redhat.com/xxx.qcow2"
+EOF
+}
+
+dd_reinstall_versions() {
+	case "$1" in
+		anolis) echo "7 8 23" ;;
+		rocky) echo "8 9 10" ;;
+		oracle) echo "8 9 10" ;;
+		almalinux) echo "8 9 10" ;;
+		opencloudos) echo "8 9 23" ;;
+		centos) echo "9 10" ;;
+		fnos) echo "1" ;;
+		nixos) echo "25.11" ;;
+		fedora) echo "43 44" ;;
+		debian) echo "9 10 11 12 13" ;;
+		opensuse) echo "16.0 tumbleweed" ;;
+		openeuler) echo "20.03 22.03 24.03" ;;
+		alpine) echo "3.20 3.21 3.22 3.23" ;;
+		ubuntu) echo "18.04 20.04 22.04 24.04 26.04" ;;
+		kali|arch|gentoo|aosc) echo "" ;;
+		redhat) echo "--img=" ;;
+		*) return 1 ;;
+	esac
+}
+
+dd_reinstall_default_param() {
+	case "$1" in
+		ubuntu) echo "22.04" ;;
+		anolis) echo "7" ;;
+		rocky|oracle|almalinux|opencloudos) echo "8" ;;
+		centos) echo "9" ;;
+		fnos) echo "1" ;;
+		nixos) echo "25.11" ;;
+		fedora) echo "43" ;;
+		debian) echo "12" ;;
+		opensuse) echo "16.0" ;;
+		openeuler) echo "24.03" ;;
+		alpine) echo "3.22" ;;
+		kali|arch|gentoo|aosc) echo "" ;;
+		redhat) echo "" ;;
+	esac
+}
+
+dd_reinstall_validate_params() {
+	local system="$1"
+	local params="$2"
+	local versions version extra
+	versions=$(dd_reinstall_versions "$system") || return 1
+
+	case "$system" in
+		kali|arch|gentoo|aosc)
+			[ -n "$params" ] && { echo "$system 不需要版本参数，请留空。"; return 1; }
+			return 0
+			;;
+		redhat)
+			echo "$params" | grep -Eq '^--img=https?://.+' || { echo 'redhat 必须填写 --img=http(s)://xxx.qcow2'; return 1; }
+			return 0
+			;;
+		ubuntu)
+			version=$(echo "$params" | awk '{print $1}')
+			extra=$(echo "$params" | cut -d' ' -f2-)
+			echo " $versions " | grep -q " $version " || { echo "ubuntu 参数无效，支持：$versions [--minimal]"; return 1; }
+			if [ -n "$extra" ] && [ "$extra" != "$version" ] && [ "$extra" != "--minimal" ]; then
+				echo "ubuntu 只允许额外参数 --minimal"
+				return 1
+			fi
+			return 0
+			;;
+		*)
+			version=$(echo "$params" | awk '{print $1}')
+			[ "$params" != "$version" ] && { echo "$system 只允许一个版本参数，支持：$versions"; return 1; }
+			echo " $versions " | grep -q " $version " || { echo "$system 参数无效，支持：$versions"; return 1; }
+			return 0
+			;;
+	esac
+}
+
+dd_reinstall_manager() {
+	root_use
+	clear
+	send_stats "DD重装系统"
+	echo "DD重装系统（bin456789/reinstall）"
+	echo "------------------------------------------------"
+	echo -e "${gl_hong}注意：DD/重装会清空当前服务器硬盘数据，请确认已备份重要数据！${gl_bai}"
+	echo "------------------------------------------------"
+	dd_reinstall_show_systems
+	echo "------------------------------------------------"
+
+	local source_choice system dd_params default_params ssh_port ssh_password script_url cmd_preview
+	read -e -p "请选择脚本下载源：1. 国内  2. 国外（默认2）: " source_choice
+	source_choice=${source_choice:-2}
+	case "$source_choice" in
+		1) script_url="https://cnb.cool/bin456789/reinstall/-/git/raw/main/reinstall.sh" ;;
+		2) script_url="https://raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh" ;;
+		*) echo "无效选择"; return 1 ;;
+	esac
+
+	read -e -p "请输入系统名称（默认 ubuntu）: " system
+	system=${system:-ubuntu}
+	system=$(echo "$system" | tr '[:upper:]' '[:lower:]')
+	dd_reinstall_versions "$system" >/dev/null 2>&1 || { echo "不支持的系统：$system"; return 1; }
+
+	default_params=$(dd_reinstall_default_param "$system")
+	if [ -n "$default_params" ]; then
+		read -e -p "请输入系统参数（默认 $default_params；例如 ubuntu 可填：22.04 或 22.04 --minimal）: " dd_params
+		dd_params=${dd_params:-$default_params}
+	else
+		read -e -p "请输入系统参数（默认留空；redhat 必须填 --img=http(s)://xxx.qcow2）: " dd_params
+	fi
+	dd_reinstall_validate_params "$system" "$dd_params" || return 1
+
+	read -e -p "请输入 SSH 端口（默认 22）: " ssh_port
+	ssh_port=${ssh_port:-22}
+	if ! [[ "$ssh_port" =~ ^[0-9]+$ ]] || [ "$ssh_port" -lt 1 ] || [ "$ssh_port" -gt 65535 ]; then
+		echo "SSH端口无效"
+		return 1
+	fi
+
+	read -e -p "请输入 root 密码（默认 Hopasd123Uh2）: " ssh_password
+	ssh_password=${ssh_password:-Hopasd123Uh2}
+
+	local -a param_arr cmd_arr
+	# 这里只做交互界面，不把 reinstall.sh 保存到本地，直接通过 bash 运行远程脚本
+	read -r -a param_arr <<< "$dd_params"
+	cmd_arr=("$system" "${param_arr[@]}" --password "$ssh_password" --ssh-port "$ssh_port")
+	printf -v cmd_preview 'bash <(curl -fsSL %q)' "$script_url"
+	local arg
+	for arg in "${cmd_arr[@]}"; do
+		printf -v cmd_preview '%s %q' "$cmd_preview" "$arg"
+	done
+	echo "------------------------------------------------"
+	echo "即将执行："
+	echo "$cmd_preview"
+	echo "------------------------------------------------"
+	echo -e "${gl_hong}再次确认：该操作会清空当前系统硬盘数据！${gl_bai}"
+	read -e -p "确认开始DD/重装吗？请输入 YES 确认: " confirm
+	[ "$confirm" != "YES" ] && echo "已取消" && return 0
+
+	bash <(curl -fsSL "$script_url") "${cmd_arr[@]}"
+}
+
 github_proxy_sources_file() {
 	echo "$DAIMON_SCRIPT_DIR/github_proxy_sources.txt"
 }
@@ -19120,6 +19284,59 @@ github_proxy_manager() {
 }
 
 
+show_ssh_ip_info() {
+	clear
+	send_stats "查看ssh的ip"
+	echo "查看ssh的ip"
+	echo "------------------------------------------------"
+
+	local current_ip=""
+	local current_port=""
+	if [ -n "$SSH_CONNECTION" ]; then
+		current_ip=$(echo "$SSH_CONNECTION" | awk '{print $1}')
+		current_port=$(echo "$SSH_CONNECTION" | awk '{print $2}')
+	elif [ -n "$SSH_CLIENT" ]; then
+		current_ip=$(echo "$SSH_CLIENT" | awk '{print $1}')
+		current_port=$(echo "$SSH_CLIENT" | awk '{print $2}')
+	else
+		current_ip=$(who am i 2>/dev/null | awk -F'[()]' '{print $2}' | awk '{print $1}')
+	fi
+
+	echo "当前 SSH 连接IP："
+	if [ -n "$current_ip" ]; then
+		if [ -n "$current_port" ]; then
+			echo "  $current_ip:$current_port"
+		else
+			echo "  $current_ip"
+		fi
+	else
+		echo "  未检测到当前 SSH 连接IP（可能不是通过 SSH 登录）"
+	fi
+
+	echo ""
+	echo "当前登录会话中的 SSH 来源IP："
+	local who_ips
+	who_ips=$(who 2>/dev/null | awk -F'[()]' '/\(/ {print $2}' | awk '{print $1}' | sed '/^$/d' | sort -u)
+	if [ -n "$who_ips" ]; then
+		echo "$who_ips" | sed 's/^/  /'
+	else
+		echo "  暂无"
+	fi
+
+	echo ""
+	echo "当前已建立的 SSH 连接IP："
+	local ss_ips
+	ss_ips=$(ss -Htnp 2>/dev/null | awk '$1=="ESTAB" && $0 ~ /(sshd|ssh)/ {print $5}' | sed -E 's/^\[?([^]]+)\]?:[0-9]+$/\1/' | sed 's/^\[//;s/\]$//' | sed '/^$/d' | sort -u)
+	if [ -n "$ss_ips" ]; then
+		echo "$ss_ips" | sed 's/^/  /'
+	else
+		echo "  暂无或无权限读取连接进程信息"
+	fi
+
+	echo "------------------------------------------------"
+}
+
+
 linux_Settings() {
 
 	while true; do
@@ -19132,7 +19349,8 @@ linux_Settings() {
 	  echo -e "${gl_kjlan}5.   ${gl_bai}修改虚拟内存大小                    ${gl_kjlan}6.   ${gl_bai}用户管理"
 	  echo -e "${gl_kjlan}7.   ${gl_bai}系统时区调整                      ${gl_kjlan}8.   ${gl_bai}修改主机名"
 	  echo -e "${gl_kjlan}9.   ${gl_bai}本机host解析                       ${gl_kjlan}10.  ${gl_bai}系统变量管理工具"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}github镜像源                  ${gl_kjlan}12.  ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}11.  ${gl_bai}github镜像源                      ${gl_kjlan}12.  ${gl_bai}DD重装系统"
+	  echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -19506,6 +19724,15 @@ EOF
 			  ;;
 
 		  12)
+			  dd_reinstall_manager
+			  ;;
+
+		  13)
+			  show_ssh_ip_info
+			  break_end
+			  ;;
+
+		  14)
 			  clear
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"
