@@ -16,11 +16,13 @@ canshu="default"
 permission_granted="false"
 ENABLE_STATS="false"
 
-# daimon 本地脚本缓存目录：所有需要落地保存的外部脚本统一放这里
+# daimon 本地脚本缓存目录：除 daimon.sh 主脚本外，所有需要落地保存的外部脚本统一放这里
 DAIMON_NAME="daimon"
 DAIMON_BIN="d"
-DAIMON_SCRIPT_DIR="/root/linux-script"
+DAIMON_SCRIPT_DIR="/root/daimon"
 DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/daimon.sh"
+DAIMON_REPO_URL="https://github.com/daimon3332/daimon-linux-scripts"
+DAIMON_AGREEMENT_URL="https://github.com/daimon3332/daimon-linux-scripts/blob/master/USER_AGREEMENT.md"
 mkdir -p "$DAIMON_SCRIPT_DIR" >/dev/null 2>&1 || true
 
 daimon_download() {
@@ -143,6 +145,11 @@ daimon_self_install() {
 
 	local tmp_file="/tmp/daimon.sh"
 	local local_source=""
+	local keep_permission="false"
+
+	if grep -q '^permission_granted="true"' /usr/local/bin/d >/dev/null 2>&1 || grep -q '^permission_granted="true"' ~/daimon.sh >/dev/null 2>&1; then
+		keep_permission="true"
+	fi
 
 	# 本地执行 ./daimon.sh 时，优先复制本地文件；通过 bash <(curl ...) 运行时，优先重新下载完整脚本。
 	if [ -f ./daimon.sh ] && head -1 ./daimon.sh 2>/dev/null | grep -q '^#!/bin/bash'; then
@@ -167,6 +174,10 @@ daimon_self_install() {
 		cp -f ~/daimon.sh /usr/local/bin/d > /dev/null 2>&1
 		chmod +x /usr/local/bin/d > /dev/null 2>&1
 		ln -sf /usr/local/bin/d /usr/bin/d > /dev/null 2>&1
+		if [ "$keep_permission" = "true" ]; then
+			sed -i 's/^permission_granted="false"/permission_granted="true"/' ~/daimon.sh >/dev/null 2>&1
+			sed -i 's/^permission_granted="false"/permission_granted="true"/' /usr/local/bin/d >/dev/null 2>&1
+		fi
 	fi
 }
 
@@ -184,10 +195,14 @@ CheckFirstRun_false() {
 UserLicenseAgreement() {
 	clear
 	echo -e "${gl_kjlan}欢迎使用daimon脚本工具箱${gl_bai}"
-	echo "首次使用脚本，请先阅读并同意用户许可协议。"
-	echo "用户许可协议: https://blog.kejilion.pro/user-license-agreement/"
+	echo "首次使用脚本，请先阅读并确认以下说明。"
+	echo "项目名称: daimon脚本工具箱"
+	echo "开源仓库: ${DAIMON_REPO_URL}"
+	echo "用户说明: ${DAIMON_AGREEMENT_URL}"
+	echo "使用说明: 本脚本为个人开源工具，按现状提供，请在了解命令作用后自行决定是否执行。"
+	echo "风险提示: 脚本中的系统配置、Docker、Nginx、证书、网络优化等操作可能修改服务器状态，请提前备份重要数据。"
 	echo -e "----------------------"
-	read -e -p "是否同意以上条款？(y/n): " user_input
+	read -e -p "是否已阅读并确认继续使用？(y/n): " user_input
 
 
 	if [ "$user_input" = "y" ] || [ "$user_input" = "Y" ]; then
@@ -514,7 +529,7 @@ linuxmirrors_install_docker() {
 
 local country=$(curl -s ipinfo.io/country)
 if [ "$country" = "CN" ]; then
-	bash <(curl -sSL https://linuxmirrors.cn/docker.sh) \
+	daimon_run_cached_script "https://linuxmirrors.cn/docker.sh" "linuxmirrors-docker.sh" \
 	  --source mirrors.huaweicloud.com/docker-ce \
 	  --source-registry docker.1ms.run \
 	  --protocol https \
@@ -523,7 +538,7 @@ if [ "$country" = "CN" ]; then
 	  --close-firewall false \
 	  --ignore-backup-tips
 else
-	bash <(curl -sSL https://linuxmirrors.cn/docker.sh) \
+	daimon_run_cached_script "https://linuxmirrors.cn/docker.sh" "linuxmirrors-docker.sh" \
 	  --source download.docker.com \
 	  --source-registry registry.hub.docker.com \
 	  --protocol https \
@@ -1505,12 +1520,10 @@ install_ldnmp() {
 
 install_certbot() {
 
-	cd ~
-	curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh
-	chmod +x auto_cert_renewal.sh
+	daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh" "auto_cert_renewal.sh"
 
 	check_crontab_installed
-	local cron_job="0 0 * * * ~/auto_cert_renewal.sh"
+	local cron_job="0 0 * * * bash $DAIMON_SCRIPT_DIR/auto_cert_renewal.sh"
 	crontab -l 2>/dev/null | grep -vF "$cron_job" | crontab -
 	(crontab -l 2>/dev/null; echo "$cron_job") | crontab -
 	echo "续签任务已更新"
@@ -2332,16 +2345,15 @@ web_security() {
 					  read -e -p "输入CF的Global API Key: " cftoken
 					  read -e -p "输入CF中域名的区域ID: " cfzonID
 
-					  cd ~
 					  install jq bc
 					  check_crontab_installed
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/CF-Under-Attack.sh
-					  chmod +x CF-Under-Attack.sh
-					  sed -i "s/AAAA/$cfuser/g" ~/CF-Under-Attack.sh
-					  sed -i "s/BBBB/$cftoken/g" ~/CF-Under-Attack.sh
-					  sed -i "s/CCCC/$cfzonID/g" ~/CF-Under-Attack.sh
+					  rm -f "$DAIMON_SCRIPT_DIR/CF-Under-Attack.sh"
+					  daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/CF-Under-Attack.sh" "CF-Under-Attack.sh"
+					  sed -i "s/AAAA/$cfuser/g" "$DAIMON_SCRIPT_DIR/CF-Under-Attack.sh"
+					  sed -i "s/BBBB/$cftoken/g" "$DAIMON_SCRIPT_DIR/CF-Under-Attack.sh"
+					  sed -i "s/CCCC/$cfzonID/g" "$DAIMON_SCRIPT_DIR/CF-Under-Attack.sh"
 
-					  local cron_job="*/5 * * * * ~/CF-Under-Attack.sh"
+					  local cron_job="*/5 * * * * bash $DAIMON_SCRIPT_DIR/CF-Under-Attack.sh"
 
 					  local existing_cron=$(crontab -l 2>/dev/null | grep -F "$cron_job")
 
@@ -5350,12 +5362,12 @@ clear
 dd_xitong() {
 		send_stats "重装系统"
 		dd_xitong_MollyLau() {
-			wget --no-check-certificate -qO InstallNET.sh "${gh_proxy}raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh" && chmod a+x InstallNET.sh
+			daimon_download "${gh_proxy}raw.githubusercontent.com/leitbogioro/Tools/master/Linux_reinstall/InstallNET.sh" "InstallNET.sh"
 
 		}
 
 		dd_xitong_bin456789() {
-			curl -O ${gh_proxy}raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh
+			daimon_download "${gh_proxy}raw.githubusercontent.com/bin456789/reinstall/main/reinstall.sh" "reinstall.sh"
 		}
 
 		dd_xitong_1() {
@@ -5428,7 +5440,7 @@ dd_xitong() {
 			  1)
 				send_stats "重装debian 13"
 				dd_xitong_3
-				bash reinstall.sh debian 13
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" debian 13
 				reboot
 				exit
 				;;
@@ -5436,49 +5448,49 @@ dd_xitong() {
 			  2)
 				send_stats "重装debian 12"
 				dd_xitong_1
-				bash InstallNET.sh -debian 12
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -debian 12
 				reboot
 				exit
 				;;
 			  3)
 				send_stats "重装debian 11"
 				dd_xitong_1
-				bash InstallNET.sh -debian 11
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -debian 11
 				reboot
 				exit
 				;;
 			  4)
 				send_stats "重装debian 10"
 				dd_xitong_1
-				bash InstallNET.sh -debian 10
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -debian 10
 				reboot
 				exit
 				;;
 			  11)
 				send_stats "重装ubuntu 26.04"
 				dd_xitong_3
-				bash reinstall.sh ubuntu 26.04
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" ubuntu 26.04
 				reboot
 				exit
 				;;
 			  12)
 				send_stats "重装ubuntu 24.04"
 				dd_xitong_1
-				bash InstallNET.sh -ubuntu 24.04
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -ubuntu 24.04
 				reboot
 				exit
 				;;
 			  13)
 				send_stats "重装ubuntu 22.04"
 				dd_xitong_1
-				bash InstallNET.sh -ubuntu 22.04
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -ubuntu 22.04
 				reboot
 				exit
 				;;
 			  14)
 				send_stats "重装ubuntu 20.04"
 				dd_xitong_1
-				bash InstallNET.sh -ubuntu 20.04
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -ubuntu 20.04
 				reboot
 				exit
 				;;
@@ -5486,7 +5498,7 @@ dd_xitong() {
 			  21)
 				send_stats "重装rockylinux10"
 				dd_xitong_3
-				bash reinstall.sh rocky
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" rocky
 				reboot
 				exit
 				;;
@@ -5494,7 +5506,7 @@ dd_xitong() {
 			  22)
 				send_stats "重装rockylinux9"
 				dd_xitong_3
-				bash reinstall.sh rocky 9
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" rocky 9
 				reboot
 				exit
 				;;
@@ -5502,7 +5514,7 @@ dd_xitong() {
 			  23)
 				send_stats "重装alma10"
 				dd_xitong_3
-				bash reinstall.sh almalinux
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" almalinux
 				reboot
 				exit
 				;;
@@ -5510,7 +5522,7 @@ dd_xitong() {
 			  24)
 				send_stats "重装alma9"
 				dd_xitong_3
-				bash reinstall.sh almalinux 9
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" almalinux 9
 				reboot
 				exit
 				;;
@@ -5518,7 +5530,7 @@ dd_xitong() {
 			  25)
 				send_stats "重装oracle10"
 				dd_xitong_3
-				bash reinstall.sh oracle
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" oracle
 				reboot
 				exit
 				;;
@@ -5526,7 +5538,7 @@ dd_xitong() {
 			  26)
 				send_stats "重装oracle9"
 				dd_xitong_3
-				bash reinstall.sh oracle 9
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" oracle 9
 				reboot
 				exit
 				;;
@@ -5534,7 +5546,7 @@ dd_xitong() {
 			  27)
 				send_stats "重装fedora44"
 				dd_xitong_3
-				bash reinstall.sh fedora 44
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" fedora 44
 				reboot
 				exit
 				;;
@@ -5542,7 +5554,7 @@ dd_xitong() {
 			  28)
 				send_stats "重装fedora43"
 				dd_xitong_3
-				bash reinstall.sh fedora 43
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" fedora 43
 				reboot
 				exit
 				;;
@@ -5550,7 +5562,7 @@ dd_xitong() {
 			  29)
 				send_stats "重装centos10"
 				dd_xitong_3
-				bash reinstall.sh centos 10
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" centos 10
 				reboot
 				exit
 				;;
@@ -5558,7 +5570,7 @@ dd_xitong() {
 			  30)
 				send_stats "重装centos9"
 				dd_xitong_3
-				bash reinstall.sh centos 9
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" centos 9
 				reboot
 				exit
 				;;
@@ -5566,7 +5578,7 @@ dd_xitong() {
 			  31)
 				send_stats "重装alpine"
 				dd_xitong_1
-				bash InstallNET.sh -alpine
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -alpine
 				reboot
 				exit
 				;;
@@ -5574,7 +5586,7 @@ dd_xitong() {
 			  32)
 				send_stats "重装arch"
 				dd_xitong_3
-				bash reinstall.sh arch
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" arch
 				reboot
 				exit
 				;;
@@ -5582,7 +5594,7 @@ dd_xitong() {
 			  33)
 				send_stats "重装kali"
 				dd_xitong_3
-				bash reinstall.sh kali
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" kali
 				reboot
 				exit
 				;;
@@ -5590,7 +5602,7 @@ dd_xitong() {
 			  34)
 				send_stats "重装openeuler"
 				dd_xitong_3
-				bash reinstall.sh openeuler
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" openeuler
 				reboot
 				exit
 				;;
@@ -5598,7 +5610,7 @@ dd_xitong() {
 			  35)
 				send_stats "重装opensuse"
 				dd_xitong_3
-				bash reinstall.sh opensuse
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" opensuse
 				reboot
 				exit
 				;;
@@ -5606,7 +5618,7 @@ dd_xitong() {
 			  36)
 				send_stats "重装飞牛"
 				dd_xitong_3
-				bash reinstall.sh fnos
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" fnos
 				reboot
 				exit
 				;;
@@ -5614,7 +5626,7 @@ dd_xitong() {
 			  41)
 				send_stats "重装windows11"
 				dd_xitong_2
-				bash InstallNET.sh -windows 11 -lang "cn"
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 11 -lang "cn"
 				reboot
 				exit
 				;;
@@ -5622,7 +5634,7 @@ dd_xitong() {
 			  42)
 				dd_xitong_2
 				send_stats "重装windows10"
-				bash InstallNET.sh -windows 10 -lang "cn"
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 10 -lang "cn"
 				reboot
 				exit
 				;;
@@ -5630,7 +5642,7 @@ dd_xitong() {
 			  43)
 				send_stats "重装windows7"
 				dd_xitong_4
-				bash reinstall.sh windows --iso="https://drive.massgrave.dev/cn_windows_7_professional_with_sp1_x64_dvd_u_677031.iso" --image-name='Windows 7 PROFESSIONAL'
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" windows --iso="https://drive.massgrave.dev/cn_windows_7_professional_with_sp1_x64_dvd_u_677031.iso" --image-name='Windows 7 PROFESSIONAL'
 				reboot
 				exit
 				;;
@@ -5638,7 +5650,7 @@ dd_xitong() {
 			  44)
 				send_stats "重装windows server 25"
 				dd_xitong_2
-				bash InstallNET.sh -windows 2025 -lang "cn"
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 2025 -lang "cn"
 				reboot
 				exit
 				;;
@@ -5646,7 +5658,7 @@ dd_xitong() {
 			  45)
 				send_stats "重装windows server 22"
 				dd_xitong_2
-				bash InstallNET.sh -windows 2022 -lang "cn"
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 2022 -lang "cn"
 				reboot
 				exit
 				;;
@@ -5654,7 +5666,7 @@ dd_xitong() {
 			  46)
 				send_stats "重装windows server 19"
 				dd_xitong_2
-				bash InstallNET.sh -windows 2019 -lang "cn"
+				bash "$DAIMON_SCRIPT_DIR/InstallNET.sh" -windows 2019 -lang "cn"
 				reboot
 				exit
 				;;
@@ -5662,7 +5674,7 @@ dd_xitong() {
 			  47)
 				send_stats "重装windows11 ARM"
 				dd_xitong_4
-				bash reinstall.sh dd --img https://r2.hotdog.eu.org/win11-arm-with-pagefile-15g.xz
+				bash "$DAIMON_SCRIPT_DIR/reinstall.sh" dd --img https://r2.hotdog.eu.org/win11-arm-with-pagefile-15g.xz
 				reboot
 				exit
 				;;
@@ -5821,7 +5833,7 @@ bbrv3() {
 
 		  local cpu_arch=$(uname -m)
 		  if [ "$cpu_arch" = "aarch64" ]; then
-			bash <(curl -sL jhb.ovh/jb/bbrv3arm.sh)
+			daimon_run_cached_script "https://jhb.ovh/jb/bbrv3arm.sh" "bbrv3arm.sh"
 			break_end
 			linux_Settings
 		  fi
@@ -6141,7 +6153,7 @@ _kernel_optimize_core() {
 
 	case "$scene" in
 		high|stream|game)
-			# 高性能/直播/游戏：激进参数
+			# 高性能/直播/低延迟：激进参数
 			SWAPPINESS=10
 			DIRTY_RATIO=15
 			DIRTY_BG_RATIO=5
@@ -6248,11 +6260,11 @@ net.ipv4.udp_wmem_min = 16384
 net.ipv4.tcp_notsent_lowat = 16384"
 	fi
 
-	# ── 游戏服场景额外：低延迟优先 ──
+	# ── 低延迟场景额外：低延迟优先 ──
 	local GAME_EXTRA=""
 	if [ "$scene" = "game" ]; then
 		GAME_EXTRA="
-# 游戏服低延迟优化
+# 低延迟优化
 net.ipv4.udp_rmem_min = 16384
 net.ipv4.udp_wmem_min = 16384
 net.ipv4.tcp_notsent_lowat = 16384
@@ -6478,7 +6490,7 @@ Kernel_optimize() {
 	  echo -e "2. 均衡优化模式：       在性能与资源消耗之间取得平衡，适合日常使用。"
 	  echo -e "3. 网站优化模式：       针对网站服务器优化，超高并发连接队列。"
 	  echo -e "4. 直播优化模式：       针对直播推流优化，UDP 缓冲区加大，减少延迟。"
-	  echo -e "5. 游戏服优化模式：     针对游戏服务器优化，低延迟优先。"
+	  echo -e "5. 低延迟优化模式：     针对低延迟服务优化。"
 	  echo -e "6. 还原默认设置：       将系统设置还原为默认配置。"
 	  echo -e "7. 自动调优：           根据测试数据自动调优内核参数。${gl_huang}★${gl_bai}"
 	  echo "--------------------"
@@ -6514,21 +6526,21 @@ Kernel_optimize() {
 		  5)
 			  cd ~
 			  clear
-			  _kernel_optimize_core "游戏服优化模式" "game"
-			  send_stats "游戏服优化"
+			  _kernel_optimize_core "低延迟优化模式" "game"
+			  send_stats "低延迟优化"
 			  ;;
 		  6)
 			  cd ~
 			  clear
 			  restore_defaults
-			  curl -sS ${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh -o /tmp/network-optimize.sh && source /tmp/network-optimize.sh && restore_network_defaults
+			  daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && restore_network_defaults
 			  send_stats "还原默认设置"
 			  ;;
 
 		  7)
 			  cd ~
 			  clear
-			  curl -sS ${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh | bash
+			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh"
 			  send_stats "内核自动调优"
 			  ;;
 
@@ -6772,7 +6784,7 @@ linux_trash() {
 
 linux_fav() {
 send_stats "命令收藏夹"
-bash <(curl -l -s ${gh_proxy}raw.githubusercontent.com/byJoey/cmdbox/refs/heads/main/install.sh)
+		daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/byJoey/cmdbox/refs/heads/main/install.sh" "cmdbox-install.sh"
 }
 
 # 创建备份
@@ -7783,66 +7795,170 @@ linux_info() {
 
 
 linux_tools() {
+  local tool_ids=(python npm nodejs bun uv git curl fail2ban tree fzf ranger neofetch vim claude codex)
+  local tool_names=("python" "npm" "nodejs" "bun" "uv" "git" "curl" "fail2ban" "tree" "fzf" "ranger" "neofetch" "vim" "Claude Code" "Codex CLI")
+  local tool_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "下载工具" "SSH 防爆破" "目录树" "模糊搜索" "文件管理" "系统概览" "文本编辑器" "AI 编程助手" "AI 编程助手")
+
+  tool_installed() {
+    local id="$1"
+    case "$id" in
+      python) command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 ;;
+      nodejs) command -v node >/dev/null 2>&1 ;;
+      claude) command -v claude >/dev/null 2>&1 ;;
+      codex) command -v codex >/dev/null 2>&1 ;;
+      *) command -v "$id" >/dev/null 2>&1 ;;
+    esac
+  }
+
+  show_tool_status() {
+    echo -e "${gl_kjlan}------------------------${gl_bai}"
+    for ((i=0; i<${#tool_ids[@]}; i++)); do
+      local status="未安装"
+      local color="$gl_hong"
+      if tool_installed "${tool_ids[i]}"; then
+        status="已安装"
+        color="$gl_lv"
+      fi
+      printf "%2d. %-12s %-18s %b%s%b\n" "$((i+1))" "${tool_names[i]}" "${tool_desc[i]}" "$color" "$status" "$gl_bai"
+    done
+    echo -e "${gl_kjlan}------------------------${gl_bai}"
+  }
+
+  install_tool_by_id() {
+    local id="$1"
+    case "$id" in
+      python)
+        install python3 python3-pip python3-venv python-is-python3
+        python3 --version 2>/dev/null || python --version 2>/dev/null
+        ;;
+      npm)
+        install npm
+        npm -v 2>/dev/null || true
+        ;;
+      nodejs)
+        install nodejs
+        node -v 2>/dev/null || true
+        ;;
+      bun)
+        if tool_installed bun; then
+          bun --version
+        else
+          install curl unzip
+          daimon_run_cached_script "https://bun.sh/install" "bun-install.sh"
+          export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
+          export PATH="$BUN_INSTALL/bin:$PATH"
+          bun --version 2>/dev/null || true
+        fi
+        ;;
+      uv)
+        if tool_installed uv; then
+          uv --version
+        else
+          install curl
+          daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh"
+          export PATH="$HOME/.local/bin:$PATH"
+          uv --version 2>/dev/null || true
+        fi
+        ;;
+      git|curl|tree|fzf|ranger|neofetch|vim|npm)
+        install "$id"
+        command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
+        ;;
+      fail2ban)
+        install fail2ban
+        systemctl enable fail2ban >/dev/null 2>&1 || true
+        systemctl start fail2ban >/dev/null 2>&1 || true
+        fail2ban-client status 2>/dev/null || true
+        ;;
+      claude)
+        if tool_installed claude; then
+          claude --version 2>/dev/null || claude --help 2>/dev/null | head -n 3 || true
+        else
+          install nodejs npm
+          npm install -g @anthropic-ai/claude-code
+          claude --version 2>/dev/null || claude --help 2>/dev/null | head -n 3 || true
+        fi
+        ;;
+      codex)
+        if tool_installed codex; then
+          codex --version 2>/dev/null || codex --help 2>/dev/null | head -n 3 || true
+        else
+          install nodejs npm
+          npm install -g @openai/codex
+          codex --version 2>/dev/null || codex --help 2>/dev/null | head -n 3 || true
+        fi
+        ;;
+      *) echo "未知工具: $id" ;;
+    esac
+  }
+
+  remove_tool_by_id() {
+    local id="$1"
+    case "$id" in
+      python) remove python3 python3-pip python3-venv python-is-python3 ;;
+      nodejs) remove nodejs ;;
+      claude) npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true ;;
+      codex) npm uninstall -g @openai/codex 2>/dev/null || true ;;
+      bun) rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true ;;
+      uv) rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx" ;;
+      *) remove "$id" ;;
+    esac
+  }
+
+  handle_tool_numbers() {
+    local action="$1"
+    local input="$2"
+    local n id
+    for n in $input; do
+      if ! [[ "$n" =~ ^[0-9]+$ ]] || [ "$n" -lt 1 ] || [ "$n" -gt ${#tool_ids[@]} ]; then
+        echo "跳过无效编号: $n"
+        continue
+      fi
+      id="${tool_ids[$((n-1))]}"
+      if [ "$action" = "install" ]; then
+        install_tool_by_id "$id"
+      else
+        remove_tool_by_id "$id"
+      fi
+    done
+  }
+
   while true; do
-	  clear
-	  echo -e "基础工具"
-	  tools=(curl wget sudo socat htop iftop unzip tar tmux ffmpeg btop ranger ncdu fzf vim git tree fail2ban neofetch cmatrix sl bastet nsnake ninvaders nodejs npm)
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
-	  for ((i=0; i<${#tools[@]}; i+=2)); do
-		if command -v "${tools[i]}" >/dev/null 2>&1; then left=$(printf "✅ %-12s 已安装" "${tools[i]}"); else left=$(printf "❌ %-12s 未安装" "${tools[i]}"); fi
-		if [[ -n "${tools[i+1]}" ]]; then
-		  if command -v "${tools[i+1]}" >/dev/null 2>&1; then right=$(printf "✅ %-12s 已安装" "${tools[i+1]}"); else right=$(printf "❌ %-12s 未安装" "${tools[i+1]}"); fi
-		  printf "%-42s %s\n" "$left" "$right"
-		else printf "%s\n" "$left"; fi
-	  done
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}curl 下载工具                      ${gl_kjlan}2.   ${gl_bai}wget 下载工具"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}sudo 权限工具                      ${gl_kjlan}4.   ${gl_bai}socat 通信工具"
-	  echo -e "${gl_kjlan}5.   ${gl_bai}htop 系统监控                      ${gl_kjlan}6.   ${gl_bai}iftop 流量监控"
-	  echo -e "${gl_kjlan}7.   ${gl_bai}unzip 解压工具                     ${gl_kjlan}8.   ${gl_bai}tar 打包工具"
-	  echo -e "${gl_kjlan}9.   ${gl_bai}tmux 后台工作区                    ${gl_kjlan}10.  ${gl_bai}ffmpeg 音视频工具"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}btop 现代监控                      ${gl_kjlan}12.  ${gl_bai}ranger 文件管理"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}ncdu 磁盘占用                      ${gl_kjlan}14.  ${gl_bai}fzf 搜索工具"
-	  echo -e "${gl_kjlan}15.  ${gl_bai}vim 文本编辑器                     ${gl_kjlan}16.  ${gl_bai}git 版本控制"
-	  echo -e "${gl_kjlan}17.  ${gl_bai}tree 目录树                         ${gl_kjlan}18.  ${gl_bai}fail2ban 防爆破"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}neofetch 系统概览                  ${gl_kjlan}20.  ${gl_bai}nodejs+npm 环境"
-	  echo -e "${gl_kjlan}21.  ${gl_bai}Codex CLI 一键安装                 ${gl_kjlan}22.  ${gl_bai}Claude Code 一键安装"
-	  echo -e "${gl_kjlan}31.  ${gl_bai}全部安装（不含屏保和游戏）          ${gl_kjlan}32.  ${gl_bai}卸载常用工具"
-	  echo -e "${gl_kjlan}41.  ${gl_bai}安装指定工具                       ${gl_kjlan}42.  ${gl_bai}卸载指定工具"
-	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
-	  read -e -p "请输入你的选择: " sub_choice
-	  case $sub_choice in
-		1) install curl; curl --help ;;
-		2) install wget; wget --help ;;
-		3) install sudo; sudo --help ;;
-		4) install socat; socat -h ;;
-		5) install htop; htop ;;
-		6) install iftop; iftop ;;
-		7) install unzip; unzip ;;
-		8) install tar; tar --help ;;
-		9) install tmux; tmux --help ;;
-		10) install ffmpeg; ffmpeg --help ;;
-		11) install btop; btop ;;
-		12) install ranger; cd /; ranger; cd ~ ;;
-		13) install ncdu; cd /; ncdu; cd ~ ;;
-		14) install fzf; cd /; fzf; cd ~ ;;
-		15) install vim; vim -h ;;
-		16) install git; git --help ;;
-		17) install tree; tree --help ;;
-		18) install fail2ban; systemctl enable fail2ban >/dev/null 2>&1; systemctl start fail2ban >/dev/null 2>&1; fail2ban-client status ;;
-		19) install neofetch; neofetch ;;
-		20) install nodejs npm; node -v; npm -v ;;
-		21) install nodejs npm; npm install -g @openai/codex; codex --help ;;
-		22) install nodejs npm; npm install -g @anthropic-ai/claude-code; claude --help ;;
-		31) install curl wget sudo socat htop iftop unzip tar tmux ffmpeg btop ranger ncdu fzf vim git tree fail2ban neofetch nodejs npm ;;
-		32) remove htop iftop tmux ffmpeg btop ranger ncdu fzf vim git tree fail2ban neofetch nodejs npm ;;
-		41) read -e -p "请输入安装的工具名: " installname; install $installname ;;
-		42) read -e -p "请输入卸载的工具名: " removename; remove $removename ;;
-		0) kejilion ;;
-		*) echo "无效的输入!" ;;
-	  esac
-	  break_end
+    clear
+    echo -e "基础工具"
+    show_tool_status
+    echo -e "${gl_kjlan}1.   ${gl_bai}安装工具（支持多选，输入工具编号，如: 1 4 6）"
+    echo -e "${gl_kjlan}2.   ${gl_bai}卸载工具（支持多选，输入工具编号，如: 7 10）"
+    echo -e "${gl_kjlan}3.   ${gl_bai}安装全部常用工具"
+    echo -e "${gl_kjlan}4.   ${gl_bai}安装指定工具名（支持多个包名，如: htop jq）"
+    echo -e "${gl_kjlan}5.   ${gl_bai}卸载指定工具名（支持多个包名，如: htop jq）"
+    echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+    echo -e "${gl_kjlan}------------------------${gl_bai}"
+    read -e -p "请输入你的选择: " sub_choice
+    case $sub_choice in
+      1)
+        read -e -p "请输入要安装的工具编号（支持多选，空格分隔）: " nums
+        handle_tool_numbers install "$nums"
+        ;;
+      2)
+        read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums
+        handle_tool_numbers remove "$nums"
+        ;;
+      3)
+        handle_tool_numbers install "1 2 3 4 5 6 7 8 9 10 11 12 13"
+        ;;
+      4)
+        read -e -p "请输入安装的工具名（支持多个，空格分隔）: " installname
+        install $installname
+        ;;
+      5)
+        read -e -p "请输入卸载的工具名（支持多个，空格分隔）: " removename
+        remove $removename
+        ;;
+      0) kejilion ;;
+      *) echo "无效的输入!" ;;
+    esac
+    break_end
   done
 }
 
@@ -8522,23 +8638,23 @@ linux_test() {
 		  1)
 			  clear
 			  send_stats "ChatGPT解锁状态检测"
-			  bash <(curl -Ls https://cdn.jsdelivr.net/gh/missuo/OpenAI-Checker/openai.sh)
+			  daimon_run_cached_script "https://cdn.jsdelivr.net/gh/missuo/OpenAI-Checker/openai.sh" "openai-checker.sh"
 			  ;;
 		  2)
 			  clear
 			  send_stats "Region流媒体解锁测试"
-			  bash <(curl -L -s check.unlock.media)
+			  daimon_run_cached_script "https://check.unlock.media" "check-unlock-media.sh"
 			  ;;
 		  3)
 			  clear
 			  send_stats "yeahwu流媒体解锁检测"
 			  install wget
-			  wget -qO- ${gh_proxy}github.com/yeahwu/check/raw/main/check.sh | bash
+			  daimon_run_cached_script "${gh_proxy}github.com/yeahwu/check/raw/main/check.sh" "yeahwu-check.sh"
 			  ;;
 		  4)
 			  clear
 			  send_stats "xykt_IP质量体检脚本"
-			  bash <(curl -Ls IP.Check.Place)
+			  daimon_run_cached_script "https://IP.Check.Place" "ip-check-place.sh"
 			  ;;
 
 
@@ -8546,22 +8662,22 @@ linux_test() {
 			  clear
 			  send_stats "besttrace三网回程延迟路由测试"
 			  install wget
-			  wget -qO- git.io/besttrace | bash
+			  daimon_run_cached_script "https://git.io/besttrace" "besttrace.sh"
 			  ;;
 		  12)
 			  clear
 			  send_stats "mtr_trace三网回程线路测试"
-			  curl ${gh_proxy}raw.githubusercontent.com/zhucaidan/mtr_trace/main/mtr_trace.sh | bash
+			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/zhucaidan/mtr_trace/main/mtr_trace.sh" "mtr_trace.sh"
 			  ;;
 		  13)
 			  clear
 			  send_stats "Superspeed三网测速"
-			  bash <(curl -Lso- https://git.io/superspeed_uxh)
+			  daimon_run_cached_script "https://git.io/superspeed_uxh" "superspeed_uxh.sh"
 			  ;;
 		  14)
 			  clear
 			  send_stats "nxtrace快速回程测试脚本"
-			  curl nxtrace.org/nt |bash
+			  daimon_run_cached_script "https://nxtrace.org/nt" "nxtrace-install.sh"
 			  nexttrace --fast-trace --tcp
 			  ;;
 		  15)
@@ -8587,56 +8703,56 @@ linux_test() {
 			  echo "------------------------"
 
 			  read -e -p "输入一个指定IP: " testip
-			  curl nxtrace.org/nt |bash
+			  daimon_run_cached_script "https://nxtrace.org/nt" "nxtrace-install.sh"
 			  nexttrace $testip
 			  ;;
 
 		  16)
 			  clear
 			  send_stats "ludashi2020三网线路测试"
-			  curl ${gh_proxy}raw.githubusercontent.com/ludashi2020/backtrace/main/install.sh -sSf | sh
+			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/ludashi2020/backtrace/main/install.sh" "ludashi-backtrace.sh"
 			  ;;
 
 		  17)
 			  clear
 			  send_stats "i-abc多功能测速脚本"
-			  bash <(curl -sL ${gh_proxy}raw.githubusercontent.com/i-abc/Speedtest/main/speedtest.sh)
+			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/i-abc/Speedtest/main/speedtest.sh" "i-abc-speedtest.sh"
 			  ;;
 
 		  18)
 			  clear
 			  send_stats "网络质量测试脚本"
-			  bash <(curl -sL Net.Check.Place)
+			  daimon_run_cached_script "https://Net.Check.Place" "net-check-place.sh"
 			  ;;
 
 		  21)
 			  clear
 			  send_stats "yabs性能测试"
 			  check_swap
-			  curl -sL yabs.sh | bash -s -- -i -5
+			  daimon_run_cached_script "https://yabs.sh" "yabs.sh" -i -5
 			  ;;
 		  22)
 			  clear
 			  send_stats "icu/gb5 CPU性能测试脚本"
 			  check_swap
-			  bash <(curl -sL bash.icu/gb5)
+			  daimon_run_cached_script "https://bash.icu/gb5" "gb5.sh"
 			  ;;
 
 		  31)
 			  clear
 			  send_stats "bench性能测试"
-			  curl -Lso- bench.sh | bash
+			  daimon_run_cached_script "https://bench.sh" "bench.sh"
 			  ;;
 		  32)
 			  send_stats "spiritysdx融合怪测评"
 			  clear
-			  curl -L ${gh_proxy}github.com/spiritLHLS/ecs/raw/main/ecs.sh -o ecs.sh && chmod +x ecs.sh && bash ecs.sh
+			  daimon_run_cached_script "${gh_proxy}github.com/spiritLHLS/ecs/raw/main/ecs.sh" "ecs.sh"
 			  ;;
 
 		  33)
 			  send_stats "nodequality融合怪测评"
 			  clear
-			  bash <(curl -sL https://run.NodeQuality.com)
+			  daimon_run_cached_script "https://run.NodeQuality.com" "NodeQuality.sh"
 			  ;;
 
 
@@ -8761,7 +8877,7 @@ linux_Oracle() {
 
 			  read -e -p "请输入你重装后的密码: " vpspasswd
 			  install wget
-			  bash <(wget --no-check-certificate -qO- "${gh_proxy}raw.githubusercontent.com/MoeClub/Note/master/InstallNET.sh") $xitong -v 64 -p $vpspasswd -port 22
+			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/MoeClub/Note/master/InstallNET.sh" "MoeClub-InstallNET.sh" $xitong -v 64 -p "$vpspasswd" -port 22
 			  send_stats "甲骨文云重装系统脚本"
 			  ;;
 			[Nn])
@@ -8776,7 +8892,7 @@ linux_Oracle() {
 		  4)
 			  clear
 			  send_stats "R探长开机脚本"
-			  bash <(wget -qO- ${gh_proxy}github.com/Yohann0617/oci-helper/releases/latest/download/sh_oci-helper_install.sh)
+			  daimon_run_cached_script "${gh_proxy}github.com/Yohann0617/oci-helper/releases/latest/download/sh_oci-helper_install.sh" "oci-helper-install.sh"
 			  ;;
 		  5)
 			  clear
@@ -8784,7 +8900,7 @@ linux_Oracle() {
 			  ;;
 		  6)
 			  clear
-			  bash <(curl -L -s jhb.ovh/jb/v6.sh)
+			  daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"
 			  echo "该功能由jhb大神提供，感谢他！"
 			  send_stats "ipv6修复"
 			  ;;
@@ -8982,7 +9098,7 @@ moltbot_menu() {
 		fi
 
 		if command -v apt &>/dev/null; then
-			curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
+			  daimon_run_cached_script "https://deb.nodesource.com/setup_24.x" "nodesource-setup_24.x.sh"
 			apt update -y
 			apt install build-essential python3 libatomic1 nodejs -y
 		fi
@@ -12477,10 +12593,8 @@ PY
 			return 0
 		fi
 		echo "⬇️ 安装 bun..."
-		if command -v curl >/dev/null 2>&1; then
-			curl -fsSL https://bun.sh/install | bash
-		elif command -v wget >/dev/null 2>&1; then
-			wget -qO- https://bun.sh/install | bash
+		if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+			daimon_run_cached_script "https://bun.sh/install" "bun-install.sh"
 		else
 			echo "❌ 未检测到 curl 或 wget，无法安装 bun。"
 			return 1
@@ -14441,7 +14555,7 @@ while true; do
 	  echo -e "${gl_kjlan}-------------------------"
 	  echo -e "${gl_kjlan}71.  ${color71}Navidrome私有音乐服务器             ${gl_kjlan}72.  ${color72}bitwarden密码管理器 ${gl_huang}★${gl_bai}"
 	  echo -e "${gl_kjlan}73.  ${color73}LibreTV私有影视                     ${gl_kjlan}74.  ${color74}MoonTV私有影视"
-	  echo -e "${gl_kjlan}75.  ${color75}Melody音乐精灵                      ${gl_kjlan}76.  ${color76}在线DOS老游戏"
+	  echo -e "${gl_kjlan}75.  ${color75}Melody音乐精灵                      ${gl_kjlan}76.  ${color76}在线DOS合集"
 	  echo -e "${gl_kjlan}77.  ${color77}迅雷离线下载工具                    ${gl_kjlan}78.  ${color78}PandaWiki智能文档管理系统"
 	  echo -e "${gl_kjlan}79.  ${color79}Beszel服务器监控                    ${gl_kjlan}80.  ${color80}linkwarden书签管理"
 	  echo -e "${gl_kjlan}-------------------------"
@@ -14505,7 +14619,7 @@ while true; do
 		local panelurl="https://www.bt.cn/new/index.html"
 
 		panel_app_install() {
-			if [ -f /usr/bin/curl ];then curl -sSO https://download.bt.cn/install/install_panel.sh;else wget -O install_panel.sh https://download.bt.cn/install/install_panel.sh;fi;bash install_panel.sh ed8484bec
+			daimon_run_cached_script "https://download.bt.cn/install/install_panel.sh" "bt-install-panel.sh" ed8484bec
 		}
 
 		panel_app_manage() {
@@ -14513,7 +14627,7 @@ while true; do
 		}
 
 		panel_app_uninstall() {
-			curl -o bt-uninstall.sh http://download.bt.cn/install/bt-uninstall.sh > /dev/null 2>&1 && chmod +x bt-uninstall.sh && ./bt-uninstall.sh
+			daimon_run_cached_script "http://download.bt.cn/install/bt-uninstall.sh" "bt-uninstall.sh"
 			chmod +x bt-uninstall.sh
 			./bt-uninstall.sh
 		}
@@ -14532,7 +14646,7 @@ while true; do
 		local panelurl="https://www.aapanel.com/new/index.html"
 
 		panel_app_install() {
-			URL=https://www.aapanel.com/script/install_7.0_en.sh && if [ -f /usr/bin/curl ];then curl -ksSO "$URL" ;else wget --no-check-certificate -O install_7.0_en.sh "$URL";fi;bash install_7.0_en.sh aapanel
+			daimon_run_cached_script "https://www.aapanel.com/script/install_7.0_en.sh" "aapanel-install.sh" aapanel
 		}
 
 		panel_app_manage() {
@@ -14540,7 +14654,7 @@ while true; do
 		}
 
 		panel_app_uninstall() {
-			curl -o bt-uninstall.sh http://download.bt.cn/install/bt-uninstall.sh > /dev/null 2>&1 && chmod +x bt-uninstall.sh && ./bt-uninstall.sh
+			daimon_run_cached_script "http://download.bt.cn/install/bt-uninstall.sh" "bt-uninstall.sh"
 			chmod +x bt-uninstall.sh
 			./bt-uninstall.sh
 		}
@@ -14557,7 +14671,7 @@ while true; do
 
 		panel_app_install() {
 			install bash
-			bash -c "$(curl -sSL https://resource.fit2cloud.com/1panel/package/v2/quick_start.sh)"
+			daimon_run_cached_script "https://resource.fit2cloud.com/1panel/package/v2/quick_start.sh" "1panel-quick_start.sh"
 		}
 
 		panel_app_manage() {
@@ -14710,7 +14824,7 @@ while true; do
 					check_disk_space 1
 					install unzip jq
 					install_docker
-					curl -sL ${gh_proxy}raw.githubusercontent.com/nezhahq/scripts/refs/heads/main/install.sh -o nezha.sh && chmod +x nezha.sh && ./nezha.sh
+					daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/nezhahq/scripts/refs/heads/main/install.sh" "nezha-install.sh"
 					local docker_port=$(docker port $docker_name | awk -F'[:]' '/->/ {print $NF}' | uniq)
 					check_docker_app_ip
 					;;
@@ -15198,7 +15312,7 @@ while true; do
 				1)
 					install_docker
 					check_disk_space 5
-					bash -c "$(curl -fsSLk https://waf-ce.chaitin.cn/release/latest/setup.sh)"
+					daimon_run_cached_script "https://waf-ce.chaitin.cn/release/latest/setup.sh" "safeline-setup.sh"
 
 					add_app_id
 					clear
@@ -15209,7 +15323,7 @@ while true; do
 					;;
 
 				2)
-					bash -c "$(curl -fsSLk https://waf-ce.chaitin.cn/release/latest/upgrade.sh)"
+					daimon_run_cached_script "https://waf-ce.chaitin.cn/release/latest/upgrade.sh" "safeline-upgrade.sh"
 					docker rmi $(docker images | grep "safeline" | grep "none" | awk '{print $3}')
 					echo ""
 
@@ -15691,7 +15805,7 @@ while true; do
 		clear
 		install_docker
 		check_disk_space 1
-		bash -c "$(curl --insecure -fsSL https://ddsrem.com/xiaoya_install.sh)"
+		daimon_run_cached_script "https://ddsrem.com/xiaoya_install.sh" "xiaoya_install.sh"
 		  ;;
 
 	  39|bililive)
@@ -15745,8 +15859,7 @@ while true; do
 		local panelurl="官方地址: ${gh_proxy}github.com/acepanel/panel"
 
 		panel_app_install() {
-			cd ~
-			bash <(curl -sSLm 10 https://dl.acepanel.net/helper.sh)
+			daimon_run_cached_script "https://dl.acepanel.net/helper.sh" "acepanel-helper.sh"
 		}
 
 		panel_app_manage() {
@@ -15754,8 +15867,7 @@ while true; do
 		}
 
 		panel_app_uninstall() {
-			cd ~
-			bash <(curl -sSLm 10 https://dl.acepanel.net/helper.sh)
+			daimon_run_cached_script "https://dl.acepanel.net/helper.sh" "acepanel-helper.sh"
 
 		}
 
@@ -16001,7 +16113,7 @@ while true; do
 		clear
 		send_stats "PVE开小鸡"
 		check_disk_space 1
-		curl -L ${gh_proxy}raw.githubusercontent.com/oneclickvirt/pve/main/scripts/install_pve.sh -o install_pve.sh && chmod +x install_pve.sh && bash install_pve.sh
+		daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/oneclickvirt/pve/main/scripts/install_pve.sh" "install_pve.sh"
 		  ;;
 
 
@@ -16057,8 +16169,7 @@ while true; do
 		local panelurl="官方地址: https://amh.sh/index.htm?amh"
 
 		panel_app_install() {
-			cd ~
-			wget https://dl.amh.sh/amh.sh && bash amh.sh
+			daimon_run_cached_script "https://dl.amh.sh/amh.sh" "amh.sh"
 		}
 
 		panel_app_manage() {
@@ -16210,7 +16321,7 @@ while true; do
 		local app_size="2"
 
 		docker_app_install() {
-			curl -sSL ${gh_proxy}github.com/jumpserver/jumpserver/releases/latest/download/quick_start.sh | bash
+			daimon_run_cached_script "${gh_proxy}github.com/jumpserver/jumpserver/releases/latest/download/quick_start.sh" "jumpserver-quick_start.sh"
 			clear
 			echo "已经安装完成"
 			check_docker_app_ip
@@ -16677,7 +16788,7 @@ while true; do
 
 		}
 
-		local docker_describe="是一个中文DOS游戏合集网站"
+		local docker_describe="是一个中文DOS合集网站"
 		local docker_url="官网介绍: ${gh_https_url}github.com/rwv/chinese-dos-games"
 		local docker_use=""
 		local docker_passwd=""
@@ -16734,7 +16845,7 @@ while true; do
 		local app_size="2"
 
 		docker_app_install() {
-			bash -c "$(curl -fsSLk https://release.baizhi.cloud/panda-wiki/manager.sh)"
+			daimon_run_cached_script "https://release.baizhi.cloud/panda-wiki/manager.sh" "panda-wiki-manager.sh"
 		}
 
 		docker_app_update() {
@@ -18134,7 +18245,7 @@ discourse,yunsou,ahhhhfs,nsgame,gying" \
 		  ;;
 
 	  115|hermes)
-	  	  bash <(curl -sL ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/hermes_manager.sh)
+	  	  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/hermes_manager.sh" "hermes_manager.sh"
 		  ;;
 
 	  b)
@@ -18263,7 +18374,7 @@ switch_mirror() {
 
 	if [ "$country" = "CN" ]; then
 		echo "使用国内镜像源..."
-		bash <(curl -sSL https://linuxmirrors.cn/main.sh) \
+		daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh" \
 		  --source mirrors.huaweicloud.com \
 		  --protocol https \
 		  --use-intranet-source false \
@@ -18276,7 +18387,7 @@ switch_mirror() {
 	else
 		echo "使用海外镜像源..."
 		if [ -f /etc/os-release ] && grep -qi "oracle" /etc/os-release; then
-			bash <(curl -sSL https://linuxmirrors.cn/main.sh) \
+			daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh" \
 			  --source mirrors.xtom.com \
 			  --protocol https \
 			  --use-intranet-source false \
@@ -18287,7 +18398,7 @@ switch_mirror() {
 			  --install-epel false \
 			  --pure-mode
 		else
-			bash <(curl -sSL https://linuxmirrors.cn/main.sh) \
+			daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh" \
 				--use-official-source true \
 				--protocol https \
 				--use-intranet-source false \
@@ -18872,7 +18983,7 @@ linux_Settings() {
 					return
 				fi
 
-				curl https://pyenv.run | bash
+				daimon_run_cached_script "https://pyenv.run" "pyenv-run.sh"
 				cat << EOF >> ~/.bashrc
 
 export PYENV_ROOT="\$HOME/.pyenv"
@@ -19016,7 +19127,7 @@ EOF
 
 					3)
 						clear
-						bash <(curl -L -s jhb.ovh/jb/v6.sh)
+						daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"
 						echo "该功能由jhb大神提供，感谢他！"
 						send_stats "ipv6修复"
 						;;
@@ -19350,15 +19461,15 @@ EOF
 		  case $choice in
 			  1)
 				  send_stats "中国大陆默认源"
-				  bash <(curl -sSL https://linuxmirrors.cn/main.sh)
+				  daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh"
 				  ;;
 			  2)
 				  send_stats "中国大陆教育源"
-				  bash <(curl -sSL https://linuxmirrors.cn/main.sh) --edu
+				  daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh" --edu
 				  ;;
 			  3)
 				  send_stats "海外源"
-				  bash <(curl -sSL https://linuxmirrors.cn/main.sh) --abroad
+				  daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh" --abroad
 				  ;;
 			  4)
 				  send_stats "智能切换更新源"
@@ -19525,14 +19636,13 @@ EOF
 					read -e -p "请输入流量重置日期（默认每月1日重置）: " cz_day
 					cz_day=${cz_day:-1}
 
-					cd ~
-					curl -Ss -o ~/Limiting_Shut_down.sh ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/Limiting_Shut_down1.sh
-					chmod +x ~/Limiting_Shut_down.sh
-					sed -i "s/110/$rx_threshold_gb/g" ~/Limiting_Shut_down.sh
-					sed -i "s/120/$tx_threshold_gb/g" ~/Limiting_Shut_down.sh
+					rm -f "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
+					daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/Limiting_Shut_down1.sh" "Limiting_Shut_down.sh"
+					sed -i "s/110/$rx_threshold_gb/g" "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
+					sed -i "s/120/$tx_threshold_gb/g" "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
 					check_crontab_installed
-					crontab -l | grep -v '~/Limiting_Shut_down.sh' | crontab -
-					(crontab -l ; echo "* * * * * ~/Limiting_Shut_down.sh") | crontab - > /dev/null 2>&1
+					crontab -l | grep -v 'Limiting_Shut_down.sh' | crontab -
+					(crontab -l ; echo "* * * * * bash $DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh") | crontab - > /dev/null 2>&1
 					crontab -l | grep -v 'reboot' | crontab -
 					(crontab -l ; echo "0 1 $cz_day * * reboot") | crontab - > /dev/null 2>&1
 					echo "限流关机已设置"
@@ -19540,9 +19650,9 @@ EOF
 					;;
 				  2)
 					check_crontab_installed
-					crontab -l | grep -v '~/Limiting_Shut_down.sh' | crontab -
+					crontab -l | grep -v 'Limiting_Shut_down.sh' | crontab -
 					crontab -l | grep -v 'reboot' | crontab -
-					rm ~/Limiting_Shut_down.sh
+					rm -f "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
 					echo "已关闭限流关机功能"
 					;;
 				  *)
@@ -19571,30 +19681,29 @@ EOF
 			  case "$choice" in
 				[Yy])
 				  send_stats "电报预警启用"
-				  cd ~
 				  install vim tmux bc jq
 				  check_crontab_installed
-				  if [ -f ~/TG-check-notify.sh ]; then
-					  chmod +x ~/TG-check-notify.sh
-					  vim ~/TG-check-notify.sh
+				  if [ -f "$DAIMON_SCRIPT_DIR/TG-check-notify.sh" ]; then
+					  chmod +x "$DAIMON_SCRIPT_DIR/TG-check-notify.sh"
+					  vim "$DAIMON_SCRIPT_DIR/TG-check-notify.sh"
 				  else
-					  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-check-notify.sh
-					  chmod +x ~/TG-check-notify.sh
-					  vim ~/TG-check-notify.sh
+					  daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-check-notify.sh" "TG-check-notify.sh"
+					  vim "$DAIMON_SCRIPT_DIR/TG-check-notify.sh"
 				  fi
 				  tmux kill-session -t TG-check-notify > /dev/null 2>&1
-				  tmux new -d -s TG-check-notify "~/TG-check-notify.sh"
-				  crontab -l | grep -v '~/TG-check-notify.sh' | crontab - > /dev/null 2>&1
-				  (crontab -l ; echo "@reboot tmux new -d -s TG-check-notify '~/TG-check-notify.sh'") | crontab - > /dev/null 2>&1
+				  tmux new -d -s TG-check-notify "bash $DAIMON_SCRIPT_DIR/TG-check-notify.sh"
+				  crontab -l | grep -v 'TG-check-notify.sh' | crontab - > /dev/null 2>&1
+				  (crontab -l ; echo "@reboot tmux new -d -s TG-check-notify 'bash $DAIMON_SCRIPT_DIR/TG-check-notify.sh'") | crontab - > /dev/null 2>&1
 
-				  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-SSH-check-notify.sh > /dev/null 2>&1
-				  sed -i "3i$(grep '^TELEGRAM_BOT_TOKEN=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh > /dev/null 2>&1
-				  sed -i "4i$(grep '^CHAT_ID=' ~/TG-check-notify.sh)" TG-SSH-check-notify.sh
-				  chmod +x ~/TG-SSH-check-notify.sh
+				  rm -f "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh"
+				  daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-SSH-check-notify.sh" "TG-SSH-check-notify.sh"
+				  sed -i "3i$(grep '^TELEGRAM_BOT_TOKEN=' "$DAIMON_SCRIPT_DIR/TG-check-notify.sh")" "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh" > /dev/null 2>&1
+				  sed -i "4i$(grep '^CHAT_ID=' "$DAIMON_SCRIPT_DIR/TG-check-notify.sh")" "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh"
+				  chmod +x "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh"
 
 				  # 添加到 ~/.profile 文件中
-				  if ! grep -q 'bash ~/TG-SSH-check-notify.sh' ~/.profile > /dev/null 2>&1; then
-					  echo 'bash ~/TG-SSH-check-notify.sh' >> ~/.profile
+				  if ! grep -q "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh" ~/.profile > /dev/null 2>&1; then
+					  echo "bash $DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh" >> ~/.profile
 					  if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
 						 echo 'source ~/.profile' >> ~/.bashrc
 					  fi
@@ -19618,11 +19727,7 @@ EOF
 		  26)
 			  root_use
 			  send_stats "修复SSH高危漏洞"
-			  cd ~
-			  curl -sS -O ${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/upgrade_openssh9.8p1.sh
-			  chmod +x ~/upgrade_openssh9.8p1.sh
-			  ~/upgrade_openssh9.8p1.sh
-			  rm -f ~/upgrade_openssh9.8p1.sh
+			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/upgrade_openssh9.8p1.sh" "upgrade_openssh9.8p1.sh"
 			  ;;
 
 		  27)
@@ -19778,7 +19883,7 @@ EOF
 				  echo -e "[${gl_lv}OK${gl_bai}] 11/12. 安装基础工具${gl_huang}docker wget sudo tar unzip socat btop vim vim${gl_bai}"
 				  echo "------------------------------------------------"
 
-				  curl -sS ${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh | bash
+				  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh"
 				  echo -e "[${gl_lv}OK${gl_bai}] 12/12. Linux系统内核参数优化"
 				  echo -e "${gl_lv}一条龙系统调优已完成${gl_bai}"
 
@@ -20153,7 +20258,7 @@ kejilion_Affiliates() {
 
 games_server_tools() {
 	clear
-	echo "游戏开服脚本合集已从 daimon 个人版移除。"
+	echo "相关开服脚本合集已从 daimon 个人版移除。"
 	break_end
 }
 
@@ -20193,7 +20298,7 @@ ssl_nginx_manager() {
 		if [ ! -f "$ACME" ]; then
 			echo -e "${gl_lv}正在安装 acme.sh...${gl_bai}"
 			ssl_install_deps
-			curl https://get.acme.sh | sh -s email=asdad@163.com
+			daimon_download "https://get.acme.sh" "acme-install.sh" && sh "$DAIMON_SCRIPT_DIR/acme-install.sh" email=asdad@163.com
 			[ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" || true
 			[ -f "$HOME/.profile" ] && source "$HOME/.profile" || true
 			if [ ! -f "$ACME" ]; then
@@ -20526,8 +20631,8 @@ common_one_click_scripts() {
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
 		case $sub_choice in
-			1) bash <(curl -sL https://run.NodeQuality.com) ;;
-			2) bash <(curl -Ls https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh) ;;
+			1) daimon_run_cached_script "https://run.NodeQuality.com" "NodeQuality.sh" ;;
+			2) daimon_run_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh" ;;
 			0) kejilion ;;
 			*) echo "无效的输入!" ;;
 		esac
