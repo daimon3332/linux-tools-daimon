@@ -18889,35 +18889,11 @@ linux_Settings() {
 	  # send_stats "系统工具"
 	  echo -e "系统工具"
 	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}设置脚本启动快捷键                 ${gl_kjlan}2.   ${gl_bai}修改登录密码"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}用户密码登录模式                   ${gl_kjlan}4.   ${gl_bai}安装Python指定版本"
-	  echo -e "${gl_kjlan}5.   ${gl_bai}开放所有端口                       ${gl_kjlan}6.   ${gl_bai}修改SSH连接端口"
-	  echo -e "${gl_kjlan}7.   ${gl_bai}优化DNS地址                        ${gl_kjlan}8.   ${gl_bai}一键重装系统 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}9.   ${gl_bai}禁用ROOT账户创建新账户             ${gl_kjlan}10.  ${gl_bai}切换优先ipv4/ipv6"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}查看端口占用状态                   ${gl_kjlan}12.  ${gl_bai}修改虚拟内存大小"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}用户管理                           ${gl_kjlan}14.  ${gl_bai}用户/密码生成器"
-	  echo -e "${gl_kjlan}15.  ${gl_bai}系统时区调整                       ${gl_kjlan}16.  ${gl_bai}设置BBR3加速"
-	  echo -e "${gl_kjlan}17.  ${gl_bai}防火墙高级管理器                   ${gl_kjlan}18.  ${gl_bai}修改主机名"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}切换系统更新源                     ${gl_kjlan}20.  ${gl_bai}定时任务管理"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}21.  ${gl_bai}本机host解析                       ${gl_kjlan}22.  ${gl_bai}SSH防御程序"
-	  echo -e "${gl_kjlan}23.  ${gl_bai}限流自动关机                       ${gl_kjlan}24.  ${gl_bai}用户密钥登录模式"
-	  echo -e "${gl_kjlan}25.  ${gl_bai}TG-bot系统监控预警                 ${gl_kjlan}26.  ${gl_bai}修复OpenSSH高危漏洞"
-	  echo -e "${gl_kjlan}27.  ${gl_bai}红帽系Linux内核升级                ${gl_kjlan}28.  ${gl_bai}Linux系统内核参数优化 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}29.  ${gl_bai}病毒扫描工具 ${gl_huang}★${gl_bai}                     ${gl_kjlan}30.  ${gl_bai}文件管理器"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}31.  ${gl_bai}切换系统语言                       ${gl_kjlan}32.  ${gl_bai}命令行美化工具 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}33.  ${gl_bai}设置系统回收站                     ${gl_kjlan}34.  ${gl_bai}系统备份与恢复"
-	  echo -e "${gl_kjlan}35.  ${gl_bai}ssh远程连接工具                    ${gl_kjlan}36.  ${gl_bai}硬盘分区管理工具"
-	  echo -e "${gl_kjlan}37.  ${gl_bai}命令行历史记录                     ${gl_kjlan}38.  ${gl_bai}rsync远程同步工具"
-	  echo -e "${gl_kjlan}39.  ${gl_bai}命令收藏夹 ${gl_huang}★${gl_bai}                       ${gl_kjlan}40.  ${gl_bai}网卡管理工具"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}41.  ${gl_bai}系统日志管理工具 ${gl_huang}★${gl_bai}                 ${gl_kjlan}42.  ${gl_bai}系统变量管理工具"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}61.  ${gl_bai}留言板                             ${gl_kjlan}66.  ${gl_bai}一条龙系统调优 ${gl_huang}★${gl_bai}"
-	  echo -e "${gl_kjlan}99.  ${gl_bai}重启服务器                         ${gl_kjlan}100. ${gl_bai}隐私与安全"
-	  echo -e "${gl_kjlan}101. ${gl_bai}k命令高级用法 ${gl_huang}★${gl_bai}                    ${gl_kjlan}102. ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}1.   ${gl_bai}设置脚本启动快捷键                 ${gl_kjlan}7.   ${gl_bai}优化DNS地址"
+	  echo -e "${gl_kjlan}10.  ${gl_bai}切换优先ipv4/ipv6                  ${gl_kjlan}12.  ${gl_bai}修改虚拟内存大小"
+	  echo -e "${gl_kjlan}13.  ${gl_bai}用户管理                           ${gl_kjlan}15.  ${gl_bai}系统时区调整"
+	  echo -e "${gl_kjlan}18.  ${gl_bai}修改主机名                         ${gl_kjlan}21.  ${gl_bai}本机host解析"
+	  echo -e "${gl_kjlan}42.  ${gl_bai}系统变量管理工具                   ${gl_kjlan}102. ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -18945,179 +18921,9 @@ linux_Settings() {
 			  done
 			  ;;
 
-		  2)
-			  clear
-			  send_stats "设置你的登录密码"
-			  echo "设置你的登录密码"
-			  passwd
-			  ;;
-		  3)
-			  clear
-			  add_sshpasswd
-			  ;;
-
-		  4)
-			root_use
-			send_stats "py版本管理"
-			echo "python版本管理"
-			echo "视频介绍: https://www.bilibili.com/video/BV1Pm42157cK?t=0.1"
-			echo "---------------------------------------"
-			echo "该功能可无缝安装python官方支持的任何版本！"
-			local VERSION=$(python3 -V 2>&1 | awk '{print $2}')
-			echo -e "当前python版本号: ${gl_huang}$VERSION${gl_bai}"
-			echo "------------"
-			echo "推荐版本:  3.12    3.11    3.10    3.9    3.8    2.7"
-			echo "查询更多版本: https://www.python.org/downloads/"
-			echo "------------"
-			read -e -p "输入你要安装的python版本号（输入0退出）: " py_new_v
-
-
-			if [[ "$py_new_v" == "0" ]]; then
-				send_stats "脚本PY管理"
-				break_end
-				linux_Settings
-			fi
-
-
-			if ! grep -q 'export PYENV_ROOT="\$HOME/.pyenv"' ~/.bashrc; then
-				if command -v yum &>/dev/null; then
-					yum update -y && yum install git -y
-					yum groupinstall "Development Tools" -y
-					yum install openssl-devel bzip2-devel libffi-devel ncurses-devel zlib-devel readline-devel sqlite-devel xz-devel findutils -y
-
-					curl -O https://www.openssl.org/source/openssl-1.1.1u.tar.gz
-					tar -xzf openssl-1.1.1u.tar.gz
-					cd openssl-1.1.1u
-					./config --prefix=/usr/local/openssl --openssldir=/usr/local/openssl shared zlib
-					make
-					make install
-					echo "/usr/local/openssl/lib" > /etc/ld.so.conf.d/openssl-1.1.1u.conf
-					ldconfig -v
-					cd ..
-
-					export LDFLAGS="-L/usr/local/openssl/lib"
-					export CPPFLAGS="-I/usr/local/openssl/include"
-					export PKG_CONFIG_PATH="/usr/local/openssl/lib/pkgconfig"
-
-				elif command -v apt &>/dev/null; then
-					apt update -y && apt install git -y
-					apt install build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev wget curl llvm libncurses5-dev libncursesw5-dev xz-utils tk-dev libffi-dev liblzma-dev libgdbm-dev libnss3-dev libedit-dev -y
-				elif command -v apk &>/dev/null; then
-					apk update && apk add git
-					apk add --no-cache bash gcc musl-dev libffi-dev openssl-dev bzip2-dev zlib-dev readline-dev sqlite-dev libc6-compat linux-headers make xz-dev build-base  ncurses-dev
-				else
-					echo "未知的包管理器!"
-					return
-				fi
-
-				daimon_run_cached_script "https://pyenv.run" "pyenv-run.sh"
-				cat << EOF >> ~/.bashrc
-
-export PYENV_ROOT="\$HOME/.pyenv"
-if [[ -d "\$PYENV_ROOT/bin" ]]; then
-  export PATH="\$PYENV_ROOT/bin:\$PATH"
-fi
-eval "\$(pyenv init --path)"
-eval "\$(pyenv init -)"
-eval "\$(pyenv virtualenv-init -)"
-
-EOF
-
-			fi
-
-			sleep 1
-			source ~/.bashrc
-			sleep 1
-			pyenv install $py_new_v
-			pyenv global $py_new_v
-
-			rm -rf /tmp/python-build.*
-			rm -rf $(pyenv root)/cache/*
-
-			local VERSION=$(python -V 2>&1 | awk '{print $2}')
-			echo -e "当前python版本号: ${gl_huang}$VERSION${gl_bai}"
-			send_stats "脚本PY版本切换"
-
-			  ;;
-
-		  5)
-			  root_use
-			  send_stats "开放端口"
-			  iptables_open
-			  remove iptables-persistent ufw firewalld iptables-services > /dev/null 2>&1
-			  echo "端口已全部开放"
-
-			  ;;
-		  6)
-			root_use
-			send_stats "修改SSH端口"
-
-			while true; do
-				clear
-				sed -i 's/^\s*#\?\s*Port/Port/' /etc/ssh/sshd_config
-
-				# 读取当前的 SSH 端口号
-				local current_port=$(grep -E '^ *Port [0-9]+' /etc/ssh/sshd_config | awk '{print $2}')
-
-				# 打印当前的 SSH 端口号
-				echo -e "当前的 SSH 端口号是:  ${gl_huang}$current_port ${gl_bai}"
-
-				echo "------------------------"
-				echo "端口号范围1到65535之间的数字。（输入0退出）"
-
-				# 提示用户输入新的 SSH 端口号
-				read -e -p "请输入新的 SSH 端口号: " new_port
-
-				# 判断端口号是否在有效范围内
-				if [[ $new_port =~ ^[0-9]+$ ]]; then  # 检查输入是否为数字
-					if [[ $new_port -ge 1 && $new_port -le 65535 ]]; then
-						send_stats "SSH端口已修改"
-						new_ssh_port $new_port
-					elif [[ $new_port -eq 0 ]]; then
-						send_stats "退出SSH端口修改"
-						break
-					else
-						echo "端口号无效，请输入1到65535之间的数字。"
-						send_stats "输入无效SSH端口"
-						break_end
-					fi
-				else
-					echo "输入无效，请输入数字。"
-					send_stats "输入无效SSH端口"
-					break_end
-				fi
-			done
-
-
-			  ;;
-
-
 		  7)
 			set_dns_ui
 			  ;;
-
-		  8)
-
-			dd_xitong
-			  ;;
-		  9)
-			root_use
-			send_stats "新用户禁用root"
-			read -e -p "请输入新用户名（输入0退出）: " new_username
-			if [ "$new_username" == "0" ]; then
-				break_end
-				linux_Settings
-			fi
-
-			create_user_with_sshkey $new_username true
-
-			ssh-keygen -l -f /home/$new_username/.ssh/authorized_keys &>/dev/null && {
-				passwd -l root &>/dev/null
-				sed -i 's/^[[:space:]]*#\?[[:space:]]*PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config
-			}
-
-			;;
-
 
 		  10)
 			root_use
@@ -19165,11 +18971,6 @@ EOF
 
 				esac
 			done
-			;;
-
-		  11)
-			clear
-			ss -tulnape
 			;;
 
 		  12)
@@ -19295,57 +19096,6 @@ EOF
 			  done
 			  ;;
 
-		  14)
-			clear
-			send_stats "用户信息生成器"
-			echo "随机用户名"
-			echo "------------------------"
-			for i in {1..5}; do
-				username="user$(< /dev/urandom tr -dc _a-z0-9 | head -c6)"
-				echo "随机用户名 $i: $username"
-			done
-
-			echo ""
-			echo "随机姓名"
-			echo "------------------------"
-			local first_names=("John" "Jane" "Michael" "Emily" "David" "Sophia" "William" "Olivia" "James" "Emma" "Ava" "Liam" "Mia" "Noah" "Isabella")
-			local last_names=("Smith" "Johnson" "Brown" "Davis" "Wilson" "Miller" "Jones" "Garcia" "Martinez" "Williams" "Lee" "Gonzalez" "Rodriguez" "Hernandez")
-
-			# 生成5个随机用户姓名
-			for i in {1..5}; do
-				local first_name_index=$((RANDOM % ${#first_names[@]}))
-				local last_name_index=$((RANDOM % ${#last_names[@]}))
-				local user_name="${first_names[$first_name_index]} ${last_names[$last_name_index]}"
-				echo "随机用户姓名 $i: $user_name"
-			done
-
-			echo ""
-			echo "随机UUID"
-			echo "------------------------"
-			for i in {1..5}; do
-				uuid=$(cat /proc/sys/kernel/random/uuid)
-				echo "随机UUID $i: $uuid"
-			done
-
-			echo ""
-			echo "16位随机密码"
-			echo "------------------------"
-			for i in {1..5}; do
-				local password=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c16)
-				echo "随机密码 $i: $password"
-			done
-
-			echo ""
-			echo "32位随机密码"
-			echo "------------------------"
-			for i in {1..5}; do
-				local password=$(< /dev/urandom tr -dc _A-Z-a-z-0-9 | head -c32)
-				echo "随机密码 $i: $password"
-			done
-			echo ""
-
-			  ;;
-
 		  15)
 			root_use
 			send_stats "换时区"
@@ -19418,16 +19168,6 @@ EOF
 			done
 			  ;;
 
-		  16)
-
-			bbrv3
-			  ;;
-
-		  17)
-			  iptables_panel
-
-			  ;;
-
 		  18)
 		  root_use
 		  send_stats "修改主机名"
@@ -19472,111 +19212,6 @@ EOF
 		  done
 			  ;;
 
-		  19)
-		  root_use
-		  send_stats "换系统更新源"
-		  clear
-		  echo "选择更新源区域"
-		  echo "接入LinuxMirrors切换系统更新源"
-		  echo "------------------------"
-		  echo "1. 中国大陆【默认】          2. 中国大陆【教育网】          3. 海外地区          4. 智能切换更新源"
-		  echo "------------------------"
-		  echo "0. 返回上一级选单"
-		  echo "------------------------"
-		  read -e -p "输入你的选择: " choice
-
-		  case $choice in
-			  1)
-				  send_stats "中国大陆默认源"
-				  daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh"
-				  ;;
-			  2)
-				  send_stats "中国大陆教育源"
-				  daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh" --edu
-				  ;;
-			  3)
-				  send_stats "海外源"
-				  daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh" --abroad
-				  ;;
-			  4)
-				  send_stats "智能切换更新源"
-				  switch_mirror false false
-				  ;;
-
-			  *)
-				  echo "已取消"
-				  ;;
-
-		  esac
-
-			  ;;
-
-		  20)
-		  send_stats "定时任务管理"
-			  while true; do
-				  clear
-				  check_crontab_installed
-				  clear
-				  echo "定时任务列表"
-				  crontab -l
-				  echo ""
-				  echo "操作"
-				  echo "------------------------"
-				  echo "1. 添加定时任务              2. 删除定时任务              3. 编辑定时任务"
-				  echo "------------------------"
-				  echo "0. 返回上一级选单"
-				  echo "------------------------"
-				  read -e -p "请输入你的选择: " sub_choice
-
-				  case $sub_choice in
-					  1)
-						  read -e -p "请输入新任务的执行命令: " newquest
-						  echo "------------------------"
-						  echo "1. 每月任务                 2. 每周任务"
-						  echo "3. 每天任务                 4. 每小时任务"
-						  echo "------------------------"
-						  read -e -p "请输入你的选择: " dingshi
-
-						  case $dingshi in
-							  1)
-								  read -e -p "选择每月的几号执行任务？ (1-30): " day
-								  (crontab -l ; echo "0 0 $day * * $newquest") | crontab - > /dev/null 2>&1
-								  ;;
-							  2)
-								  read -e -p "选择周几执行任务？ (0-6，0代表星期日): " weekday
-								  (crontab -l ; echo "0 0 * * $weekday $newquest") | crontab - > /dev/null 2>&1
-								  ;;
-							  3)
-								  read -e -p "选择每天几点执行任务？（小时，0-23）: " hour
-								  (crontab -l ; echo "0 $hour * * * $newquest") | crontab - > /dev/null 2>&1
-								  ;;
-							  4)
-								  read -e -p "输入每小时的第几分钟执行任务？（分钟，0-60）: " minute
-								  (crontab -l ; echo "$minute * * * * $newquest") | crontab - > /dev/null 2>&1
-								  ;;
-							  *)
-								  break  # 跳出
-								  ;;
-						  esac
-						  send_stats "添加定时任务"
-						  ;;
-					  2)
-						  read -e -p "请输入需要删除任务的关键字: " kquest
-						  crontab -l | grep -v "$kquest" | crontab -
-						  send_stats "删除定时任务"
-						  ;;
-					  3)
-						  crontab -e
-						  send_stats "编辑定时任务"
-						  ;;
-					  *)
-						  break  # 跳出循环，退出菜单
-						  ;;
-				  esac
-			  done
-
-			  ;;
-
 		  21)
 			  root_use
 			  send_stats "本地host解析"
@@ -19613,373 +19248,9 @@ EOF
 			  done
 			  ;;
 
-		  22)
-			fail2ban_panel
-			  ;;
-
-
-		  23)
-			root_use
-			send_stats "限流关机功能"
-			while true; do
-				clear
-				echo "限流关机功能"
-				echo "视频介绍: https://www.bilibili.com/video/BV1mC411j7Qd?t=0.1"
-				echo "------------------------------------------------"
-				echo "当前流量使用情况，重启服务器流量计算会清零！"
-				output_status
-				echo -e "${gl_kjlan}总接收: ${gl_bai}$rx"
-				echo -e "${gl_kjlan}总发送: ${gl_bai}$tx"
-
-				# 检查是否存在 Limiting_Shut_down.sh 文件
-				if [ -f ~/Limiting_Shut_down.sh ]; then
-					# 获取 threshold_gb 的值
-					local rx_threshold_gb=$(grep -oP 'rx_threshold_gb=\K\d+' ~/Limiting_Shut_down.sh)
-					local tx_threshold_gb=$(grep -oP 'tx_threshold_gb=\K\d+' ~/Limiting_Shut_down.sh)
-					echo -e "${gl_lv}当前设置的进站限流阈值为: ${gl_huang}${rx_threshold_gb}${gl_lv}G${gl_bai}"
-					echo -e "${gl_lv}当前设置的出站限流阈值为: ${gl_huang}${tx_threshold_gb}${gl_lv}GB${gl_bai}"
-				else
-					echo -e "${gl_hui}当前未启用限流关机功能${gl_bai}"
-				fi
-
-				echo
-				echo "------------------------------------------------"
-				echo "系统每分钟会检测实际流量是否到达阈值，到达后会自动关闭服务器！"
-				echo "------------------------"
-				echo "1. 开启限流关机功能          2. 停用限流关机功能"
-				echo "------------------------"
-				echo "0. 返回上一级选单"
-				echo "------------------------"
-				read -e -p "请输入你的选择: " Limiting
-
-				case "$Limiting" in
-				  1)
-					# 输入新的虚拟内存大小
-					echo "如果实际服务器就100G流量，可设置阈值为95G，提前关机，以免出现流量误差或溢出。"
-					read -e -p "请输入进站流量阈值（单位为G，默认100G）: " rx_threshold_gb
-					rx_threshold_gb=${rx_threshold_gb:-100}
-					read -e -p "请输入出站流量阈值（单位为G，默认100G）: " tx_threshold_gb
-					tx_threshold_gb=${tx_threshold_gb:-100}
-					read -e -p "请输入流量重置日期（默认每月1日重置）: " cz_day
-					cz_day=${cz_day:-1}
-
-					rm -f "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
-					daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/Limiting_Shut_down1.sh" "Limiting_Shut_down.sh"
-					sed -i "s/110/$rx_threshold_gb/g" "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
-					sed -i "s/120/$tx_threshold_gb/g" "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
-					check_crontab_installed
-					crontab -l | grep -v 'Limiting_Shut_down.sh' | crontab -
-					(crontab -l ; echo "* * * * * bash $DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh") | crontab - > /dev/null 2>&1
-					crontab -l | grep -v 'reboot' | crontab -
-					(crontab -l ; echo "0 1 $cz_day * * reboot") | crontab - > /dev/null 2>&1
-					echo "限流关机已设置"
-					send_stats "限流关机已设置"
-					;;
-				  2)
-					check_crontab_installed
-					crontab -l | grep -v 'Limiting_Shut_down.sh' | crontab -
-					crontab -l | grep -v 'reboot' | crontab -
-					rm -f "$DAIMON_SCRIPT_DIR/Limiting_Shut_down.sh"
-					echo "已关闭限流关机功能"
-					;;
-				  *)
-					break
-					;;
-				esac
-			done
-			  ;;
-
-
-		  24)
-			sshkey_panel
-			  ;;
-
-		  25)
-			  root_use
-			  send_stats "电报预警"
-			  echo "TG-bot监控预警功能"
-			  echo "视频介绍: https://youtu.be/vLL-eb3Z_TY"
-			  echo "------------------------------------------------"
-			  echo "您需要配置tg机器人API和接收预警的用户ID，即可实现本机CPU，内存，硬盘，流量，SSH登录的实时监控预警"
-			  echo "到达阈值后会向用户发预警消息"
-			  echo -e "${gl_hui}-关于流量，重启服务器将重新计算-${gl_bai}"
-			  read -e -p "确定继续吗？(Y/N): " choice
-
-			  case "$choice" in
-				[Yy])
-				  send_stats "电报预警启用"
-				  install vim tmux bc jq
-				  check_crontab_installed
-				  if [ -f "$DAIMON_SCRIPT_DIR/TG-check-notify.sh" ]; then
-					  chmod +x "$DAIMON_SCRIPT_DIR/TG-check-notify.sh"
-					  vim "$DAIMON_SCRIPT_DIR/TG-check-notify.sh"
-				  else
-					  daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-check-notify.sh" "TG-check-notify.sh"
-					  vim "$DAIMON_SCRIPT_DIR/TG-check-notify.sh"
-				  fi
-				  tmux kill-session -t TG-check-notify > /dev/null 2>&1
-				  tmux new -d -s TG-check-notify "bash $DAIMON_SCRIPT_DIR/TG-check-notify.sh"
-				  crontab -l | grep -v 'TG-check-notify.sh' | crontab - > /dev/null 2>&1
-				  (crontab -l ; echo "@reboot tmux new -d -s TG-check-notify 'bash $DAIMON_SCRIPT_DIR/TG-check-notify.sh'") | crontab - > /dev/null 2>&1
-
-				  rm -f "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh"
-				  daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/TG-SSH-check-notify.sh" "TG-SSH-check-notify.sh"
-				  sed -i "3i$(grep '^TELEGRAM_BOT_TOKEN=' "$DAIMON_SCRIPT_DIR/TG-check-notify.sh")" "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh" > /dev/null 2>&1
-				  sed -i "4i$(grep '^CHAT_ID=' "$DAIMON_SCRIPT_DIR/TG-check-notify.sh")" "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh"
-				  chmod +x "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh"
-
-				  # 添加到 ~/.profile 文件中
-				  if ! grep -q "$DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh" ~/.profile > /dev/null 2>&1; then
-					  echo "bash $DAIMON_SCRIPT_DIR/TG-SSH-check-notify.sh" >> ~/.profile
-					  if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
-						 echo 'source ~/.profile' >> ~/.bashrc
-					  fi
-				  fi
-
-				  source ~/.profile
-
-				  clear
-				  echo "TG-bot预警系统已启动"
-				  echo -e "${gl_hui}你还可以将root目录中的TG-check-notify.sh预警文件放到其他机器上直接使用！${gl_bai}"
-				  ;;
-				[Nn])
-				  echo "已取消"
-				  ;;
-				*)
-				  echo "无效的选择，请输入 Y 或 N。"
-				  ;;
-			  esac
-			  ;;
-
-		  26)
-			  root_use
-			  send_stats "修复SSH高危漏洞"
-			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/upgrade_openssh9.8p1.sh" "upgrade_openssh9.8p1.sh"
-			  ;;
-
-		  27)
-			  elrepo
-			  ;;
-		  28)
-			  Kernel_optimize
-			  ;;
-
-		  29)
-			  clamav
-			  ;;
-
-		  30)
-			  linux_file
-			  ;;
-
-		  31)
-			  linux_language
-			  ;;
-
-		  32)
-			  shell_bianse
-			  ;;
-		  33)
-			  linux_trash
-			  ;;
-		  34)
-			  linux_backup
-			  ;;
-		  35)
-			  ssh_manager
-			  ;;
-		  36)
-			  disk_manager
-			  ;;
-		  37)
-			  clear
-			  send_stats "命令行历史记录"
-			  get_history_file() {
-				  for file in "$HOME"/.bash_history "$HOME"/.ash_history "$HOME"/.zsh_history "$HOME"/.local/share/fish/fish_history; do
-					  [ -f "$file" ] && { echo "$file"; return; }
-				  done
-				  return 1
-			  }
-
-			  history_file=$(get_history_file) && cat -n "$history_file"
-			  ;;
-
-		  38)
-			  rsync_manager
-			  ;;
-
-
-		  39)
-			  clear
-			  linux_fav
-			  ;;
-
-		  40)
-			  clear
-			  net_menu
-			  ;;
-
-		  41)
-			  clear
-			  log_menu
-			  ;;
-
 		  42)
 			  clear
 			  env_menu
-			  ;;
-
-
-		  61)
-			clear
-			send_stats "留言板"
-			echo "访问daimon官方留言板，您对脚本有任何想法欢迎留言交流！"
-			echo "https://board.kejilion.pro"
-			echo "公共密码: kejilion.sh"
-			  ;;
-
-		  66)
-
-			  root_use
-			  send_stats "一条龙调优"
-			  echo "一条龙系统调优"
-			  echo "------------------------------------------------"
-			  echo "将对以下内容进行操作与优化"
-			  echo "1. 优化系统更新源，更新系统到最新"
-			  echo "2. 清理系统垃圾文件"
-			  echo -e "3. 设置虚拟内存${gl_huang}1G${gl_bai}"
-			  echo -e "4. 设置SSH端口号为${gl_huang}5522${gl_bai}"
-			  echo -e "5. 启动fail2ban防御SSH暴力破解"
-			  echo -e "6. 开放所有端口"
-			  echo -e "7. 开启${gl_huang}BBR${gl_bai}加速"
-			  echo -e "8. 设置时区到${gl_huang}上海${gl_bai}"
-			  echo -e "9. 自动优化DNS地址${gl_huang}海外: 1.1.1.1 8.8.8.8  国内: 223.5.5.5 ${gl_bai}"
-		  	  echo -e "10. 设置网络为${gl_huang}ipv4优先${gl_bai}"
-			  echo -e "11. 安装基础工具${gl_huang}docker wget sudo tar unzip socat btop vim vim${gl_bai}"
-			  echo -e "12. Linux系统内核参数优化${gl_huang}自动根据网络环境调优${gl_bai}"
-			  echo "------------------------------------------------"
-			  read -e -p "确定一键保养吗？(Y/N): " choice
-
-			  case "$choice" in
-				[Yy])
-				  clear
-				  send_stats "一条龙调优启动"
-				  echo "------------------------------------------------"
-				  switch_mirror false false
-				  linux_update
-				  echo -e "[${gl_lv}OK${gl_bai}] 1/12. 更新系统到最新"
-
-				  echo "------------------------------------------------"
-				  linux_clean
-				  echo -e "[${gl_lv}OK${gl_bai}] 2/12. 清理系统垃圾文件"
-
-				  echo "------------------------------------------------"
-				  add_swap 1024
-				  echo -e "[${gl_lv}OK${gl_bai}] 3/12. 设置虚拟内存${gl_huang}1G${gl_bai}"
-
-				  echo "------------------------------------------------"
-				  new_ssh_port 5522
-				  echo -e "[${gl_lv}OK${gl_bai}] 4/12. 设置SSH端口号为${gl_huang}5522${gl_bai}"
-				  echo "------------------------------------------------"
-				  f2b_install_sshd
-				  cd ~
-				  f2b_status
-				  echo -e "[${gl_lv}OK${gl_bai}] 5/12. 启动fail2ban防御SSH暴力破解"
-
-				  echo "------------------------------------------------"
-				  echo -e "[${gl_lv}OK${gl_bai}] 6/12. 开放所有端口"
-
-				  echo "------------------------------------------------"
-				  bbr_on
-				  echo -e "[${gl_lv}OK${gl_bai}] 7/12. 开启${gl_huang}BBR${gl_bai}加速"
-
-				  echo "------------------------------------------------"
-				  set_timedate Asia/Shanghai
-				  echo -e "[${gl_lv}OK${gl_bai}] 8/12. 设置时区到${gl_huang}上海${gl_bai}"
-
-				  echo "------------------------------------------------"
-				  auto_optimize_dns
-				  echo -e "[${gl_lv}OK${gl_bai}] 9/12. 自动优化DNS地址${gl_huang}${gl_bai}"
-				  echo "------------------------------------------------"
-				  prefer_ipv4
-				  echo -e "[${gl_lv}OK${gl_bai}] 10/12. 设置网络为${gl_huang}ipv4优先${gl_bai}}"
-
-				  echo "------------------------------------------------"
-				  install_docker
-				  install wget sudo tar unzip socat btop vim vim
-				  echo -e "[${gl_lv}OK${gl_bai}] 11/12. 安装基础工具${gl_huang}docker wget sudo tar unzip socat btop vim vim${gl_bai}"
-				  echo "------------------------------------------------"
-
-				  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh"
-				  echo -e "[${gl_lv}OK${gl_bai}] 12/12. Linux系统内核参数优化"
-				  echo -e "${gl_lv}一条龙系统调优已完成${gl_bai}"
-
-				  ;;
-				[Nn])
-				  echo "已取消"
-				  ;;
-				*)
-				  echo "无效的选择，请输入 Y 或 N。"
-				  ;;
-			  esac
-
-			  ;;
-
-		  99)
-			  clear
-			  send_stats "重启系统"
-			  server_reboot
-			  ;;
-		  100)
-
-			root_use
-			while true; do
-			  clear
-			  if grep -q '^ENABLE_STATS="false"' /usr/local/bin/d > /dev/null 2>&1; then
-			  	local status_message="${gl_lv}正在采集数据${gl_bai}"
-			  elif grep -q '^ENABLE_STATS="false"' /usr/local/bin/d > /dev/null 2>&1; then
-			  	local status_message="${gl_hui}采集已关闭${gl_bai}"
-			  else
-			  	local status_message="无法确定的状态"
-			  fi
-
-			  echo "隐私与安全"
-			  echo "脚本将收集用户使用功能的数据，优化脚本体验，制作更多好玩好用的功能"
-			  echo "将收集脚本版本号，使用的时间，系统版本，CPU架构，机器所属国家和使用的功能的名称，"
-			  echo "------------------------------------------------"
-			  echo -e "当前状态: $status_message"
-			  echo "--------------------"
-			  echo "1. 开启采集"
-			  echo "2. 关闭采集"
-			  echo "--------------------"
-			  echo "0. 返回上一级选单"
-			  echo "--------------------"
-			  read -e -p "请输入你的选择: " sub_choice
-			  case $sub_choice in
-				  1)
-					  cd ~
-					  sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' /usr/local/bin/d
-					  sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' ~/daimon.sh
-					  echo "已开启采集"
-					  send_stats "隐私与安全已开启采集"
-					  ;;
-				  2)
-					  cd ~
-					  sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' /usr/local/bin/d
-					  sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' ~/daimon.sh
-					  echo "已关闭采集"
-					  send_stats "隐私与安全已关闭采集"
-					  ;;
-				  *)
-					  break
-					  ;;
-			  esac
-			done
-			  ;;
-
-		  101)
-			  clear
-			  k_info
 			  ;;
 
 		  102)
@@ -19987,7 +19258,7 @@ EOF
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"
 			  echo "------------------------------------------------"
-			  echo "将彻底卸载kejilion脚本，不影响你其他功能"
+			  echo "将彻底卸载daimon脚本，不影响你其他功能"
 			  read -e -p "确定继续吗？(Y/N): " choice
 
 			  case "$choice" in
@@ -20022,14 +19293,7 @@ EOF
 
 	done
 
-
-
 }
-
-
-
-
-
 
 linux_file() {
 	root_use
@@ -20879,8 +20143,7 @@ ssh_add_private_key() {
 	[ -z "$key_name" ] && echo "文件名不能为空" && return 1
 	key_name=$(basename "$key_name")
 	echo "请粘贴私钥内容，输入单独一行 EOF 结束："
-	cat > "/root/.ssh/$key_name" <<'KEY_PLACEHOLDER'
-KEY_PLACEHOLDER
+	: > "/root/.ssh/$key_name"
 	while IFS= read -r line; do
 		[ "$line" = "EOF" ] && break
 		echo "$line" >> "/root/.ssh/$key_name"
@@ -20938,10 +20201,67 @@ ssh_edit_config() {
 	ssh_apply_or_restore "$backup"
 }
 
+
+ssh_effective_value() {
+	local key
+	key=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+	if command -v sshd >/dev/null 2>&1; then
+		sshd -T 2>/dev/null | awk -v k="$key" '$1 == k {print $2; exit}'
+	elif [ -x /usr/sbin/sshd ]; then
+		/usr/sbin/sshd -T 2>/dev/null | awk -v k="$key" '$1 == k {print $2; exit}'
+	fi
+}
+
+ssh_config_file_value() {
+	local key="$1"
+	awk -v k="$key" '
+		BEGIN { IGNORECASE=1 }
+		$0 !~ /^[[:space:]]*#/ && tolower($1) == tolower(k) { print $2; exit }
+	' "$SSH_CONFIG_FILE" 2>/dev/null
+}
+
+ssh_option_value() {
+	local key="$1"
+	local value
+	value=$(ssh_effective_value "$key")
+	[ -n "$value" ] || value=$(ssh_config_file_value "$key")
+	case "$key" in
+		Port) value=${value:-22} ;;
+		PasswordAuthentication) value=${value:-yes} ;;
+		PubkeyAuthentication) value=${value:-yes} ;;
+	esac
+	echo "$value"
+}
+
+ssh_status_label() {
+	case "$1" in
+		yes|YES|Yes) echo "开启" ;;
+		no|NO|No) echo "关闭" ;;
+		*) echo "未知" ;;
+	esac
+}
+
+ssh_current_ports() {
+	local ports=""
+	if command -v ss >/dev/null 2>&1; then
+		ports=$(ss -tlnp 2>/dev/null | awk '/sshd/ { n=split($4,a,":"); print a[n] }' | sort -nu | tr '\n' ' ' | sed 's/[[:space:]]*$//')
+	fi
+	[ -n "$ports" ] || ports=$(ssh_option_value Port)
+	echo "$ports"
+}
+
+ssh_show_status() {
+	echo -e "当前 SSH 登录端口: ${gl_huang}$(ssh_current_ports)${gl_bai}"
+	echo -e "密码登录模式: ${gl_huang}$(ssh_status_label "$(ssh_option_value PasswordAuthentication)")${gl_bai}"
+	echo -e "密钥登录模式: ${gl_huang}$(ssh_status_label "$(ssh_option_value PubkeyAuthentication)")${gl_bai}"
+}
+
 ssh_config_manager() {
 	while true; do
 		clear
 		echo "SSH 配置"
+		echo "------------------------"
+		ssh_show_status
 		echo "------------------------"
 		echo "1. 修改 SSH 端口"
 		echo "2. 禁用/开启密码登录"
@@ -21167,7 +20487,7 @@ echo -e "${gl_kjlan}10.  ${gl_bai}常用的一键脚本 ${gl_huang}★${gl_bai}"
 echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理 ${gl_huang}★${gl_bai}"
 echo -e "${gl_kjlan}12.  ${gl_bai}应用市场"
 echo -e "${gl_kjlan}13.  ${gl_bai}系统工具"
-echo -e "${gl_kjlan}14.  ${gl_bai}rclone配置 ${gl_huang}$(rclone_status_text)${gl_bai}"
+echo -e "${gl_kjlan}14.  ${gl_bai}rclone配置"
 echo -e "${gl_kjlan}15.  ${gl_bai}SSH配置"
 echo -e "${gl_kjlan}16.  ${gl_bai}UFW防火墙管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
