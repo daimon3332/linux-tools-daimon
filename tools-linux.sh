@@ -18607,14 +18607,23 @@ create_user_with_sshkey() {
 	# 修正权限
 	chown -R "$new_username:$new_username" "/home/$new_username/.ssh"
 
-	install sudo
-
 	# sudo 免密
 	if [[ "$is_sudo" == "true" ]]; then
+		install sudo
+		getent group sudo >/dev/null 2>&1 && usermod -aG sudo "$new_username"
+		getent group wheel >/dev/null 2>&1 && usermod -aG wheel "$new_username"
+		mkdir -p /etc/sudoers.d
 		cat >"/etc/sudoers.d/$new_username" <<EOF
-$new_username ALL=(ALL) NOPASSWD:ALL
+$new_username ALL=(ALL:ALL) NOPASSWD:ALL
 EOF
 		chmod 440 "/etc/sudoers.d/$new_username"
+		if command -v visudo >/dev/null 2>&1; then
+			visudo -cf "/etc/sudoers.d/$new_username" >/dev/null 2>&1 || {
+				rm -f "/etc/sudoers.d/$new_username"
+				echo "sudo 权限配置校验失败，已回滚"
+				return 1
+			}
+		fi
 	fi
 
 	sed -i '/^\s*#\?\s*UsePAM\s\+/d' /etc/ssh/sshd_config
