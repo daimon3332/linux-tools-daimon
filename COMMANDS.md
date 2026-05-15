@@ -1,4 +1,4 @@
-# linux-tools 命令教程
+# linux-tools-daimon 命令教程
 
 本文按脚本菜单整理每个选项背后的核心命令。说明以 Ubuntu 为例，只列关键命令，不展开 if/else、循环、颜色输出等交互细节。
 
@@ -126,7 +126,7 @@ rm -rf /tmp/*
 
 ## 4. 系统工具
 
-进入“系统工具”默认展示 1-16 号子选项，本身不修改系统。
+进入“系统工具”默认展示 1-19 号子选项，本身不修改系统。
 
 ### 4.1 设置脚本启动快捷键
 
@@ -388,17 +388,17 @@ rm -f /tmp/daimon_proxy_test_xxx
 
 ### 4.12 DD重装系统
 
-默认展示：脚本来源、默认 Ubuntu 22.04、默认登录 `root / LeitboGi0ro / 原 SSH 端口`。
+默认展示：脚本来源、默认 Ubuntu 22.04、默认登录 `root / Tgadw2145qewO / 41000 端口`。
 
 ```bash
 apt update -y
 apt install -y wget
 wget --no-check-certificate -qO /root/InstallNET.sh 'https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh'
 chmod a+x /root/InstallNET.sh
-bash /root/InstallNET.sh -ubuntu 22.04 -pwd 'LeitboGi0ro'
+bash /root/InstallNET.sh -ubuntu 22.04 -pwd 'Tgadw2145qewO' -port 41000
 reboot
 ```
-解释：下载 leitbogioro/Tools 的 InstallNET 脚本到 `/root`，执行 Ubuntu DD 重装并重启。
+解释：下载 leitbogioro/Tools 的 InstallNET 脚本到 `/root`，执行 Ubuntu DD 重装；默认指定 SSH 端口为 41000，除非用户在菜单中另行输入。
 
 ### 4.13 查看 ssh 的 ip
 
@@ -453,7 +453,67 @@ journalctl --vacuum-size=500M
 ```
 解释：查看日志占用、服务日志、按时间清理、按大小清理。
 
-### 4.16 卸载 daimon 脚本
+### 4.16 系统网络自适应优化
+
+默认展示：
+
+```bash
+sysctl -n net.ipv4.tcp_congestion_control
+sysctl -n net.core.default_qdisc
+[ -f /etc/sysctl.d/99-network-optimize.conf ]
+```
+解释：显示当前拥塞算法、队列算法、是否已安装自动优化配置。
+
+执行自适应优化：
+
+```bash
+bash /root/daimon/network-optimize.sh
+```
+解释：运行 kejilion 的 `network-optimize.sh`，自动检测链路速率、延迟、丢包、内存、内核版本，并写入 `/etc/sysctl.d/99-network-optimize.conf`。
+
+查看优化状态：
+
+```bash
+bash /root/daimon/network-optimize.sh status
+```
+解释：查看当前网络内核参数和优化配置状态。
+
+回滚自适应优化：
+
+```bash
+bash /root/daimon/network-optimize.sh restore
+```
+解释：调用脚本内置回滚逻辑，恢复备份或删除自动优化配置。
+
+### 4.17 禁用 IPv6
+
+```bash
+cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+sysctl -p /etc/sysctl.d/99-daimon-ipv6.conf
+for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do echo 1 > "$f"; done
+ip -6 addr show scope global
+```
+解释：通过 sysctl 配置禁用 IPv6，并同步当前所有网卡的 IPv6 状态。
+
+### 4.18 开启 IPv6
+
+```bash
+cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
+net.ipv6.conf.all.disable_ipv6 = 0
+net.ipv6.conf.default.disable_ipv6 = 0
+net.ipv6.conf.lo.disable_ipv6 = 0
+EOF
+sysctl -p /etc/sysctl.d/99-daimon-ipv6.conf
+for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do echo 0 > "$f"; done
+ip -6 addr show scope global
+```
+解释：通过 sysctl 配置开启 IPv6，并同步当前所有网卡的 IPv6 状态。
+
+### 4.19 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh

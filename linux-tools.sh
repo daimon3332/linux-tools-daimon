@@ -18859,10 +18859,10 @@ dd_installnet_manager() {
 	echo -e "${gl_hong}注意：DD/重装会清空当前服务器硬盘数据，请确认已备份重要数据！${gl_bai}"
 	echo "脚本来源：https://github.com/leitbogioro/Tools"
 	echo "默认系统：Ubuntu 22.04"
-	echo "默认登录：root / LeitboGi0ro / 原 SSH 端口"
+	echo "默认登录：root / Tgadw2145qewO / 41000 端口"
 	echo "------------------------------------------------"
 
-	local ubuntu_version root_pwd script_url script_path cmd_preview confirm reboot_choice
+	local ubuntu_version root_pwd ssh_port script_url script_path cmd_preview confirm reboot_choice
 	read -e -p "请输入 Ubuntu 版本（默认 22.04）: " ubuntu_version
 	ubuntu_version=${ubuntu_version:-22.04}
 
@@ -18875,8 +18875,15 @@ dd_installnet_manager() {
 			;;
 	esac
 
-	read -e -p "请输入重装后的 root 密码（默认 LeitboGi0ro）: " root_pwd
-	root_pwd=${root_pwd:-LeitboGi0ro}
+	read -e -p "请输入重装后的 root 密码（默认 Tgadw2145qewO）: " root_pwd
+	root_pwd=${root_pwd:-Tgadw2145qewO}
+
+	read -e -p "请输入重装后的 SSH 端口（默认 41000）: " ssh_port
+	ssh_port=${ssh_port:-41000}
+	if ! [[ "$ssh_port" =~ ^[0-9]+$ ]] || [ "$ssh_port" -lt 1 ] || [ "$ssh_port" -gt 65535 ]; then
+		echo "SSH 端口无效，必须是 1-65535"
+		return 1
+	fi
 
 	script_url="https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh"
 	script_path="/root/InstallNET.sh"
@@ -18893,7 +18900,7 @@ dd_installnet_manager() {
 	}
 	chmod a+x "$script_path"
 
-	printf -v cmd_preview 'bash %q -ubuntu %q -pwd %q' "$script_path" "$ubuntu_version" "$root_pwd"
+	printf -v cmd_preview 'bash %q -ubuntu %q -pwd %q -port %q' "$script_path" "$ubuntu_version" "$root_pwd" "$ssh_port"
 	echo "------------------------------------------------"
 	echo "即将执行："
 	echo "$cmd_preview"
@@ -18902,11 +18909,11 @@ dd_installnet_manager() {
 	read -e -p "确认开始 DD/重装吗？请输入 YES 确认: " confirm
 	[ "$confirm" != "YES" ] && echo "已取消" && return 0
 
-	bash "$script_path" -ubuntu "$ubuntu_version" -pwd "$root_pwd"
+	bash "$script_path" -ubuntu "$ubuntu_version" -pwd "$root_pwd" -port "$ssh_port"
 
 	echo "------------------------------------------------"
 	echo "InstallNET.sh 已执行完成。通常需要重启后等待 7-8 分钟左右。"
-	echo "重装后使用 root / $root_pwd / 原 SSH 端口登录。"
+	echo "重装后使用 root / $root_pwd / $ssh_port 端口登录。"
 	read -e -p "是否现在重启服务器？(Y/N): " reboot_choice
 	case "$reboot_choice" in
 		[Yy]) reboot ;;
@@ -18968,6 +18975,97 @@ show_ssh_ip_info() {
 }
 
 
+system_network_auto_optimize() {
+	root_use
+	while true; do
+		clear
+		echo "系统网络自适应优化"
+		echo "------------------------------------------------"
+		echo -e "当前拥塞算法: ${gl_huang}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 未知)${gl_bai}"
+		echo -e "当前队列算法: ${gl_huang}$(sysctl -n net.core.default_qdisc 2>/dev/null || echo 未知)${gl_bai}"
+		if [ -f /etc/sysctl.d/99-network-optimize.conf ]; then
+			echo -e "自动优化配置: ${gl_lv}已安装${gl_bai} (/etc/sysctl.d/99-network-optimize.conf)"
+		else
+			echo -e "自动优化配置: ${gl_hui}未安装${gl_bai}"
+		fi
+		echo "------------------------------------------------"
+		echo "说明：这个功能使用 kejilion 的 network-optimize.sh。"
+		echo "它会检测链路速率、延迟、丢包、内存、内核版本后自动选择参数。"
+		echo "相比 BBR 管理里固定模式，更适合不确定服务器网络环境时一键使用。"
+		echo "------------------------------------------------"
+		echo "1. 执行系统网络自适应优化"
+		echo "2. 查看当前网络优化状态"
+		echo "3. 回滚系统网络自适应优化"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh"
+				send_stats "系统网络自适应优化"
+				;;
+			2)
+				daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" status
+				;;
+			3)
+				daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" restore
+				send_stats "系统网络自适应优化回滚"
+				;;
+			0)
+				break
+				;;
+			*)
+				echo "无效的输入!"
+				;;
+		esac
+		break_end
+	done
+}
+
+system_ipv6_status() {
+	local all default lo
+	all=$(sysctl -n net.ipv6.conf.all.disable_ipv6 2>/dev/null || echo "未知")
+	default=$(sysctl -n net.ipv6.conf.default.disable_ipv6 2>/dev/null || echo "未知")
+	lo=$(sysctl -n net.ipv6.conf.lo.disable_ipv6 2>/dev/null || echo "未知")
+	echo "IPv6状态: all=$all default=$default lo=$lo"
+	ip -6 addr show scope global 2>/dev/null | awk '/inet6/{print "IPv6地址: "$2}' || true
+}
+
+system_disable_ipv6() {
+	root_use
+	local CONF="/etc/sysctl.d/99-daimon-ipv6.conf"
+	[ -f "$CONF" ] && cp "$CONF" "${CONF}.bak.$(date +%Y%m%d%H%M%S)"
+	cat > "$CONF" <<'EOF'
+# linux-tools-daimon IPv6 配置：禁用 IPv6
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+	sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
+	for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do [ -e "$f" ] && echo 1 > "$f" 2>/dev/null || true; done
+	echo -e "${gl_lv}IPv6 已禁用。配置文件: $CONF${gl_bai}"
+	system_ipv6_status
+	send_stats "禁用IPv6"
+}
+
+system_enable_ipv6() {
+	root_use
+	local CONF="/etc/sysctl.d/99-daimon-ipv6.conf"
+	[ -f "$CONF" ] && cp "$CONF" "${CONF}.bak.$(date +%Y%m%d%H%M%S)"
+	cat > "$CONF" <<'EOF'
+# linux-tools-daimon IPv6 配置：开启 IPv6
+net.ipv6.conf.all.disable_ipv6 = 0
+net.ipv6.conf.default.disable_ipv6 = 0
+net.ipv6.conf.lo.disable_ipv6 = 0
+EOF
+	sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
+	for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do [ -e "$f" ] && echo 0 > "$f" 2>/dev/null || true; done
+	echo -e "${gl_lv}IPv6 已开启。配置文件: $CONF${gl_bai}"
+	system_ipv6_status
+	send_stats "开启IPv6"
+}
+
+
 linux_Settings() {
 
 	while true; do
@@ -18982,7 +19080,9 @@ linux_Settings() {
 	  echo -e "${gl_kjlan}9.   ${gl_bai}本机host解析                       ${gl_kjlan}10.  ${gl_bai}系统变量管理工具"
 	  echo -e "${gl_kjlan}11.  ${gl_bai}github镜像源                      ${gl_kjlan}12.  ${gl_bai}DD重装系统"
 	  echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}网卡管理工具"
-	  echo -e "${gl_kjlan}15.  ${gl_bai}journalctl日志管理              ${gl_kjlan}16.  ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}15.  ${gl_bai}journalctl日志管理              ${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
+	  echo -e "${gl_kjlan}17.  ${gl_bai}禁用IPv6                         ${gl_kjlan}18.  ${gl_bai}开启IPv6"
+	  echo -e "${gl_kjlan}19.  ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -19374,6 +19474,20 @@ EOF
 			  ;;
 
 		  16)
+			  system_network_auto_optimize
+			  ;;
+
+		  17)
+			  clear
+			  system_disable_ipv6
+			  ;;
+
+		  18)
+			  clear
+			  system_enable_ipv6
+			  ;;
+
+		  19)
 			  clear
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"
