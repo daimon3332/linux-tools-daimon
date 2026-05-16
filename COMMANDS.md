@@ -126,7 +126,7 @@ rm -rf /tmp/*
 
 ## 4. 系统工具
 
-进入“系统工具”默认展示 1-19 号子选项，本身不修改系统。
+进入“系统工具”默认展示 1-20 号子选项，本身不修改系统。
 
 ### 4.1 设置脚本启动快捷键
 
@@ -513,7 +513,44 @@ ip -6 addr show scope global
 ```
 解释：通过 sysctl 配置开启 IPv6，并同步当前所有网卡的 IPv6 状态。
 
-### 4.19 卸载 daimon 脚本
+### 4.19 bat 终端高亮配置
+
+默认展示：
+
+```bash
+bauto
+blog
+byaml
+raw docker ps
+```
+解释：展示常用 bat 改写命令；`bauto` 自动判断有限输出类型，`blog` 按日志高亮，`byaml` 按 YAML 高亮，`raw docker ps` 绕过包装函数执行原始命令。
+
+配置 `~/.bashrc`：
+
+```bash
+command -v batcat || command -v bat
+apt install -y bat
+awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
+cat /tmp/daimon_bashrc > ~/.bashrc
+cat >> ~/.bashrc <<'EOF'
+# ========== bat terminal color setup ==========
+# 写入 bauto、blog、byaml、bjson、bhttp、raw 以及 docker/ping/systemctl/git 等查看类命令包装函数
+# ========== end bat terminal color setup ==========
+EOF
+source ~/.bashrc
+```
+解释：检测 `batcat/bat`，没有则先安装；写入前删除旧的 bat 配置块，再追加新的 bat 终端高亮配置。`curl` 不会被自动包装，需要手动使用 `curl -s URL | bjson/bhttp/bauto`。
+
+删除 `~/.bashrc` 中的 bat 配置块：
+
+```bash
+awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
+cat /tmp/daimon_bashrc > ~/.bashrc
+source ~/.bashrc
+```
+解释：只删除 `# ========== bat terminal color setup ==========` 到 `# ========== end bat terminal color setup ==========` 之间的内容，不删除 `~/.bashrc` 的其他配置。
+
+### 4.20 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh

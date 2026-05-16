@@ -19066,6 +19066,256 @@ EOF
 }
 
 
+
+bat_terminal_manager() {
+	while true; do
+		clear
+		echo "bat 终端高亮配置"
+		echo "------------------------------------------------"
+		echo "默认展示几个常用改写命令："
+		echo "bauto              自动判断 json/yaml/diff/bash/log 高亮，适合有限输出"
+		echo "blog               按 log 类型高亮显示管道输入"
+		echo "byaml              按 yaml 类型高亮显示管道输入"
+		echo "raw docker ps      绕过包装函数，执行原始 docker ps"
+		echo "------------------------------------------------"
+		echo "说明：curl 不自动包装，建议手动使用 curl -s URL | bjson/bhttp/bauto"
+		echo "------------------------------------------------"
+		echo "1. 配置 ~/.bashrc"
+		echo "2. 删除 ~/.bashrc 的 bat 配置内容"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " bat_choice
+
+		case "$bat_choice" in
+			1)
+				root_use
+				if ! command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
+					echo "未检测到 bat，正在安装..."
+					install bat
+				fi
+				if ! command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
+					echo "bat 安装失败或当前系统未提供 bat/batcat 命令"
+					break_end
+					continue
+				fi
+				local bashrc_file="$HOME/.bashrc"
+				local tmp_file
+				tmp_file=$(mktemp)
+				touch "$bashrc_file"
+				awk '
+					/^# ========== bat terminal color setup ==========$/ {skip=1; next}
+					/^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next}
+					!skip {print}
+				' "$bashrc_file" > "$tmp_file"
+				cat "$tmp_file" > "$bashrc_file"
+				rm -f "$tmp_file"
+
+				cat >> "$bashrc_file" <<'EOF'
+# ========== bat terminal color setup ==========
+
+  # 避免 alias 抢在函数前面生效
+  unalias bat cat docker ping ip ss ps df free systemctl journalctl git lsblk netstat ufw 2>/dev/null
+
+  # Debian/Ubuntu 上 bat 通常叫 batcat
+  if command -v batcat >/dev/null 2>&1; then
+    __BAT_BIN="batcat"
+  elif command -v bat >/dev/null 2>&1; then
+    __BAT_BIN="bat"
+  else
+    __BAT_BIN=""
+  fi
+
+  if [ -n "$__BAT_BIN" ]; then
+    alias bat="$__BAT_BIN"
+
+    # 通用 bat 过滤器
+    __bat_filter() {
+      local lang="${1:-log}"
+
+      if [ -t 1 ]; then
+        "$__BAT_BIN" --paging=never --style=plain --color=always -l "$lang"
+      else
+        command cat
+      fi
+    }
+
+    # cat 替代：文件查看走 bat，重定向时保持原始 cat
+    cat() {
+      if [ -t 1 ]; then
+        "$__BAT_BIN" --paging=never --style=plain "$@"
+      else
+        command cat "$@"
+      fi
+    }
+
+    # 手动过滤器
+    bcat()  { __bat_filter log; }
+    blog()  { __bat_filter log; }
+    bjson() { __bat_filter json; }
+    byaml() { __bat_filter yaml; }
+    bconf() { __bat_filter conf; }
+    bsh()   { __bat_filter bash; }
+    bdiff() { __bat_filter diff; }
+    bhttp() { __bat_filter http; }
+
+    # 自动判断器：适合有限输出，不适合 ping/tail -f 这类持续输出
+    bauto() {
+      local tmp lang
+      tmp="$(mktemp)"
+
+      command cat > "$tmp"
+
+      if python3 -m json.tool "$tmp" >/dev/null 2>&1; then
+        lang="json"
+      elif grep -qE '^(diff --git|@@ |--- |\+\+\+ )' "$tmp"; then
+        lang="diff"
+      elif grep -qE '^[[:space:]]*[A-Za-z0-9_.-]+:[[:space:]]*' "$tmp"; then
+        lang="yaml"
+      elif head -n 1 "$tmp" | grep -qE '^#!.*(ba|z|k)?sh'; then
+        lang="bash"
+      else
+        lang="log"
+      fi
+
+      if [ -t 1 ]; then
+        "$__BAT_BIN" --paging=never --style=plain --color=always -l "$lang" "$tmp"
+      else
+        command cat "$tmp"
+      fi
+
+      rm -f "$tmp"
+    }
+
+    # 原始命令逃生口
+    raw() {
+      command "$@"
+    }
+
+    # Docker：只包装查看类输出，不影响 run / exec / build 等交互或构建命令
+    docker() {
+      case "$1" in
+        ps|images|info|version|stats|events)
+          command docker "$@" 2>&1 | __bat_filter log
+          return ${PIPESTATUS[0]}
+          ;;
+
+        inspect)
+          command docker "$@" 2>&1 | __bat_filter json
+          return ${PIPESTATUS[0]}
+          ;;
+
+        logs)
+          command docker "$@" 2>&1 | __bat_filter log
+          return ${PIPESTATUS[0]}
+          ;;
+
+        compose)
+          case "$2" in
+            config)
+              command docker "$@" 2>&1 | __bat_filter yaml
+              return ${PIPESTATUS[0]}
+              ;;
+            ps|logs|events|images|top)
+              command docker "$@" 2>&1 | __bat_filter log
+              return ${PIPESTATUS[0]}
+              ;;
+            *)
+              command docker "$@"
+              ;;
+          esac
+          ;;
+
+        *)
+          command docker "$@"
+          ;;
+      esac
+    }
+
+    # 网络类
+    ping() { command ping "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    ip() { command ip "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    ss() { command ss "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    netstat() { command netstat "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+
+    # 系统信息类
+    ps() { command ps "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    df() { command df "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    free() { command free "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    lsblk() { command lsblk "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    systemctl() { command systemctl --no-pager "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    journalctl() { command journalctl --no-pager "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+
+    # UFW：只包装查看类命令，修改防火墙规则的命令保持原始行为
+    ufw() {
+      case "$1" in
+        status|show|app)
+          command ufw "$@" 2>&1 | __bat_filter log
+          return ${PIPESTATUS[0]}
+          ;;
+        *)
+          command ufw "$@"
+          ;;
+      esac
+    }
+
+    # Git：只包装查看类命令，不影响 add / commit / push 等操作
+    git() {
+      case "$1" in
+        diff|show)
+          command git -c color.ui=never "$@" 2>&1 | __bat_filter diff
+          return ${PIPESTATUS[0]}
+          ;;
+        status|log|branch|remote)
+          command git -c color.ui=never "$@" 2>&1 | __bat_filter log
+          return ${PIPESTATUS[0]}
+          ;;
+        *)
+          command git "$@"
+          ;;
+      esac
+    }
+
+  fi
+
+  # ========== end bat terminal color setup ==========
+EOF
+				echo "bat 终端高亮配置已写入: $bashrc_file"
+				echo "请执行以下命令立即生效：source ~/.bashrc"
+				send_stats "配置bat终端高亮"
+				break_end
+				;;
+			2)
+				local bashrc_file="$HOME/.bashrc"
+				local tmp_file
+				if [ ! -f "$bashrc_file" ]; then
+					echo "未找到 $bashrc_file"
+					break_end
+					continue
+				fi
+				tmp_file=$(mktemp)
+				awk '
+					/^# ========== bat terminal color setup ==========$/ {skip=1; next}
+					/^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next}
+					!skip {print}
+				' "$bashrc_file" > "$tmp_file"
+				cat "$tmp_file" > "$bashrc_file"
+				rm -f "$tmp_file"
+				echo "已删除 ~/.bashrc 中的 bat terminal color setup 配置块"
+				echo "重新打开终端或执行 source ~/.bashrc 后生效"
+				send_stats "删除bat终端高亮配置"
+				break_end
+				;;
+			0)
+				break
+				;;
+			*)
+				echo "无效选择"
+				break_end
+				;;
+		esac
+	done
+}
+
 linux_Settings() {
 
 	while true; do
@@ -19082,7 +19332,7 @@ linux_Settings() {
 	  echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}网卡管理工具"
 	  echo -e "${gl_kjlan}15.  ${gl_bai}journalctl日志管理              ${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
 	  echo -e "${gl_kjlan}17.  ${gl_bai}禁用IPv6                         ${gl_kjlan}18.  ${gl_bai}开启IPv6"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}19.  ${gl_bai}bat终端高亮配置                 ${gl_kjlan}20.  ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -19488,6 +19738,10 @@ EOF
 			  ;;
 
 		  19)
+			  bat_terminal_manager
+			  ;;
+
+		  20)
 			  clear
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"

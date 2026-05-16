@@ -32,7 +32,7 @@ d
 
 - 系统信息查询：CPU、内存、硬盘、网络、IPv4/IPv6、DNS、系统版本、运行时长等。
 - 系统更新与清理：更新软件包、清理缓存、清理 journal 日志。
-- 系统工具：快捷键、软件源、DNS、IPv4/IPv6 优先级、Swap、用户、时区、主机名、hosts、环境变量、GitHub 镜像源、DD 重装、SSH IP、网卡、journalctl、系统网络自适应优化、禁用/开启 IPv6。
+- 系统工具：快捷键、软件源、DNS、IPv4/IPv6 优先级、Swap、用户、时区、主机名、hosts、环境变量、GitHub 镜像源、DD 重装、SSH IP、网卡、journalctl、系统网络自适应优化、禁用/开启 IPv6、bat 终端高亮配置。
 - Docker 管理：安装、状态、容器、镜像、网络、卷、清理、镜像源、daemon.json、IPv6、备份迁移还原、卸载。
 - 基础工具：python、npm、nodejs、bun、uv、git、curl、iptables-persistent、ufw、firewalld、fail2ban、tree、fzf、ranger、neofetch、vim、Claude Code、Codex CLI 等。
 - BBR 管理：调用 `tcpx.sh` 进行网络优化管理。
