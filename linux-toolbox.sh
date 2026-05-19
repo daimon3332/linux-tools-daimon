@@ -7543,6 +7543,174 @@ linux_info() {
 
 
 
+
+
+one_click_enable_bbr_fq() {
+	root_use
+	local conf="/etc/sysctl.d/99-daimon-bbr-fq.conf"
+	modprobe tcp_bbr 2>/dev/null || true
+	if ! sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -q bbr; then
+		echo -e "${gl_hong}当前内核不支持 BBR，请先升级内核。${gl_bai}"
+		return 1
+	fi
+	cat > "$conf" <<'EOF'
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+	grep -qxF 'tcp_bbr' /etc/modules-load.d/bbr.conf 2>/dev/null || echo 'tcp_bbr' > /etc/modules-load.d/bbr.conf
+	sysctl -p "$conf"
+	echo -e "${gl_lv}已开启 BBR + FQ 加速${gl_bai}"
+	sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc 2>/dev/null || true
+}
+
+one_click_install_docker_auto() {
+	root_use
+	install curl
+	local country mirror
+	country=$(curl -s --max-time 8 ipinfo.io 2>/dev/null | grep -oE '"country"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4)
+	[ -z "$country" ] && country=$(curl -s --max-time 5 ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+	if [ "$country" = "CN" ]; then
+		mirror=1
+		echo "检测到国家/地区: CN，使用国内 Docker 镜像源（阿里云，失败切清华/官方）"
+	else
+		mirror=2
+		echo "检测到国家/地区: ${country:-未知}，使用 Docker 官方源"
+	fi
+
+	mkdir -p "$DAIMON_SCRIPT_DIR"
+	cat > "$DAIMON_SCRIPT_DIR/install-docker-auto.sh" <<'EOF'
+#!/bin/bash
+set -e
+MIRROR=${1:-2}
+DOCKER_OFFICIAL="https://download.docker.com"
+ALIYUN_MIRROR="https://mirrors.aliyun.com/docker-ce"
+TUNA_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/docker-ce"
+if [ "$MIRROR" = "1" ]; then
+    DOWNLOAD_URL="$ALIYUN_MIRROR"
+    BACKUP_URL="$TUNA_MIRROR"
+    echo "使用镜像: 阿里云 (备用: 清华)"
+else
+    DOWNLOAD_URL="$DOCKER_OFFICIAL"
+    BACKUP_URL=""
+    echo "使用镜像: Docker官方"
+fi
+if [ "$(id -u)" != "0" ]; then SUDO="sudo"; else SUDO=""; fi
+cleanup_old() {
+    echo "清理旧版本..."
+    case "$DISTRO" in
+        ubuntu|debian|raspbian) $SUDO apt remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true ;;
+        centos|rhel|rocky|almalinux) $SUDO yum remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-engine 2>/dev/null || true ;;
+        fedora) $SUDO dnf remove -y docker docker-client docker-client-latest docker-common docker-latest docker-latest-logrotate docker-logrotate docker-selinux docker-engine-selinux docker-engine 2>/dev/null || true ;;
+    esac
+}
+detect_distro() {
+    if [ -r /etc/os-release ]; then . /etc/os-release; DISTRO=$ID; DISTRO_VERSION=$VERSION_ID
+    elif [ -r /etc/debian_version ]; then DISTRO="debian"; DISTRO_VERSION=$(cat /etc/debian_version)
+    elif [ -r /etc/redhat-release ]; then DISTRO="centos"
+    else echo "无法检测系统"; exit 1; fi
+}
+get_debian_codename() {
+    case "$1" in
+        ubuntu) case "$DISTRO_VERSION" in 24.04) echo noble ;; 23.10) echo mantic ;; 23.04) echo lunar ;; 22.04) echo jammy ;; 20.04) echo focal ;; 18.04) echo bionic ;; *) lsb_release -cs 2>/dev/null || echo jammy ;; esac ;;
+        debian|raspbian) case "${DISTRO_VERSION%%.*}" in 13) echo trixie ;; 12) echo bookworm ;; 11) echo bullseye ;; 10) echo buster ;; *) echo bookworm ;; esac ;;
+    esac
+}
+test_url() { curl -fsSL --connect-timeout 5 "$1" >/dev/null 2>&1; }
+select_mirror() {
+    local gpg_path="linux/ubuntu/gpg"
+    [ "$DISTRO" = "debian" ] || [ "$DISTRO" = "raspbian" ] && gpg_path="linux/debian/gpg"
+    if test_url "$DOWNLOAD_URL/$gpg_path"; then echo "镜像源可用: $DOWNLOAD_URL"; return 0
+    elif [ -n "$BACKUP_URL" ] && test_url "$BACKUP_URL/$gpg_path"; then echo "主镜像不可用，切换到备用源: $BACKUP_URL"; DOWNLOAD_URL="$BACKUP_URL"; return 0
+    elif [ "$MIRROR" = "1" ]; then echo "国内镜像均不可用，切换到官方源"; DOWNLOAD_URL="$DOCKER_OFFICIAL"; return 0
+    else echo "无法连接到镜像源"; return 1; fi
+}
+install_debian() {
+    local codename=$(get_debian_codename "$DISTRO") repo_distro="$DISTRO"
+    [ "$DISTRO" = "raspbian" ] && repo_distro="debian"
+    echo "系统: $DISTRO $DISTRO_VERSION ($codename)"
+    $SUDO apt update || true
+    $SUDO apt install -y ca-certificates curl gnupg lsb-release
+    $SUDO install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL "$DOWNLOAD_URL/linux/$repo_distro/gpg" | $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
+    $SUDO chmod a+r /etc/apt/keyrings/docker.gpg
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $DOWNLOAD_URL/linux/$repo_distro $codename stable" | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
+    $SUDO apt update
+    $SUDO apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+install_rhel() {
+    echo "系统: $DISTRO $DISTRO_VERSION"
+    $SUDO yum install -y yum-utils
+    $SUDO yum-config-manager --add-repo "$DOWNLOAD_URL/linux/centos/docker-ce.repo"
+    [ "$DOWNLOAD_URL" != "$DOCKER_OFFICIAL" ] && $SUDO sed -i "s|https://download.docker.com|$DOWNLOAD_URL|g" /etc/yum.repos.d/docker-ce.repo
+    $SUDO yum install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+install_fedora() {
+    echo "系统: Fedora $DISTRO_VERSION"
+    $SUDO dnf install -y dnf-plugins-core
+    $SUDO dnf config-manager --add-repo "$DOWNLOAD_URL/linux/fedora/docker-ce.repo"
+    [ "$DOWNLOAD_URL" != "$DOCKER_OFFICIAL" ] && $SUDO sed -i "s|https://download.docker.com|$DOWNLOAD_URL|g" /etc/yum.repos.d/docker-ce.repo
+    $SUDO dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+}
+start_docker() { if command -v systemctl >/dev/null 2>&1; then $SUDO systemctl enable docker; $SUDO systemctl start docker; fi; }
+show_result() { echo; echo "========================================"; echo "Docker 安装完成!"; echo "========================================"; docker --version; docker compose version; }
+main() {
+    detect_distro
+    cleanup_old
+    select_mirror
+    case "$DISTRO" in
+        ubuntu|debian|raspbian) install_debian ;;
+        centos|rhel|rocky|almalinux) install_rhel ;;
+        fedora) install_fedora ;;
+        *) echo "不支持的系统: $DISTRO"; exit 1 ;;
+    esac
+    start_docker
+    show_result
+}
+main
+EOF
+	chmod +x "$DAIMON_SCRIPT_DIR/install-docker-auto.sh"
+	bash "$DAIMON_SCRIPT_DIR/install-docker-auto.sh" "$mirror"
+	install_add_docker_cn
+}
+
+one_click_network_auto_optimize() {
+	root_use
+	daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && auto_optimize_network
+}
+
+one_click_config_manager() {
+	while true; do
+		clear
+		echo "一键配置"
+		echo "------------------------"
+		echo -e "${gl_kjlan}1.   ${gl_bai}系统更新"
+		echo -e "${gl_kjlan}2.   ${gl_bai}系统清理"
+		echo -e "${gl_kjlan}3.   ${gl_bai}设置虚拟内存 1G"
+		echo -e "${gl_kjlan}4.   ${gl_bai}优化 DNS 地址"
+		echo -e "${gl_kjlan}5.   ${gl_bai}开启 BBR 加速（BBR + FQ）"
+		echo -e "${gl_kjlan}6.   ${gl_bai}安装 Docker（自动判断国内/国外源）"
+		echo -e "${gl_kjlan}7.   ${gl_bai}执行系统网络自适应优化"
+		echo -e "${gl_kjlan}8.   ${gl_bai}安装第三方工具（全部安装，可在第三方工具菜单精细调整）"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1) linux_update ;;
+			2) linux_clean ;;
+			3) add_swap 1024 ;;
+			4) set_dns_ui ;;
+			5) one_click_enable_bbr_fq ;;
+			6) one_click_install_docker_auto ;;
+			7) one_click_network_auto_optimize ;;
+			8) linux_tools thirdparty-install-all ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+
 linux_Settings() {
 	while true; do
 		clear
@@ -8736,8 +8904,20 @@ EOF
       tool_category_menu thirdparty "第三方工具"
       return
       ;;
+    thirdparty-install-all)
+      local tool_ids=("${thirdparty_ids[@]}")
+      handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '
+' ' ')"
+      return
+      ;;
     programming|basic)
       tool_category_menu programming "编程工具"
+      return
+      ;;
+    programming-install-all)
+      local tool_ids=("${programming_ids[@]}")
+      handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '
+' ' ')"
       return
       ;;
   esac
@@ -15541,7 +15721,11 @@ kejilion_update() {
 	echo -e "${gl_lv}linux-tools-daimon 已更新${gl_bai}"
 	[ -f "$backup_file" ] && echo "旧版本备份: $backup_file"
 	echo "快捷命令: d"
-	break_end
+	echo "当前进程仍是旧脚本，按任意键后将自动进入新版界面..."
+	read -n 1 -s -r -p ""
+	echo ""
+	clear
+	exec /usr/local/bin/d
 }
 
 
@@ -15563,19 +15747,20 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}1.   ${gl_bai}系统信息查询"
 echo -e "${gl_kjlan}2.   ${gl_bai}系统更新"
 echo -e "${gl_kjlan}3.   ${gl_bai}系统清理"
+echo -e "${gl_kjlan}4.   ${gl_bai}一键配置"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}4.   ${gl_bai}系统工具"
-echo -e "${gl_kjlan}5.   ${gl_bai}第三方工具"
-echo -e "${gl_kjlan}6.   ${gl_bai}编程工具"
+echo -e "${gl_kjlan}5.   ${gl_bai}系统工具"
+echo -e "${gl_kjlan}6.   ${gl_bai}第三方工具"
+echo -e "${gl_kjlan}7.   ${gl_bai}编程工具"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}7.   ${gl_bai}Docker管理"
-echo -e "${gl_kjlan}8.   ${gl_bai}SSH管理"
-echo -e "${gl_kjlan}9.   ${gl_bai}UFW管理"
-echo -e "${gl_kjlan}10.  ${gl_bai}WARP管理"
-echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
-echo -e "${gl_kjlan}12.  ${gl_bai}BBR管理"
+echo -e "${gl_kjlan}8.   ${gl_bai}Docker管理"
+echo -e "${gl_kjlan}9.   ${gl_bai}SSH管理"
+echo -e "${gl_kjlan}10.  ${gl_bai}UFW管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}12.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}13.  ${gl_bai}BBR管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}13.  ${gl_bai}常用的一键脚本"
+echo -e "${gl_kjlan}14.  ${gl_bai}常用的一键脚本"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -15587,16 +15772,17 @@ case $choice in
   1) linux_info ;;
   2) clear ; send_stats "系统更新" ; linux_update ;;
   3) clear ; send_stats "系统清理" ; linux_clean ;;
-  4) linux_Settings; pause_after=false ;;
-  5) linux_tools thirdparty; pause_after=false ;;
-  6) linux_tools programming; pause_after=false ;;
-  7) linux_docker; pause_after=false ;;
-  8) ssh_config_manager; pause_after=false ;;
-  9) ufw_manager; pause_after=false ;;
-  10) warp_manager; pause_after=false ;;
-  11) ssl_nginx_manager; pause_after=false ;;
-  12) linux_bbr; pause_after=false ;;
-  13) common_one_click_scripts; pause_after=false ;;
+  4) one_click_config_manager; pause_after=false ;;
+  5) linux_Settings; pause_after=false ;;
+  6) linux_tools thirdparty; pause_after=false ;;
+  7) linux_tools programming; pause_after=false ;;
+  8) linux_docker; pause_after=false ;;
+  9) ssh_config_manager; pause_after=false ;;
+  10) ufw_manager; pause_after=false ;;
+  11) warp_manager; pause_after=false ;;
+  12) ssl_nginx_manager; pause_after=false ;;
+  13) linux_bbr; pause_after=false ;;
+  14) common_one_click_scripts; pause_after=false ;;
   00) kejilion_update; pause_after=false ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;

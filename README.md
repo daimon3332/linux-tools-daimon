@@ -32,7 +32,17 @@ d
 3. 系统清理
    - 清理无用依赖、apt 缓存、journal 日志、临时文件。
 
-4. 系统工具
+4. 一键配置
+   1. 系统更新
+   2. 系统清理
+   3. 设置虚拟内存 1G
+   4. 优化 DNS 地址
+   5. 开启 BBR 加速（BBR + FQ）
+   6. 安装 Docker（自动根据 `ipinfo.io` 国家字段选择国内镜像或官方源）
+   7. 执行系统网络自适应优化
+   8. 安装第三方工具
+
+5. 系统工具
    1. 设置脚本启动快捷键
    2. 更换系统软件包镜像源
    3. 优化 DNS 地址
@@ -51,21 +61,20 @@ d
    16. 系统网络自适应优化
    17. 禁用 IPv6
    18. 开启 IPv6
-   19. 配置/删除 cpcat
-   20. 卸载 daimon 脚本
+   19. 卸载 daimon 脚本
 
-5. 第三方工具
+6. 第三方工具
    - 按编号安装或卸载第三方工具，支持多选。
    - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
    - 带配置的工具卸载时会同步删除脚本写入的配置；fail2ban、iptables-persistent、ufw、firewalld 会停止服务并删除对应配置目录。
    - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
 
-6. 编程工具
+7. 编程工具
    - 按编号安装或卸载编程工具，支持多选。
    - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
    - 工具顺序包括：python、npm、nodejs、bun、uv、git、ClaudeCode、Codex。
 
-7. Docker 管理
+8. Docker 管理
    1. 安装更新 Docker 环境
    2. 查看 Docker 全局状态
    3. Docker 容器管理
@@ -87,7 +96,7 @@ d
    19. Docker 备份还原
    20. 卸载 Docker 环境
 
-8. SSH 管理
+9. SSH 管理
    1. 修改 SSH 端口
    2. 禁用 / 开启密码登录
    3. 开启 / 禁用密钥登录
@@ -99,17 +108,17 @@ d
       - 删除私钥
    6. 修改 `sshd_config` 配置文件
 
-9. UFW 管理
+10. UFW 管理
    1. 安装 UFW
    2. 卸载 UFW
    3. 开放端口
    4. 删除端口规则
 
-10. WARP 管理
+11. WARP 管理
     1. 进入 WARP 官方管理脚本
     2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
 
-11. SSL 证书申请 + 自动续期 & Nginx 管理
+12. SSL 证书申请 + 自动续期 & Nginx 管理
     1. 申请证书 + 配置 nginx
     2. 删除 nginx 配置 + 证书
     3. 申请证书
@@ -120,10 +129,10 @@ d
     8. 创建测试页面
     9. 删除测试页面
 
-12. BBR 管理
+13. BBR 管理
     - 下载并运行 `tcpx.sh`，进入 BBR / 网络加速管理菜单。
 
-13. 常用的一键脚本
+14. 常用的一键脚本
     1. NodeQuality
     2. IPQuality
     3. 融合怪

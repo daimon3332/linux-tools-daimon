@@ -26,19 +26,20 @@ mkdir -p /root/daimon
 1. 系统信息查询
 2. 系统更新
 3. 系统清理
+4. 一键配置
 ---
-4. 系统工具
-5. 第三方工具
-6. 编程工具
+5. 系统工具
+6. 第三方工具
+7. 编程工具
 ---
-7. Docker管理
-8. SSH管理
-9. UFW管理
-10. WARP管理
-11. SSL证书申请+自动续期 & Nginx管理
-12. BBR管理
+8. Docker管理
+9. SSH管理
+10. UFW管理
+11. WARP管理
+12. SSL证书申请+自动续期 & Nginx管理
+13. BBR管理
 ---
-13. 常用的一键脚本
+14. 常用的一键脚本
 00. 脚本更新
 0. 退出脚本
 
@@ -54,7 +55,7 @@ cp -f ~/linux-toolbox.sh /usr/local/bin/d
 chmod +x ~/linux-toolbox.sh /usr/local/bin/d
 ln -sf /usr/local/bin/d /usr/bin/d
 ```
-解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，备份旧脚本，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。
+解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，备份旧脚本，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
 
 ## 1. 系统信息查询
 
@@ -128,11 +129,79 @@ rm -rf /tmp/*
 ```
 解释：修复包管理器状态，清理无用依赖、缓存、journal 日志和临时文件。
 
-## 4. 系统工具
+## 4. 一键配置
 
-进入“系统工具”默认展示 1-20 号子选项，本身不修改系统。
+默认展示 1-8 号快捷配置项，用来把常用初始化动作集中到一个菜单。
 
-### 4.1 设置脚本启动快捷键
+### 4.1 系统更新
+
+```bash
+linux_update
+```
+解释：执行脚本内系统更新流程，Ubuntu 下核心是 `apt update` 和 `apt full-upgrade -y`。
+
+### 4.2 系统清理
+
+```bash
+linux_clean
+```
+解释：执行脚本内系统清理流程，清理无用依赖、缓存和 journal 日志。
+
+### 4.3 设置虚拟内存 1G
+
+```bash
+add_swap 1024
+```
+解释：创建或重建 `/swapfile`，大小为 1024MB，并写入 `/etc/fstab`。
+
+### 4.4 优化 DNS 地址
+
+```bash
+set_dns_ui
+```
+解释：进入 DNS 优化菜单，可选择国外 DNS、国内 DNS、手动编辑或恢复之前备份。
+
+### 4.5 开启 BBR 加速（BBR + FQ）
+
+```bash
+modprobe tcp_bbr
+cat > /etc/sysctl.d/99-daimon-bbr-fq.conf <<EOF
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+EOF
+sysctl -p /etc/sysctl.d/99-daimon-bbr-fq.conf
+```
+解释：使用内核自带 BBR，队列算法使用 FQ，并写入持久化配置。
+
+### 4.6 安装 Docker
+
+```bash
+curl -s --max-time 8 ipinfo.io
+bash /root/daimon/install-docker-auto.sh 1   # 中国大陆：阿里云，失败切清华/官方
+bash /root/daimon/install-docker-auto.sh 2   # 国外和香港：Docker 官方源
+```
+解释：根据 `ipinfo.io` 的 `country` 字段判断；`CN` 使用国内镜像源，其他地区包括香港使用 Docker 官方源。
+
+### 4.7 系统网络自适应优化
+
+```bash
+source /root/daimon/network-optimize.sh
+auto_optimize_network
+```
+解释：下载/加载 kejilion 的网络自适应优化脚本并执行自动优化。
+
+### 4.8 安装第三方工具
+
+```bash
+linux_tools thirdparty-install-all
+```
+解释：调用第三方工具分类的全部安装逻辑，安装 vim、cpcat、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch 等工具。
+
+## 5. 系统工具
+
+进入“系统工具”默认展示 1-19 号子选项，本身不修改系统。
+
+### 5.1 设置脚本启动快捷键
 
 ```bash
 find /usr/local/bin/ -type l -exec bash -c 'test "$(readlink -f {})" = "/usr/local/bin/d" && rm -f {}' \;
@@ -141,14 +210,14 @@ ln -sf /usr/local/bin/d /usr/bin/自定义快捷键
 ```
 解释：清理旧快捷链接并创建新的快捷命令。
 
-### 4.2 更换系统软件包镜像源
+### 5.2 更换系统软件包镜像源
 
 ```bash
 bash <(curl -sSL https://linuxmirrors.cn/main.sh)
 ```
 解释：运行 linuxmirrors 脚本更换系统软件源。
 
-### 4.3 优化 DNS 地址
+### 5.3 优化 DNS 地址
 
 默认展示：
 
@@ -214,7 +283,7 @@ search .
 EOF
 ```
 
-### 4.4 切换优先 IPv4/IPv6
+### 5.4 切换优先 IPv4/IPv6
 
 默认展示：
 
@@ -238,7 +307,7 @@ bash /root/daimon/jhb-v6.sh
 ```
 解释：运行 IPv6 修复工具，来源 `https://jhb.ovh/jb/v6.sh`。
 
-### 4.5 修改虚拟内存大小
+### 5.5 修改虚拟内存大小
 
 默认展示：
 
@@ -259,7 +328,7 @@ echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
 ```
 解释：设置 1024M/2048M/4096M/自定义大小 Swap，数值按用户选择替换。
 
-### 4.6 用户管理
+### 5.6 用户管理
 
 默认展示：
 
@@ -322,7 +391,7 @@ userdel -r 用户名
 ```
 解释：删除用户和家目录。
 
-### 4.7 系统时区调整
+### 5.7 系统时区调整
 
 默认展示：
 
@@ -357,7 +426,7 @@ timedatectl set-timezone UTC
 ```
 解释：切换到对应时区。
 
-### 4.8 修改主机名
+### 5.8 修改主机名
 
 ```bash
 hostname
@@ -368,7 +437,7 @@ sed -i "s/^::1 .*/::1             新主机名 localhost localhost.localdomain i
 ```
 解释：显示并修改主机名，同步 hosts。
 
-### 4.9 本机 hosts 解析
+### 5.9 本机 hosts 解析
 
 ```bash
 cat /etc/hosts
@@ -377,7 +446,7 @@ sed -i "/关键字/d" /etc/hosts
 ```
 解释：查看、添加、删除 hosts 解析。
 
-### 4.10 系统变量管理工具
+### 5.10 系统变量管理工具
 
 ```bash
 printenv
@@ -392,7 +461,7 @@ source ~/.profile
 ```
 解释：查看、编辑、重新加载环境变量。
 
-### 4.11 github镜像源
+### 5.11 github镜像源
 
 默认展示：
 
@@ -409,7 +478,7 @@ rm -f /tmp/daimon_proxy_test_xxx
 ```
 解释：添加、删除、测速 GitHub 镜像源，测速文件会删除。
 
-### 4.12 DD重装系统
+### 5.12 DD重装系统
 
 默认展示：脚本来源、默认 Ubuntu 22.04、默认登录 `root / Tgadw2145qewO / 41000 端口`。
 
@@ -423,7 +492,7 @@ reboot
 ```
 解释：下载 leitbogioro/Tools 的 InstallNET 脚本到 `/root`，执行 Ubuntu DD 重装；默认指定 SSH 端口为 41000，除非用户在菜单中另行输入。
 
-### 4.13 查看 ssh 的 ip
+### 5.13 查看 ssh 的 ip
 
 ```bash
 echo "$SSH_CONNECTION" | awk '{print $1,$2}'
@@ -433,7 +502,7 @@ ss -Htnp | awk '$1=="ESTAB" && $0 ~ /(sshd|ssh)/ {print $5}'
 ```
 解释：查看当前 SSH 来源 IP、登录会话来源 IP、已建立 SSH 连接 IP。
 
-### 4.14 网卡管理工具
+### 5.14 网卡管理工具
 
 默认展示：
 
@@ -453,7 +522,7 @@ ip route
 ```
 解释：启用网卡、禁用网卡、查看详情、查看路由。
 
-### 4.15 journalctl日志管理
+### 5.15 journalctl日志管理
 
 ```bash
 cp /etc/systemd/journald.conf /etc/systemd/journald.conf.bak.$(date +%Y%m%d%H%M%S)
@@ -476,7 +545,7 @@ journalctl --vacuum-size=500M
 ```
 解释：查看日志占用、服务日志、按时间清理、按大小清理。
 
-### 4.16 系统网络自适应优化
+### 5.16 系统网络自适应优化
 
 默认展示：
 
@@ -508,7 +577,7 @@ bash /root/daimon/network-optimize.sh restore
 ```
 解释：调用脚本内置回滚逻辑，恢复备份或删除自动优化配置。
 
-### 4.17 禁用 IPv6
+### 5.17 禁用 IPv6
 
 ```bash
 cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
@@ -522,7 +591,7 @@ ip -6 addr show scope global
 ```
 解释：通过 sysctl 配置禁用 IPv6，并同步当前所有网卡的 IPv6 状态。
 
-### 4.18 开启 IPv6
+### 5.18 开启 IPv6
 
 ```bash
 cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
@@ -536,55 +605,14 @@ ip -6 addr show scope global
 ```
 解释：通过 sysctl 配置开启 IPv6，并同步当前所有网卡的 IPv6 状态。
 
-### 4.19 配置/删除cpcat
-
-默认展示：
-
-```bash
-grep -q '^# ========== cpcat clipboard setup ==========$' ~/.bashrc
-```
-解释：检测 `~/.bashrc` 中是否已经写入 cpcat 配置块，并显示已配置/未配置状态。
-
-配置 cpcat：
-
-```bash
-awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
-cat /tmp/daimon_bashrc > ~/.bashrc
-cat >> ~/.bashrc <<'EOF'
-
-# ========== cpcat clipboard setup ==========
-# 一键复制文件内容到剪贴板（OSC 52）
-cpcat() {
-    if [ -f "$1" ]; then
-        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
-        echo "✅ 已复制到剪贴板: $1"
-    else
-        echo "❌ 文件不存在: $1"
-    fi
-}
-# ========== end cpcat clipboard setup ==========
-EOF
-source ~/.bashrc
-```
-解释：写入 `cpcat 文件路径` 命令，通过 OSC 52 把文件内容复制到本地终端剪贴板。
-
-删除 cpcat：
-
-```bash
-awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
-cat /tmp/daimon_bashrc > ~/.bashrc
-source ~/.bashrc
-```
-解释：只删除 `# ========== cpcat clipboard setup ==========` 到 `# ========== end cpcat clipboard setup ==========` 之间的内容。
-
-### 4.20 卸载 daimon 脚本
+### 5.19 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
 ```
 解释：删除脚本和快捷命令，不影响其他已安装服务。
 
-## 5. 第三方工具
+## 6. 第三方工具
 
 第三方工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
 
@@ -788,7 +816,7 @@ rm -f ~/.local/bin/uv ~/.local/bin/uvx
 ```
 解释：卸载第三方工具中的配置类内容，以及 ClaudeCode、Codex、Bun、uv 等特殊安装项。
 
-## 6. 编程工具
+## 7. 编程工具
 
 编程工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
 
@@ -836,7 +864,7 @@ npm install -g @openai/codex
 ```
 解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Bun 和 uv 安装时会内部安装/使用 curl，但 curl 不再作为第三方工具列表项显示。
 
-## 7. Docker 管理
+## 8. Docker 管理
 
 进入 Docker 管理默认展示：
 
@@ -848,7 +876,7 @@ docker volume ls -q | wc -l
 ```
 解释：统计容器、镜像、网络、卷数量。
 
-### 5.1 安装更新 Docker 环境
+### 8.1 安装更新 Docker 环境
 
 ```bash
 bash /root/daimon/linuxmirrors-docker.sh --source mirrors.huaweicloud.com/docker-ce --source-registry docker.1ms.run --protocol http --use-intranet-source false --install-latest true --close-firewall false --ignore-backup-tips
@@ -859,7 +887,7 @@ systemctl restart docker
 ```
 解释：优先通过 linuxmirrors 安装 Docker，失败时用包管理器兜底安装。
 
-### 5.2 查看 Docker 全局状态
+### 8.2 查看 Docker 全局状态
 
 ```bash
 docker -v
@@ -871,7 +899,7 @@ docker network ls
 ```
 解释：查看 Docker 版本、镜像、容器、卷、网络。
 
-### 5.3 Docker 容器管理
+### 8.3 Docker 容器管理
 
 默认展示：
 
@@ -910,7 +938,7 @@ iptables -I INPUT -p udp --dport 端口 -j DROP
 ```
 解释：读取容器映射端口，并开放或关闭端口访问。
 
-### 5.4 Docker 镜像管理
+### 8.4 Docker 镜像管理
 
 默认展示：
 
@@ -926,7 +954,7 @@ docker rmi -f $(docker images -q)
 ```
 解释：获取/更新镜像、删除指定镜像、删除全部镜像。
 
-### 5.5 Docker 网络管理
+### 8.5 Docker 网络管理
 
 默认展示：
 
@@ -944,7 +972,7 @@ docker network rm 网络名
 ```
 解释：创建网络、加入网络、退出网络、删除网络。
 
-### 5.6 Docker 卷管理
+### 8.6 Docker 卷管理
 
 默认展示：
 
@@ -960,14 +988,14 @@ docker volume prune -f
 ```
 解释：创建卷、删除指定卷、清理未使用卷。
 
-### 5.7 清理无用 Docker 数据
+### 8.7 清理无用 Docker 数据
 
 ```bash
 docker system prune -af --volumes
 ```
 解释：清理停止容器、无用镜像、网络、卷。
 
-### 5.8 更换 Docker 源
+### 8.8 更换 Docker 源
 
 默认回车写入前 5 个镜像源：
 
@@ -990,7 +1018,7 @@ systemctl restart docker
 ```
 解释：写入 Docker daemon 镜像源并重启 Docker；选择官方源时写入 `https://registry-1.docker.io`。
 
-### 5.9 编辑 daemon.json 文件
+### 8.9 编辑 daemon.json 文件
 
 ```bash
 mkdir -p /etc/docker
@@ -999,7 +1027,7 @@ systemctl restart docker
 ```
 解释：手动编辑 Docker daemon 配置并重启。
 
-### 5.11 开启 Docker IPv6 访问
+### 8.11 开启 Docker IPv6 访问
 
 ```bash
 jq '. + {ipv6: true, "fixed-cidr-v6": "2001:db8:1::/64"}' /etc/docker/daemon.json > /etc/docker/daemon.json.tmp
@@ -1008,7 +1036,7 @@ systemctl restart docker
 ```
 解释：启用 Docker IPv6 配置。
 
-### 5.12 关闭 Docker IPv6 访问
+### 8.12 关闭 Docker IPv6 访问
 
 ```bash
 jq 'del(.["fixed-cidr-v6"]) | .ipv6 = false' /etc/docker/daemon.json > /etc/docker/daemon.json.tmp
@@ -1017,7 +1045,7 @@ systemctl restart docker
 ```
 解释：关闭 Docker IPv6 配置。
 
-### 5.19 备份/迁移/还原 Docker 环境
+### 8.19 备份/迁移/还原 Docker 环境
 
 默认展示：
 
@@ -1052,7 +1080,7 @@ rm -rf /tmp/docker_backup_时间
 ```
 解释：删除备份目录。
 
-### 5.20 卸载 Docker 环境
+### 8.20 卸载 Docker 环境
 
 ```bash
 docker ps -a -q | xargs -r docker rm -f
@@ -1064,7 +1092,7 @@ rm -f /etc/docker/daemon.json
 ```
 解释：删除 Docker 数据并卸载 Docker。
 
-## 8. SSH 管理
+## 9. SSH 管理
 
 进入 SSH 配置默认展示：
 
@@ -1075,7 +1103,7 @@ sshd -T | awk '$1 == "pubkeyauthentication" {print $2}'
 ```
 解释：显示当前 SSH 端口、密码登录状态、密钥登录状态。
 
-### 8.1 修改 SSH 端口
+### 9.1 修改 SSH 端口
 
 ```bash
 cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak.$(date +%Y%m%d%H%M%S)
@@ -1088,7 +1116,7 @@ ufw allow 64400/tcp
 ```
 解释：备份配置、修改端口、校验配置、重启 SSH、放行新端口。
 
-### 8.2 禁用/开启密码登录
+### 9.2 禁用/开启密码登录
 
 ```bash
 sed -i 's|^[#[:space:]]*PasswordAuthentication[[:space:]].*|PasswordAuthentication no|' /etc/ssh/sshd_config
@@ -1107,7 +1135,7 @@ sshd -t && systemctl restart sshd
 ```
 解释：开启密码登录。
 
-### 8.3 开启/禁用密钥登录
+### 9.3 开启/禁用密钥登录
 
 ```bash
 mkdir -p /root/.ssh
@@ -1126,7 +1154,7 @@ sshd -t && systemctl restart sshd
 ```
 解释：禁用密钥登录。
 
-### 8.4 一键配置
+### 9.4 一键配置
 
 ```bash
 mkdir -p /root/.ssh
@@ -1148,7 +1176,7 @@ ufw reload
 ```
 解释：端口改为 64400、关闭密码、开启密钥、root 只允许密钥、UFW 放行新端口并关闭 22。
 
-### 8.5 公钥和私钥管理
+### 9.5 公钥和私钥管理
 
 默认展示：
 
@@ -1168,7 +1196,7 @@ rm -f /root/.ssh/私钥文件名
 ```
 解释：添加公钥、删除公钥、添加私钥、删除私钥。
 
-### 8.6 修改 sshd_config 配置文件
+### 9.6 修改 sshd_config 配置文件
 
 ```bash
 vim /etc/ssh/sshd_config
@@ -1176,7 +1204,7 @@ sshd -t && systemctl restart sshd
 ```
 解释：手动编辑 SSH 服务端配置，并校验重启。
 
-## 9. UFW 管理
+## 10. UFW 管理
 
 默认展示：
 
@@ -1212,7 +1240,7 @@ ufw status numbered
 ```
 解释：删除端口 allow 规则。
 
-## 10. WARP 管理
+## 11. WARP 管理
 
 进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
 
@@ -1232,7 +1260,7 @@ bash /root/daimon/warp-menu.sh u
 ```
 解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
 
-## 11. SSL 证书申请+自动续期 & Nginx 管理
+## 12. SSL 证书申请+自动续期 & Nginx 管理
 
 进入菜单前会确保 acme.sh：
 
@@ -1317,7 +1345,7 @@ nginx -t && nginx -s reload
 ```
 解释：创建或删除 Nginx 测试页面。
 
-## 12. BBR 管理
+## 13. BBR 管理
 
 ```bash
 apt install -y wget curl
@@ -1328,7 +1356,7 @@ bash /root/daimon/tcpx.sh
 ```
 解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
 
-## 13. 常用的一键脚本
+## 14. 常用的一键脚本
 
 这些脚本会先退出当前脚本，再运行目标脚本，避免输出被主菜单覆盖。
 
