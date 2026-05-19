@@ -7711,10 +7711,544 @@ one_click_config_manager() {
 }
 
 
+
+# ===== system tools restored helper functions =====
+create_user_with_sshkey() {
+	local new_username="$1"
+	local is_sudo="${2:-false}"
+	local sshkey_vl
+
+	if [ -z "$new_username" ]; then
+		echo "用法：create_user_with_sshkey <用户名> [true|false]"
+		return 1
+	fi
+
+	if id "$new_username" >/dev/null 2>&1; then
+		echo "用户已存在: $new_username"
+	else
+		useradd -m -s /bin/bash "$new_username" || return 1
+		echo "已创建用户: $new_username"
+	fi
+
+	if [ "$is_sudo" = "true" ]; then
+		install sudo
+		usermod -aG sudo "$new_username" 2>/dev/null || true
+		cat > "/etc/sudoers.d/$new_username" <<EOF
+$new_username ALL=(ALL) NOPASSWD:ALL
+EOF
+		chmod 440 "/etc/sudoers.d/$new_username"
+		echo "已赋予 sudo 免密权限: $new_username"
+	fi
+
+	echo "导入公钥示例："
+	echo "  URL：      ${gh_https_url}github.com/torvalds.keys"
+	echo "  直接粘贴： ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
+	read -e -p "请输入 ${new_username} 的公钥（可留空跳过）: " sshkey_vl
+	[ -z "$sshkey_vl" ] && return 0
+
+	local user_home="/home/$new_username"
+	mkdir -p "$user_home/.ssh"
+	chmod 700 "$user_home/.ssh"
+	case "$sshkey_vl" in
+		http://*|https://*)
+			send_stats "从 URL 导入 SSH 公钥"
+			fetch_remote_ssh_keys "$sshkey_vl" "$user_home"
+			;;
+		ssh-rsa*|ssh-ed25519*|ssh-ecdsa*)
+			send_stats "公钥直接导入"
+			grep -qxF "$sshkey_vl" "$user_home/.ssh/authorized_keys" 2>/dev/null || echo "$sshkey_vl" >> "$user_home/.ssh/authorized_keys"
+			;;
+		*)
+			echo "公钥格式不正确，已跳过导入"
+			;;
+	esac
+	chmod 600 "$user_home/.ssh/authorized_keys" 2>/dev/null || true
+	chown -R "$new_username:$new_username" "$user_home/.ssh"
+}
+
+env_menu() {
+	local bashrc_file="$HOME/.bashrc"
+	local profile_file="$HOME/.profile"
+
+	show_env_vars() {
+		clear
+		echo "当前已生效环境变量（节选）"
+		echo "------------------------------------------------"
+		printf "%-20s %s\n" "变量名" "值"
+		for v in USER HOME SHELL LANG PWD EDITOR VISUAL PATH; do
+			printf "%-20s %s\n" "$v" "${!v}"
+		done
+		echo "------------------------------------------------"
+		echo "~/.bashrc 中 export 项："
+		grep -n '^export ' "$bashrc_file" 2>/dev/null || echo "无"
+		echo "------------------------------------------------"
+		echo "~/.profile 中 export 项："
+		grep -n '^export ' "$profile_file" 2>/dev/null || echo "无"
+	}
+
+	add_env_var() {
+		local name value target
+		read -e -p "变量名（如 JAVA_HOME）: " name
+		[ -z "$name" ] && return
+		read -e -p "变量值: " value
+		echo "1. 写入 ~/.bashrc（默认）"
+		echo "2. 写入 ~/.profile"
+		read -e -p "请选择写入位置: " target
+		local file="$bashrc_file"
+		[ "$target" = "2" ] && file="$profile_file"
+		touch "$file"
+		sed -i "/^export ${name}=/d" "$file"
+		echo "export ${name}=\"${value}\"" >> "$file"
+		export "$name=$value"
+		echo "已写入: $file"
+	}
+
+	delete_env_var() {
+		local name
+		read -e -p "请输入要删除的变量名: " name
+		[ -z "$name" ] && return
+		sed -i "/^export ${name}=/d" "$bashrc_file" "$profile_file" 2>/dev/null || true
+		unset "$name"
+		echo "已删除变量配置: $name"
+	}
+
+	while true; do
+		clear
+		echo "系统变量管理工具"
+		echo "------------------------------------------------"
+		echo "1. 查看当前环境变量"
+		echo "2. 添加/修改环境变量"
+		echo "3. 删除环境变量"
+		echo "0. 返回上一级选单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) show_env_vars ;;
+			2) add_env_var ;;
+			3) delete_env_var ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+github_proxy_sources_file() {
+	echo "${DAIMON_SCRIPT_DIR:-/root/daimon}/github_proxy_sources.txt"
+}
+
+github_proxy_init_sources() {
+	local file
+	file=$(github_proxy_sources_file)
+	mkdir -p "$(dirname "$file")" >/dev/null 2>&1 || true
+	if [ ! -s "$file" ]; then
+		cat > "$file" <<'EOF'
+raw.githubusercontent.com|https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
+gh-proxy.com|https://gh-proxy.com/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
+ghproxy.net|https://ghproxy.net/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
+testingcf.jsdelivr.net|https://testingcf.jsdelivr.net/gh/komari-monitor/komari-agent@main/install.sh
+ghfast.top|https://ghfast.top/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
+ghproxy.homeboyc.cn|https://ghproxy.homeboyc.cn/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
+github.akams.cn|https://github.akams.cn/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
+EOF
+	fi
+}
+
+github_proxy_show_sources() {
+	github_proxy_init_sources
+	local file idx=1 name url
+	file=$(github_proxy_sources_file)
+	while IFS='|' read -r name url; do
+		[ -z "$name" ] && continue
+		printf "%2d. %-24s %s\n" "$idx" "$name" "$url"
+		idx=$((idx + 1))
+	done < "$file"
+}
+
+github_proxy_add_source() {
+	github_proxy_init_sources
+	local name url file
+	file=$(github_proxy_sources_file)
+	read -e -p "请输入镜像名称: " name
+	read -e -p "请输入测速URL: " url
+	[ -z "$name" ] || [ -z "$url" ] && echo "名称和URL不能为空" && return 1
+	sed -i "/^${name//\//\\/}|/d" "$file"
+	echo "$name|$url" >> "$file"
+	echo "已添加: $name"
+}
+
+github_proxy_delete_source() {
+	github_proxy_init_sources
+	local file num tmp
+	file=$(github_proxy_sources_file)
+	github_proxy_show_sources
+	read -e -p "请输入要删除的编号: " num
+	[[ "$num" =~ ^[0-9]+$ ]] || return 1
+	tmp=$(mktemp)
+	awk -F'|' -v n="$num" 'NF && ++i != n {print}' "$file" > "$tmp"
+	cat "$tmp" > "$file"
+	rm -f "$tmp"
+	echo "已删除编号: $num"
+}
+
+github_proxy_speed_test() {
+	github_proxy_init_sources
+	local file out idx name url tmp result http_code time_total speed size
+	file=$(github_proxy_sources_file)
+	out="/tmp/daimon_github_proxy_speed.txt"
+	: > "$out"
+	echo "开始测速 GitHub 镜像源（小文件、短超时，下载后自动删除）..."
+	idx=0
+	while IFS='|' read -r name url; do
+		[ -z "$name" ] && continue
+		idx=$((idx + 1))
+		tmp="/tmp/daimon_github_proxy_${idx}.tmp"
+		echo "== Testing: $name"
+		result=$(curl -L --connect-timeout 5 --max-time 15 --retry 0 -o "$tmp" -w "%{http_code} %{time_total} %{speed_download} %{size_download}" -s "$url")
+		http_code=$(echo "$result" | awk '{print $1}')
+		time_total=$(echo "$result" | awk '{print $2}')
+		speed=$(echo "$result" | awk '{print $3}')
+		size=$(echo "$result" | awk '{print $4}')
+		if [ "$http_code" = "200" ] && [ "${size:-0}" -gt 1000 ]; then
+			printf "%s\t%s\t%s\t%s\t%s\n" "$speed" "$time_total" "$size" "$http_code" "$name" >> "$out"
+			echo "OK  HTTP:$http_code  TIME:${time_total}s  SPEED:${speed}B/s  SIZE:${size}B"
+		else
+			printf "0\t%s\t%s\t%s\t%s\n" "$time_total" "$size" "$http_code" "$name" >> "$out"
+			echo "FAIL  HTTP:$http_code  TIME:${time_total}s  SIZE:${size}B"
+		fi
+		rm -f "$tmp"
+	done < "$file"
+	echo "------------------------------------------------"
+	echo "Speed ranking:"
+	sort -nr "$out" | awk -F '\t' 'BEGIN{printf "%-4s %-28s %-12s %-10s %-10s %-8s\n","Rank","Proxy","Speed","Time","Size","HTTP"}{s=$1; if(s>=1048576){sf=sprintf("%.2f MB/s",s/1048576)}else if(s>=1024){sf=sprintf("%.2f KB/s",s/1024)}else{sf=sprintf("%.0f B/s",s)} printf "%-4d %-28s %-12s %-10ss %-10s %-8s\n",NR,$5,sf,$2,$3,$4}'
+	rm -f "$out"
+}
+
+github_proxy_manager() {
+	while true; do
+		clear
+		echo "github镜像源"
+		echo "------------------------------------------------"
+		echo "当前镜像源列表："
+		github_proxy_show_sources
+		echo "------------------------------------------------"
+		echo "1. 添加镜像源"
+		echo "2. 删除镜像源"
+		echo "3. 测速"
+		echo "0. 返回上一级选单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) github_proxy_add_source ;;
+			2) github_proxy_delete_source ;;
+			3) github_proxy_speed_test ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+dd_installnet_manager() {
+	root_use
+	clear
+	send_stats "DD重装系统"
+	echo "DD重装系统（leitbogioro/Tools InstallNET）"
+	echo "------------------------------------------------"
+	echo -e "${gl_hong}注意：DD/重装会清空当前服务器硬盘数据，请确认已备份重要数据！${gl_bai}"
+	echo "脚本来源：https://github.com/leitbogioro/Tools"
+	echo "默认系统：Ubuntu 22.04"
+	echo "默认登录：root / Tgadw2145qewO / 41000 端口"
+	echo "------------------------------------------------"
+
+	local ubuntu_version root_pwd ssh_port script_url script_path cmd_preview confirm reboot_choice
+	read -e -p "请输入 Ubuntu 版本（默认 22.04）: " ubuntu_version
+	ubuntu_version=${ubuntu_version:-22.04}
+	case "$ubuntu_version" in
+		18.04|20.04|22.04|24.04) ;;
+		*) echo "暂只支持 Ubuntu 18.04 / 20.04 / 22.04 / 24.04"; return 1 ;;
+	esac
+	read -e -p "请输入 root 密码（默认 Tgadw2145qewO）: " root_pwd
+	root_pwd=${root_pwd:-Tgadw2145qewO}
+	read -e -p "请输入 SSH 端口（默认 41000）: " ssh_port
+	ssh_port=${ssh_port:-41000}
+	[[ "$ssh_port" =~ ^[0-9]+$ ]] || { echo "端口必须是数字"; return 1; }
+
+	script_url="https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh"
+	script_path="/root/InstallNET.sh"
+	cmd_preview="bash $script_path -ubuntu $ubuntu_version -pwd '$root_pwd' -port $ssh_port"
+	echo "------------------------------------------------"
+	echo "将执行："
+	echo "wget --no-check-certificate -qO $script_path '$script_url' && chmod a+x $script_path"
+	echo "$cmd_preview"
+	echo "------------------------------------------------"
+	read -e -p "确认开始 DD 重装吗？(y/N): " confirm
+	[[ "$confirm" =~ ^[Yy]$ ]] || { echo "已取消"; return 0; }
+
+	cd /root || return 1
+	wget --no-check-certificate -qO "$script_path" "$script_url" && chmod a+x "$script_path" || return 1
+	bash "$script_path" -ubuntu "$ubuntu_version" -pwd "$root_pwd" -port "$ssh_port"
+	echo "------------------------------------------------"
+	echo "脚本执行完成后通常需要重启，重装过程可能需要 7-15 分钟。"
+	read -e -p "是否现在 reboot？(y/N): " reboot_choice
+	[[ "$reboot_choice" =~ ^[Yy]$ ]] && reboot
+}
+
+show_ssh_ip_info() {
+	clear
+	send_stats "查看ssh的ip"
+	echo "查看ssh的ip"
+	echo "------------------------------------------------"
+	local current_ip="" current_port=""
+	if [ -n "$SSH_CONNECTION" ]; then
+		current_ip=$(echo "$SSH_CONNECTION" | awk '{print $1}')
+		current_port=$(echo "$SSH_CONNECTION" | awk '{print $2}')
+	elif [ -n "$SSH_CLIENT" ]; then
+		current_ip=$(echo "$SSH_CLIENT" | awk '{print $1}')
+		current_port=$(echo "$SSH_CLIENT" | awk '{print $2}')
+	else
+		current_ip=$(who am i 2>/dev/null | awk -F'[()]' '{print $2}' | awk '{print $1}')
+	fi
+
+	echo "当前 SSH 连接IP："
+	if [ -n "$current_ip" ]; then
+		[ -n "$current_port" ] && echo "  $current_ip:$current_port" || echo "  $current_ip"
+	else
+		echo "  未检测到当前 SSH 连接IP（可能不是通过 SSH 登录）"
+	fi
+
+	echo "------------------------------------------------"
+	echo "所有 SSH 连接地址："
+	if command -v ss >/dev/null 2>&1; then
+		ss -tnp 2>/dev/null | awk 'NR==1 || /sshd/ {print}' || true
+	else
+		netstat -tnp 2>/dev/null | awk 'NR==1 || /sshd/ {print}' || true
+	fi
+}
+
+net_menu() {
+	show_nics() {
+		echo "================ 当前网卡信息 ================"
+		printf "%-18s %-12s %-22s %-20s\n" "网卡名" "状态" "IPv4地址" "MAC地址"
+		echo "------------------------------------------------"
+		for nic in $(ls /sys/class/net 2>/dev/null); do
+			state=$(cat "/sys/class/net/$nic/operstate" 2>/dev/null)
+			ipaddr=$(ip -4 addr show "$nic" 2>/dev/null | awk '/inet /{print $2}' | head -n1)
+			mac=$(cat "/sys/class/net/$nic/address" 2>/dev/null)
+			printf "%-18s %-12s %-22s %-20s\n" "$nic" "$state" "${ipaddr:-无}" "$mac"
+		done
+		echo "================================================"
+	}
+	while true; do
+		clear
+		show_nics
+		echo ""
+		echo "=========== 网卡管理菜单 ==========="
+		echo "1. 启用网卡"
+		echo "2. 禁用网卡"
+		echo "3. 查看网卡详细信息"
+		echo "4. 刷新网卡信息"
+		echo "0. 返回上一级选单"
+		echo "===================================="
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) read -e -p "请输入网卡名: " nic; [ -n "$nic" ] && ip link set "$nic" up ;;
+			2) read -e -p "请输入网卡名: " nic; [ -n "$nic" ] && ip link set "$nic" down ;;
+			3) read -e -p "请输入网卡名: " nic; [ -n "$nic" ] && { ip addr show "$nic"; echo; ethtool "$nic" 2>/dev/null || true; } ;;
+			4) continue ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+journalctl_log_manager() {
+	root_use
+	send_stats "journalctl日志管理"
+	while true; do
+		clear
+		echo "journalctl日志管理"
+		echo "------------------------------------------------"
+		echo "1. 配置自动清理（默认最多500M、保留1G空闲、单文件50M、保留1个月）"
+		echo "2. 查看日志磁盘占用大小"
+		echo "3. 查看某服务的日志（最后200条）"
+		echo "4. 按时间保留日志（默认7天）"
+		echo "5. 按大小保留日志（默认500M）"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				local system_max_use system_keep_free system_max_file_size max_retention_sec
+				read -e -p "SystemMaxUse 最大总占用（默认 500M）: " system_max_use
+				system_max_use=${system_max_use:-500M}
+				read -e -p "SystemKeepFree 系统至少保留空闲空间（默认 1G）: " system_keep_free
+				system_keep_free=${system_keep_free:-1G}
+				read -e -p "SystemMaxFileSize 单个 journal 文件最大大小（默认 50M）: " system_max_file_size
+				system_max_file_size=${system_max_file_size:-50M}
+				read -e -p "MaxRetentionSec 最长保留时间（默认 1month）: " max_retention_sec
+				max_retention_sec=${max_retention_sec:-1month}
+				mkdir -p /etc/systemd/journald.conf.d
+				cat > /etc/systemd/journald.conf.d/99-daimon-journal.conf <<EOF
+[Journal]
+SystemMaxUse=$system_max_use
+SystemKeepFree=$system_keep_free
+SystemMaxFileSize=$system_max_file_size
+MaxRetentionSec=$max_retention_sec
+EOF
+				systemctl restart systemd-journald 2>/dev/null || service systemd-journald restart 2>/dev/null || true
+				echo "已写入 /etc/systemd/journald.conf.d/99-daimon-journal.conf"
+				;;
+			2) journalctl --disk-usage ;;
+			3) read -e -p "请输入服务名（可不带 .service）: " svc; [ -z "$svc" ] && continue; [[ "$svc" != *.service ]] && svc="$svc.service"; journalctl -u "$svc" -n 200 --no-pager ;;
+			4) read -e -p "保留时间（默认 7d）: " t; journalctl --vacuum-time="${t:-7d}" ;;
+			5) read -e -p "保留大小（默认 500M）: " z; journalctl --vacuum-size="${z:-500M}" ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+system_network_auto_optimize() {
+	root_use
+	while true; do
+		clear
+		echo "系统网络自适应优化"
+		echo "------------------------------------------------"
+		echo -e "当前拥塞算法: ${gl_huang}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 未知)${gl_bai}"
+		echo -e "当前队列算法: ${gl_huang}$(sysctl -n net.core.default_qdisc 2>/dev/null || echo 未知)${gl_bai}"
+		if [ -f /etc/sysctl.d/99-network-optimize.conf ]; then
+			echo -e "自动优化配置: ${gl_lv}已安装${gl_bai} (/etc/sysctl.d/99-network-optimize.conf)"
+		else
+			echo -e "自动优化配置: ${gl_hui}未安装${gl_bai}"
+		fi
+		echo "------------------------------------------------"
+		echo "说明：使用 kejilion 的 network-optimize.sh，自动检测链路速率、延迟、丢包、内存、内核版本后选择参数。"
+		echo "------------------------------------------------"
+		echo "1. 执行系统网络自适应优化"
+		echo "2. 查看当前网络优化状态"
+		echo "3. 回滚系统网络自适应优化"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1) daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && auto_optimize_network ;;
+			2) daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && show_network_status ;;
+			3) daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && restore_network_defaults ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+system_ipv6_status() {
+	echo "------------------------------------------------"
+	echo "IPv6 当前状态："
+	sysctl net.ipv6.conf.all.disable_ipv6 net.ipv6.conf.default.disable_ipv6 net.ipv6.conf.lo.disable_ipv6 2>/dev/null || true
+	ip -6 addr show scope global 2>/dev/null | awk '/inet6/{print "  "$2" "$NF}' || true
+}
+
+system_disable_ipv6() {
+	root_use
+	local CONF="/etc/sysctl.d/99-daimon-ipv6.conf"
+	[ -f "$CONF" ] && cp "$CONF" "${CONF}.bak.$(date +%Y%m%d%H%M%S)"
+	cat > "$CONF" <<'EOF'
+# linux-tools-daimon IPv6 配置：禁用 IPv6
+net.ipv6.conf.all.disable_ipv6 = 1
+net.ipv6.conf.default.disable_ipv6 = 1
+net.ipv6.conf.lo.disable_ipv6 = 1
+EOF
+	sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
+	for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do [ -e "$f" ] && echo 1 > "$f" 2>/dev/null || true; done
+	echo -e "${gl_lv}IPv6 已禁用。配置文件: $CONF${gl_bai}"
+	system_ipv6_status
+	send_stats "禁用IPv6"
+}
+
+system_enable_ipv6() {
+	root_use
+	local CONF="/etc/sysctl.d/99-daimon-ipv6.conf"
+	[ -f "$CONF" ] && cp "$CONF" "${CONF}.bak.$(date +%Y%m%d%H%M%S)"
+	cat > "$CONF" <<'EOF'
+# linux-tools-daimon IPv6 配置：开启 IPv6
+net.ipv6.conf.all.disable_ipv6 = 0
+net.ipv6.conf.default.disable_ipv6 = 0
+net.ipv6.conf.lo.disable_ipv6 = 0
+EOF
+	sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
+	for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do [ -e "$f" ] && echo 0 > "$f" 2>/dev/null || true; done
+	echo -e "${gl_lv}IPv6 已开启。配置文件: $CONF${gl_bai}"
+	system_ipv6_status
+	send_stats "开启IPv6"
+}
+
+cpcat_manager() {
+	while true; do
+		clear
+		local bashrc_file="$HOME/.bashrc"
+		local cpcat_status="${gl_hong}未配置${gl_bai}"
+		if [ -f "$bashrc_file" ] && grep -q '^# ========== cpcat clipboard setup ==========$' "$bashrc_file"; then
+			cpcat_status="${gl_lv}已配置${gl_bai}"
+		fi
+		echo "配置/删除cpcat"
+		echo "------------------------------------------------"
+		echo -e "当前状态: $cpcat_status"
+		echo "功能说明: cpcat 文件路径，可通过 OSC 52 快速复制文件内容到剪贴板"
+		echo "示例: cpcat /root/test.txt"
+		echo "------------------------------------------------"
+		echo "1. 配置 cpcat 到 ~/.bashrc"
+		echo "2. 删除 ~/.bashrc 中的 cpcat 配置"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " cpcat_choice
+		case "$cpcat_choice" in
+			1)
+				local tmp_file
+				touch "$bashrc_file"
+				tmp_file=$(mktemp)
+				awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' "$bashrc_file" > "$tmp_file"
+				cat "$tmp_file" > "$bashrc_file"
+				rm -f "$tmp_file"
+				cat >> "$bashrc_file" <<'EOF'
+
+# ========== cpcat clipboard setup ==========
+# 一键复制文件内容到剪贴板
+cpcat() {
+    if [ -f "$1" ]; then
+        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
+        echo "✅ 已复制到剪贴板: $1"
+    else
+        echo "❌ 文件不存在: $1"
+    fi
+}
+# ========== end cpcat clipboard setup ==========
+EOF
+				echo "已配置 cpcat。重新连接 SSH 或执行 source ~/.bashrc 后生效。"
+				;;
+			2)
+				[ -f "$bashrc_file" ] || { echo "~/.bashrc 不存在"; break_end; continue; }
+				local tmp_file
+				tmp_file=$(mktemp)
+				awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' "$bashrc_file" > "$tmp_file"
+				cat "$tmp_file" > "$bashrc_file"
+				rm -f "$tmp_file"
+				echo "已删除 cpcat 配置。"
+				;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+# ===== end system tools restored helper functions =====
+
+
 linux_Settings() {
 	while true; do
 		clear
-		# 双列布局恢复自最近的双列菜单记录；case 逻辑保持当前 1-19 对应关系
 		echo -e "系统工具"
 		echo -e "${gl_kjlan}------------------------"
 		echo -e "${gl_kjlan}1.   ${gl_bai}设置脚本启动快捷键                 ${gl_kjlan}2.   ${gl_bai}更换系统软件包镜像源"
@@ -7726,111 +8260,306 @@ linux_Settings() {
 		echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}网卡管理工具"
 		echo -e "${gl_kjlan}15.  ${gl_bai}journalctl日志管理              ${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
 		echo -e "${gl_kjlan}17.  ${gl_bai}禁用IPv6                         ${gl_kjlan}18.  ${gl_bai}开启IPv6"
-		echo -e "${gl_kjlan}19.  ${gl_bai}卸载daimon脚本"
+		echo -e "${gl_kjlan}19.  ${gl_bai}配置/删除cpcat                  ${gl_kjlan}20.  ${gl_bai}卸载daimon脚本"
 		echo -e "${gl_kjlan}------------------------"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
+
 		case "$sub_choice" in
 			1)
-				read -e -p "请输入快捷命令名称（默认 d）: " cmd
-				cmd=${cmd:-d}
-				ln -sf /usr/local/bin/d "/usr/local/bin/$cmd" 2>/dev/null || true
-				ln -sf /usr/local/bin/d "/usr/bin/$cmd" 2>/dev/null || true
-				echo "快捷命令已设置为: $cmd"
+				while true; do
+					clear
+					read -e -p "请输入你的快捷按键（默认 d，输入0退出）: " kuaijiejian
+					kuaijiejian=${kuaijiejian:-d}
+					[ "$kuaijiejian" = "0" ] && break
+					find /usr/local/bin/ -type l -exec bash -c 'test "$(readlink -f {})" = "/usr/local/bin/d" && rm -f {}' \; 2>/dev/null || true
+					[ "$kuaijiejian" != "d" ] && ln -sf /usr/local/bin/d "/usr/local/bin/$kuaijiejian" 2>/dev/null || true
+					ln -sf /usr/local/bin/d "/usr/bin/$kuaijiejian" >/dev/null 2>&1 || true
+					echo "快捷键已设置: $kuaijiejian"
+					send_stats "脚本快捷键已设置"
+					break_end
+					break
+				done
 				;;
-			2) bash <(curl -sSL https://linuxmirrors.cn/main.sh) ;;
+			2)
+				root_use
+				send_stats "更换系统软件包镜像源"
+				clear
+				echo "更换系统软件包镜像源"
+				echo "将执行：bash <(curl -sSL https://linuxmirrors.cn/main.sh)"
+				bash <(curl -sSL https://linuxmirrors.cn/main.sh)
+				;;
 			3) set_dns_ui ;;
 			4)
-				echo "1. IPv4 优先    2. 恢复默认"
-				read -e -p "请选择: " mode
-				if [ "$mode" = "1" ]; then
-					grep -q '^precedence ::ffff:0:0/96  100' /etc/gai.conf 2>/dev/null || echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
-				else
-					sed -i '/^precedence ::ffff:0:0\/96  100/d' /etc/gai.conf 2>/dev/null || true
-				fi
-				;;
-			5) read -e -p "请输入 Swap 大小 MB（默认 1024）: " swap_size; add_swap "${swap_size:-1024}" ;;
-			6) read -e -p "请输入要修改密码的用户名（默认 root）: " user_name; add_sshpasswd "${user_name:-root}" ;;
-			7) set_timedate ;;
-			8) read -e -p "请输入新主机名: " new_host; [ -n "$new_host" ] && hostnamectl set-hostname "$new_host" ;;
-			9) install vim; vim /etc/hosts ;;
-			10) install vim; vim /etc/environment ;;
-			11)
-				local raw_url="https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh"
-				local names=("raw.githubusercontent.com" "gh-proxy.com" "ghproxy.net" "testingcf.jsdelivr.net" "ghfast.top" "ghproxy.homeboyc.cn" "github.akams.cn")
-				local urls=(
-					"$raw_url"
-					"https://gh-proxy.com/$raw_url"
-					"https://ghproxy.net/$raw_url"
-					"https://testingcf.jsdelivr.net/gh/komari-monitor/komari-agent@main/install.sh"
-					"https://ghfast.top/$raw_url"
-					"https://ghproxy.homeboyc.cn/$raw_url"
-					"https://github.akams.cn/$raw_url"
-				)
-				local out="/tmp/daimon_github_proxy_speed.txt"
-				: > "$out"
-				for i in "${!names[@]}"; do
-					local tmp="/tmp/daimon_github_proxy_${i}.tmp"
-					local result http_code time_total speed size
-					result=$(curl -L --connect-timeout 5 --max-time 15 --retry 0 -o "$tmp" -w "%{http_code} %{time_total} %{speed_download} %{size_download}" -s "${urls[$i]}")
-					http_code=$(echo "$result" | awk '{print $1}')
-					time_total=$(echo "$result" | awk '{print $2}')
-					speed=$(echo "$result" | awk '{print $3}')
-					size=$(echo "$result" | awk '{print $4}')
-					[ "$http_code" = "200" ] && [ "${size:-0}" -gt 1000 ] || speed=0
-					printf "%s\t%s\t%s\t%s\t%s\n" "$speed" "$time_total" "$size" "$http_code" "${names[$i]}" >> "$out"
-					rm -f "$tmp"
+				root_use
+				send_stats "设置v4/v6优先级"
+				while true; do
+					clear
+					echo "设置v4/v6优先级"
+					echo "------------------------"
+					if grep -Eq '^\s*precedence\s+::ffff:0:0/96\s+100\s*$' /etc/gai.conf 2>/dev/null; then
+						echo -e "当前网络优先级设置: ${gl_huang}IPv4${gl_bai} 优先"
+					else
+						echo -e "当前网络优先级设置: ${gl_huang}IPv6${gl_bai} 优先"
+					fi
+					echo ""
+					echo "------------------------"
+					echo "1. IPv4 优先          2. IPv6 优先          3. IPv6 修复工具"
+					echo "------------------------"
+					echo "0. 返回上一级选单"
+					echo "------------------------"
+					read -e -p "选择优先的网络: " choice
+					case "$choice" in
+						1) prefer_ipv4 ;;
+						2) rm -f /etc/gai.conf; echo "已切换为 IPv6 优先"; send_stats "已切换为 IPv6 优先" ;;
+						3) clear; daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"; echo "该功能由jhb大神提供，感谢他！"; send_stats "ipv6修复" ;;
+						0) break ;;
+						*) echo "无效的输入!" ;;
+					esac
+					[ "$choice" = "0" ] || break_end
 				done
-				sort -nr "$out" | awk -F '\t' 'BEGIN{printf "%-4s %-28s %-12s %-10s %-10s %-8s\n","Rank","Proxy","Speed","Time","Size","HTTP"}{s=$1; if(s>=1048576){sf=sprintf("%.2f MB/s",s/1048576)}else if(s>=1024){sf=sprintf("%.2f KB/s",s/1024)}else{sf=sprintf("%.0f B/s",s)} printf "%-4d %-28s %-12s %-10ss %-10s %-8s\n",NR,$5,sf,$2,$3,$4}'
-				rm -f "$out"
 				;;
-			12)
-				cd /root || return
-				wget --no-check-certificate -qO InstallNET.sh 'https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh' && chmod a+x InstallNET.sh
-				read -e -p "系统类型参数（默认 -ubuntu 22.04）: " os_arg
-				read -e -p "密码（默认 Tgadw2145qewO）: " dd_pwd
-				read -e -p "端口（默认 41000）: " dd_port
-				os_arg=${os_arg:--ubuntu 22.04}
-				dd_pwd=${dd_pwd:-Tgadw2145qewO}
-				dd_port=${dd_port:-41000}
-				bash InstallNET.sh $os_arg -pwd "$dd_pwd" -port "$dd_port"
+			5)
+				root_use
+				send_stats "设置虚拟内存"
+				while true; do
+					clear
+					echo "设置虚拟内存"
+					local swap_used swap_total swap_info
+					swap_used=$(free -m | awk 'NR==3{print $3}')
+					swap_total=$(free -m | awk 'NR==3{print $2}')
+					swap_info=$(free -m | awk 'NR==3{used=$3; total=$2; if (total == 0) {percentage=0} else {percentage=used*100/total}; printf "%dM/%dM (%d%%)", used, total, percentage}')
+					echo -e "当前虚拟内存: ${gl_huang}$swap_info${gl_bai}"
+					echo "------------------------"
+					echo "1. 分配1024M         2. 分配2048M         3. 分配4096M         4. 自定义大小"
+					echo "------------------------"
+					echo "0. 返回上一级选单"
+					echo "------------------------"
+					read -e -p "请输入你的选择: " choice
+					case "$choice" in
+						1) send_stats "已设置1G虚拟内存"; add_swap 1024 ;;
+						2) send_stats "已设置2G虚拟内存"; add_swap 2048 ;;
+						3) send_stats "已设置4G虚拟内存"; add_swap 4096 ;;
+						4) read -e -p "请输入虚拟内存大小（单位M）: " new_swap; [ -n "$new_swap" ] && add_swap "$new_swap"; send_stats "已设置自定义虚拟内存" ;;
+						0) break ;;
+						*) echo "无效的输入!" ;;
+					esac
+					[ "$choice" = "0" ] || break_end
+				done
 				;;
-			13) echo "当前 SSH_CLIENT: ${SSH_CLIENT:-无}"; echo "所有 SSH 连接:"; ss -tnp 2>/dev/null | grep -E 'sshd|:22|:64400|:41000' || true ;;
-			14) ip -br addr; echo; ip route ;;
-			15)
-				echo "1. 配置自动清理  2. 查看占用  3. 查看服务日志  4. 按时间清理  5. 按大小清理"
-				read -e -p "请选择: " j
-				case "$j" in
-					1) read -e -p "SystemMaxUse 默认 500M: " a; read -e -p "SystemKeepFree 默认 1G: " b; read -e -p "SystemMaxFileSize 默认 50M: " c; read -e -p "MaxRetentionSec 默认 1month: " d; mkdir -p /etc/systemd/journald.conf.d; cat > /etc/systemd/journald.conf.d/99-daimon.conf <<EOF
-[Journal]
-SystemMaxUse=${a:-500M}
-SystemKeepFree=${b:-1G}
-SystemMaxFileSize=${c:-50M}
-MaxRetentionSec=${d:-1month}
-EOF
-systemctl restart systemd-journald ;;
-					2) journalctl --disk-usage ;;
-					3) read -e -p "请输入服务名: " svc; [[ "$svc" != *.service ]] && svc="$svc.service"; journalctl -u "$svc" -n 200 --no-pager ;;
-					4) read -e -p "保留时间（默认 7d）: " t; journalctl --vacuum-time="${t:-7d}" ;;
-					5) read -e -p "保留大小（默认 500M）: " z; journalctl --vacuum-size="${z:-500M}" ;;
+			6)
+				while true; do
+					root_use
+					send_stats "用户管理"
+					clear
+					echo "用户列表"
+					echo "----------------------------------------------------------------------------"
+					printf "%-24s %-34s %-20s %-10s\n" "用户名" "用户目录" "用户组" "sudo权限"
+					while IFS=: read -r username _ userid groupid _ homedir shell; do
+						[ "$userid" -lt 1000 ] && [ "$username" != "root" ] && continue
+						local groups sudo_status
+						groups=$(groups "$username" 2>/dev/null | cut -d : -f 2)
+						if sudo -n -lU "$username" 2>/dev/null | grep -q "(ALL) \(NOPASSWD: \)\?ALL" || id -nG "$username" 2>/dev/null | grep -qw sudo; then
+							sudo_status="Yes"
+						else
+							sudo_status="No"
+						fi
+						printf "%-24s %-34s %-20s %-10s\n" "$username" "$homedir" "$groups" "$sudo_status"
+					done < /etc/passwd
+					echo ""
+					echo "账户操作"
+					echo "------------------------"
+					echo "1. 创建普通用户             2. 创建高级用户（含sudo权限）"
+					echo "------------------------"
+					echo "3. 赋予最高权限             4. 取消最高权限"
+					echo "------------------------"
+					echo "5. 删除账号"
+					echo "------------------------"
+					echo "0. 返回上一级选单"
+					echo "------------------------"
+					read -e -p "请输入你的选择: " choice
+					case "$choice" in
+						1) read -e -p "请输入新用户名: " new_username; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" false ;;
+						2) read -e -p "请输入新用户名: " new_username; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" true ;;
+						3) read -e -p "请输入用户名: " username; [ -n "$username" ] && { install sudo; usermod -aG sudo "$username" 2>/dev/null || true; echo "$username ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$username"; chmod 440 "/etc/sudoers.d/$username"; } ;;
+						4) read -e -p "请输入用户名: " username; [ -n "$username" ] && { rm -f "/etc/sudoers.d/$username"; sed -i "/^$username\s*ALL=(ALL)/d" /etc/sudoers 2>/dev/null || true; gpasswd -d "$username" sudo 2>/dev/null || true; } ;;
+						5) read -e -p "请输入要删除的用户名: " username; [ -n "$username" ] && userdel -r "$username" ;;
+						0) break ;;
+						*) echo "无效的输入!" ;;
+					esac
+					[ "$choice" = "0" ] || break_end
+				done
+				;;
+			7)
+				root_use
+				send_stats "换时区"
+				while true; do
+					clear
+					echo "系统时间信息"
+					local timezone current_time
+					timezone=$(current_timezone)
+					current_time=$(date +"%Y-%m-%d %H:%M:%S")
+					echo "当前系统时区：$timezone"
+					echo "当前系统时间：$current_time"
+					echo ""
+					echo "时区切换"
+					echo "------------------------"
+					echo "亚洲"
+					echo "1.  中国上海时间             2.  中国香港时间"
+					echo "3.  日本东京时间             4.  韩国首尔时间"
+					echo "5.  新加坡时间               6.  印度加尔各答时间"
+					echo "7.  阿联酋迪拜时间           8.  澳大利亚悉尼时间"
+					echo "9.  泰国曼谷时间"
+					echo "------------------------"
+					echo "欧洲"
+					echo "11. 英国伦敦时间             12. 法国巴黎时间"
+					echo "13. 德国柏林时间             14. 俄罗斯莫斯科时间"
+					echo "15. 荷兰阿姆斯特丹时间       16. 西班牙马德里时间"
+					echo "------------------------"
+					echo "美洲"
+					echo "21. 美国西部时间             22. 美国东部时间"
+					echo "23. 加拿大温哥华时间         24. 墨西哥城时间"
+					echo "25. 巴西圣保罗时间           26. 阿根廷布宜诺斯艾利斯时间"
+					echo "------------------------"
+					echo "31. UTC全球标准时间"
+					echo "------------------------"
+					echo "0. 返回上一级选单"
+					echo "------------------------"
+					read -e -p "请输入你的选择: " choice
+					case "$choice" in
+						1) set_timedate Asia/Shanghai ;;
+						2) set_timedate Asia/Hong_Kong ;;
+						3) set_timedate Asia/Tokyo ;;
+						4) set_timedate Asia/Seoul ;;
+						5) set_timedate Asia/Singapore ;;
+						6) set_timedate Asia/Kolkata ;;
+						7) set_timedate Asia/Dubai ;;
+						8) set_timedate Australia/Sydney ;;
+						9) set_timedate Asia/Bangkok ;;
+						11) set_timedate Europe/London ;;
+						12) set_timedate Europe/Paris ;;
+						13) set_timedate Europe/Berlin ;;
+						14) set_timedate Europe/Moscow ;;
+						15) set_timedate Europe/Amsterdam ;;
+						16) set_timedate Europe/Madrid ;;
+						21) set_timedate America/Los_Angeles ;;
+						22) set_timedate America/New_York ;;
+						23) set_timedate America/Vancouver ;;
+						24) set_timedate America/Mexico_City ;;
+						25) set_timedate America/Sao_Paulo ;;
+						26) set_timedate America/Argentina/Buenos_Aires ;;
+						31) set_timedate UTC ;;
+						0) break ;;
+						*) echo "无效的输入!" ;;
+					esac
+					[ "$choice" = "0" ] || break_end
+				done
+				;;
+			8)
+				root_use
+				send_stats "修改主机名"
+				while true; do
+					clear
+					local current_hostname new_hostname
+					current_hostname=$(uname -n)
+					echo -e "当前主机名: ${gl_huang}$current_hostname${gl_bai}"
+					echo "------------------------"
+					read -e -p "请输入新的主机名（输入0退出）: " new_hostname
+					if [ -n "$new_hostname" ] && [ "$new_hostname" != "0" ]; then
+						if [ -f /etc/alpine-release ]; then
+							echo "$new_hostname" > /etc/hostname
+							hostname "$new_hostname"
+						else
+							hostnamectl set-hostname "$new_hostname"
+							echo "$new_hostname" > /etc/hostname
+							systemctl restart systemd-hostnamed 2>/dev/null || true
+						fi
+						if grep -q "127.0.0.1" /etc/hosts; then
+							sed -i "s/^127.0.0.1 .*/127.0.0.1       $new_hostname localhost localhost.localdomain/g" /etc/hosts
+						else
+							echo "127.0.0.1       $new_hostname localhost localhost.localdomain" >> /etc/hosts
+						fi
+						if grep -q "^::1" /etc/hosts; then
+							sed -i "s/^::1 .*/::1             $new_hostname localhost localhost.localdomain ipv6-localhost ipv6-loopback/g" /etc/hosts
+						else
+							echo "::1             $new_hostname localhost localhost.localdomain ipv6-localhost ipv6-loopback" >> /etc/hosts
+						fi
+						echo "主机名已更改为: $new_hostname"
+						send_stats "主机名已更改"
+						break_end
+					else
+						break
+					fi
+				done
+				;;
+			9)
+				root_use
+				send_stats "本地host解析"
+				while true; do
+					clear
+					echo "本机host解析列表"
+					echo "如果你在这里添加解析匹配，将不再使用动态解析了"
+					cat /etc/hosts
+					echo ""
+					echo "操作"
+					echo "------------------------"
+					echo "1. 添加新的解析              2. 删除解析地址"
+					echo "------------------------"
+					echo "0. 返回上一级选单"
+					echo "------------------------"
+					read -e -p "请输入你的选择: " host_dns
+					case "$host_dns" in
+						1) read -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost; [ -n "$addhost" ] && echo "$addhost" >> /etc/hosts; send_stats "本地host解析新增" ;;
+						2) read -e -p "请输入需要删除的解析内容关键字: " delhost; [ -n "$delhost" ] && sed -i "/$delhost/d" /etc/hosts; send_stats "本地host解析删除" ;;
+						0) break ;;
+						*) echo "无效的输入!" ;;
+					esac
+					[ "$host_dns" = "0" ] || break_end
+				done
+				;;
+			10) clear; env_menu ;;
+			11) github_proxy_manager ;;
+			12) dd_installnet_manager ;;
+			13) show_ssh_ip_info; break_end ;;
+			14) clear; net_menu ;;
+			15) journalctl_log_manager ;;
+			16) system_network_auto_optimize ;;
+			17) clear; system_disable_ipv6; break_end ;;
+			18) clear; system_enable_ipv6; break_end ;;
+			19) cpcat_manager ;;
+			20)
+				clear
+				send_stats "卸载daimon脚本"
+				echo "卸载daimon脚本"
+				echo "------------------------------------------------"
+				echo "将彻底卸载daimon脚本，不影响你其他功能"
+				read -e -p "确定继续吗？(Y/N): " choice
+				case "$choice" in
+					[Yy])
+						clear
+						(crontab -l 2>/dev/null | grep -v "kejilion.sh") | crontab - 2>/dev/null || true
+						rm -f /usr/local/bin/d /usr/bin/d
+						rm -f "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT"
+						echo "脚本已卸载，再见！"
+						break_end
+						clear
+						exit
+						;;
+					[Nn]) echo "已取消" ;;
+					*) echo "无效的选择，请输入 Y 或 N。" ;;
 				esac
 				;;
-			16) daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && auto_optimize_network ;;
-			17) echo 'net.ipv6.conf.all.disable_ipv6 = 1' > /etc/sysctl.d/99-disable-ipv6.conf; echo 'net.ipv6.conf.default.disable_ipv6 = 1' >> /etc/sysctl.d/99-disable-ipv6.conf; sysctl --system ;;
-			18) rm -f /etc/sysctl.d/99-disable-ipv6.conf; sysctl -w net.ipv6.conf.all.disable_ipv6=0 net.ipv6.conf.default.disable_ipv6=0 ;;
-			19) read -e -p "确认卸载 daimon 脚本？(y/N): " c; [ "$c" = "y" ] || [ "$c" = "Y" ] && rm -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d /usr/bin/d ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
-		break_end
 	done
 }
 
 
 linux_tools() {
-  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh ranger fastfetch ncdu)
-  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "ranger" "fastfetch" "ncdu")
+  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi fastfetch ncdu)
+  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "fastfetch" "ncdu")
   local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "系统概览" "磁盘占用")
 
   local programming_ids=(python npm nodejs bun uv git claude codex)
@@ -8741,7 +9470,7 @@ EOF
         systemctl start firewalld >/dev/null 2>&1 || true
         firewall-cmd --state 2>/dev/null || true
         ;;
-      git|curl|tree|ranger|fastfetch|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
+      git|curl|tree|yazi|fastfetch|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
@@ -8782,7 +9511,7 @@ EOF
       starship) remove_starship_all ;;
       bat) remove_bat_all ;;
       btop) remove btop; rm -rf "$HOME/.config/btop" ;;
-      ranger) remove ranger; rm -rf "$HOME/.config/ranger" "$HOME/.local/share/ranger" ;;
+      yazi) remove yazi; rm -rf "$HOME/.config/yazi" "$HOME/.local/share/yazi" "$HOME/.cache/yazi" ;;
       fastfetch) remove fastfetch; rm -rf "$HOME/.config/fastfetch" ;;
       htop) remove htop; rm -rf "$HOME/.config/htop" "$HOME/.htoprc" ;;
       ripgrep) remove ripgrep ;;
@@ -15836,9 +16565,9 @@ kejilion_update() {
 	echo "------------------------"
 
 	local update_url="${DAIMON_UPDATE_URL:-https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh}"
-	local tmp_file backup_file keep_permission="false" keep_canshu="" keep_stats=""
+	local tmp_file rollback_file keep_permission="false" keep_canshu="" keep_stats=""
 	tmp_file=$(mktemp /tmp/daimon_tmp.XXXXXX) || { echo -e "${gl_hong}创建临时文件失败${gl_bai}"; break_end; return 1; }
-	backup_file="${DAIMON_LOCAL_SCRIPT}.bak.$(date +%Y%m%d%H%M%S)"
+	rollback_file=$(mktemp /tmp/daimon_rollback.XXXXXX) || rollback_file=""
 
 	echo "下载地址: $update_url"
 	if ! curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o "$tmp_file" "$update_url"; then
@@ -15848,7 +16577,7 @@ kejilion_update() {
 	fi
 
 	if [ ! -s "$tmp_file" ]; then
-		rm -f "$tmp_file"
+		rm -f "$tmp_file" "$rollback_file"
 		echo -e "${gl_hong}更新失败：下载文件为空或下载地址不可访问${gl_bai}"
 		break_end
 		return 1
@@ -15857,14 +16586,14 @@ kejilion_update() {
 	if ! head -1 "$tmp_file" 2>/dev/null | grep -q '^#!/bin/bash'; then
 		echo -e "${gl_hong}更新失败：下载到的不是 linux-toolbox.sh 脚本${gl_bai}"
 		echo "文件首行: $(head -1 "$tmp_file" 2>/dev/null)"
-		rm -f "$tmp_file"
+		rm -f "$tmp_file" "$rollback_file"
 		break_end
 		return 1
 	fi
 
 	if ! grep -q 'DAIMON_NAME="linux-tools-daimon"' "$tmp_file" 2>/dev/null; then
 		echo -e "${gl_hong}更新失败：未检测到 linux-tools-daimon 标识，已停止覆盖本地脚本${gl_bai}"
-		rm -f "$tmp_file"
+		rm -f "$tmp_file" "$rollback_file"
 		break_end
 		return 1
 	fi
@@ -15875,17 +16604,18 @@ kejilion_update() {
 	keep_canshu=$(grep -h '^canshu=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 	keep_stats=$(grep -h '^ENABLE_STATS=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 
-	[ -f "$DAIMON_LOCAL_SCRIPT" ] && cp -f "$DAIMON_LOCAL_SCRIPT" "$backup_file" 2>/dev/null || true
+	[ -n "$rollback_file" ] && [ -f "$DAIMON_LOCAL_SCRIPT" ] && cp -f "$DAIMON_LOCAL_SCRIPT" "$rollback_file" 2>/dev/null || true
 	chmod +x "$tmp_file"
 	if ! mv -f "$tmp_file" "$DAIMON_LOCAL_SCRIPT"; then
-		rm -f "$tmp_file"
+		rm -f "$tmp_file" "$rollback_file"
 		echo -e "${gl_hong}更新失败：无法写入 $DAIMON_LOCAL_SCRIPT${gl_bai}"
 		break_end
 		return 1
 	fi
 	if ! cp -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d; then
 		echo -e "${gl_hong}更新失败：无法写入 /usr/local/bin/d${gl_bai}"
-		[ -f "$backup_file" ] && cp -f "$backup_file" "$DAIMON_LOCAL_SCRIPT" 2>/dev/null || true
+		[ -n "$rollback_file" ] && [ -f "$rollback_file" ] && cp -f "$rollback_file" "$DAIMON_LOCAL_SCRIPT" 2>/dev/null || true
+		rm -f "$rollback_file" 2>/dev/null || true
 		break_end
 		return 1
 	fi
@@ -15903,8 +16633,8 @@ kejilion_update() {
 		sed -i "s/^ENABLE_STATS=.*/$keep_stats/" "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d 2>/dev/null || true
 	fi
 
+	rm -f "$rollback_file" 2>/dev/null || true
 	echo -e "${gl_lv}linux-tools-daimon 已更新${gl_bai}"
-	[ -f "$backup_file" ] && echo "旧版本备份: $backup_file"
 	echo "快捷命令: d"
 	echo "当前进程仍是旧脚本，按任意键后将自动进入新版界面..."
 	read -n 1 -s -r -p ""
