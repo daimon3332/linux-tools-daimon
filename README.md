@@ -54,7 +54,18 @@ d
    19. 配置/删除 cpcat
    20. 卸载 daimon 脚本
 
-5. Docker 管理
+5. 第三方工具
+   - 按编号安装或卸载第三方工具，支持多选。
+   - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
+   - 带配置的工具卸载时会同步删除脚本写入的配置；fail2ban、iptables-persistent、ufw、firewalld 会停止服务并删除对应配置目录。
+   - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
+
+6. 编程工具
+   - 按编号安装或卸载编程工具，支持多选。
+   - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
+   - 工具顺序包括：python、npm、nodejs、bun、uv、git、ClaudeCode、Codex。
+
+7. Docker 管理
    1. 安装更新 Docker 环境
    2. 查看 Docker 全局状态
    3. Docker 容器管理
@@ -76,18 +87,7 @@ d
    19. Docker 备份还原
    20. 卸载 Docker 环境
 
-6. 编程工具
-   - 按编号安装或卸载编程工具，支持多选。
-   - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
-   - 工具顺序包括：python、npm、nodejs、bun、uv、git、ClaudeCode、Codex。
-
-7. 第三方工具
-   - 按编号安装或卸载第三方工具，支持多选。
-   - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
-   - 带配置的工具卸载时会同步删除脚本写入的配置；fail2ban、iptables-persistent、ufw、firewalld 会停止服务并删除对应配置目录。
-   - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
-
-8. SSH 配置
+8. SSH 管理
    1. 修改 SSH 端口
    2. 禁用 / 开启密码登录
    3. 开启 / 禁用密钥登录
@@ -99,13 +99,17 @@ d
       - 删除私钥
    6. 修改 `sshd_config` 配置文件
 
-9. UFW 防火墙管理
+9. UFW 管理
    1. 安装 UFW
    2. 卸载 UFW
    3. 开放端口
    4. 删除端口规则
 
-10. SSL 证书申请 + 自动续期 & Nginx 管理
+10. WARP 管理
+    1. 进入 WARP 官方管理脚本
+    2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
+
+11. SSL 证书申请 + 自动续期 & Nginx 管理
     1. 申请证书 + 配置 nginx
     2. 删除 nginx 配置 + 证书
     3. 申请证书
@@ -116,12 +120,8 @@ d
     8. 创建测试页面
     9. 删除测试页面
 
-11. BBR 管理
+12. BBR 管理
     - 下载并运行 `tcpx.sh`，进入 BBR / 网络加速管理菜单。
-
-12. WARP 管理
-    1. 进入 WARP 官方管理脚本
-    2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
 
 13. 常用的一键脚本
     1. NodeQuality

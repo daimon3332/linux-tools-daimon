@@ -15563,15 +15563,18 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}1.   ${gl_bai}系统信息查询"
 echo -e "${gl_kjlan}2.   ${gl_bai}系统更新"
 echo -e "${gl_kjlan}3.   ${gl_bai}系统清理"
+echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}4.   ${gl_bai}系统工具"
-echo -e "${gl_kjlan}5.   ${gl_bai}Docker管理"
+echo -e "${gl_kjlan}5.   ${gl_bai}第三方工具"
 echo -e "${gl_kjlan}6.   ${gl_bai}编程工具"
-echo -e "${gl_kjlan}7.   ${gl_bai}第三方工具"
-echo -e "${gl_kjlan}8.   ${gl_bai}SSH配置"
-echo -e "${gl_kjlan}9.   ${gl_bai}UFW防火墙管理"
-echo -e "${gl_kjlan}10.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
-echo -e "${gl_kjlan}11.  ${gl_bai}BBR管理"
-echo -e "${gl_kjlan}12.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}------------------------${gl_bai}"
+echo -e "${gl_kjlan}7.   ${gl_bai}Docker管理"
+echo -e "${gl_kjlan}8.   ${gl_bai}SSH管理"
+echo -e "${gl_kjlan}9.   ${gl_bai}UFW管理"
+echo -e "${gl_kjlan}10.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}12.  ${gl_bai}BBR管理"
+echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}13.  ${gl_bai}常用的一键脚本"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
@@ -15585,14 +15588,14 @@ case $choice in
   2) clear ; send_stats "系统更新" ; linux_update ;;
   3) clear ; send_stats "系统清理" ; linux_clean ;;
   4) linux_Settings; pause_after=false ;;
-  5) linux_docker; pause_after=false ;;
+  5) linux_tools thirdparty; pause_after=false ;;
   6) linux_tools programming; pause_after=false ;;
-  7) linux_tools thirdparty; pause_after=false ;;
+  7) linux_docker; pause_after=false ;;
   8) ssh_config_manager; pause_after=false ;;
   9) ufw_manager; pause_after=false ;;
-  10) ssl_nginx_manager; pause_after=false ;;
-  11) linux_bbr; pause_after=false ;;
-  12) warp_manager; pause_after=false ;;
+  10) warp_manager; pause_after=false ;;
+  11) ssl_nginx_manager; pause_after=false ;;
+  12) linux_bbr; pause_after=false ;;
   13) common_one_click_scripts; pause_after=false ;;
   00) kejilion_update; pause_after=false ;;
   0) clear ; exit ;;

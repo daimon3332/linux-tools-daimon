@@ -26,15 +26,18 @@ mkdir -p /root/daimon
 1. 系统信息查询
 2. 系统更新
 3. 系统清理
+---
 4. 系统工具
-5. Docker管理
+5. 第三方工具
 6. 编程工具
-7. 第三方工具
-8. SSH配置
-9. UFW防火墙管理
-10. SSL证书申请+自动续期 & Nginx管理
-11. BBR管理
-12. WARP管理
+---
+7. Docker管理
+8. SSH管理
+9. UFW管理
+10. WARP管理
+11. SSL证书申请+自动续期 & Nginx管理
+12. BBR管理
+---
 13. 常用的一键脚本
 00. 脚本更新
 0. 退出脚本
@@ -581,7 +584,259 @@ rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
 ```
 解释：删除脚本和快捷命令，不影响其他已安装服务。
 
-## 5. Docker 管理
+## 5. 第三方工具
+
+第三方工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
+
+1. vim
+2. cpcat
+3. Ctrl+D
+4. starship
+5. bat
+6. btop
+7. tree
+8. ripgrep
+9. fd
+10. fzf
+11. ble.sh
+12. ranger
+13. fastfetch
+14. wget
+15. sudo
+16. socat
+17. htop
+18. iftop
+19. unzip
+20. tar
+21. tmux
+22. ffmpeg
+23. ncdu
+24. fail2ban
+25. iptables-persistent
+26. ufw
+27. firewalld
+
+```bash
+command -v 工具名
+grep -qxF 'export EDITOR=vim' ~/.bashrc
+grep -q '^# ========== cpcat clipboard setup ==========$' ~/.bashrc
+grep -q '^# ==================== Ctrl+D 改为删除下一个单词 ====================$' ~/.bashrc
+command -v starship
+command -v batcat || command -v bat
+command -v rg
+command -v fd || command -v fdfind
+test -x ~/.fzf/bin/fzf
+grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
+test -f ~/.local/share/blesh/ble.sh
+grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
+command -v netfilter-persistent || dpkg -s iptables-persistent
+command -v firewall-cmd
+```
+解释：判断第三方工具是否存在。
+
+菜单操作：
+
+```bash
+apt install -y 工具名
+apt purge -y 工具名
+read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工具编号: " nums
+```
+解释：安装/卸载当前分类中选择的工具，支持多选；“全部安装 / 全部卸载”会先预填当前分类的全部编号，执行前可手动删除不需要的编号。
+
+第三方工具安装核心命令：
+
+```bash
+apt install -y vim
+echo 'export EDITOR=vim' >> ~/.bashrc
+echo 'export VISUAL=vim' >> ~/.bashrc
+cat >> ~/.bashrc <<'EOF'
+# ========== cpcat clipboard setup ==========
+# 一键复制文件内容到剪贴板
+cpcat() {
+    if [ -f "$1" ]; then
+        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
+        echo "✅ 已复制到剪贴板: $1"
+    else
+        echo "❌ 文件不存在: $1"
+    fi
+}
+# ========== end cpcat clipboard setup ==========
+EOF
+cat >> ~/.bashrc <<'EOF'
+# ==================== Ctrl+D 改为删除下一个单词 ====================
+bind '"\C-d": kill-word'
+# ==================== end Ctrl+D 改为删除下一个单词 ====================
+EOF
+source ~/.bashrc
+curl -fsSL https://starship.rs/install.sh -o /root/daimon/starship-install.sh
+sh /root/daimon/starship-install.sh -y
+cat >> ~/.bashrc <<'EOF'
+# ========== starship prompt setup ==========
+eval "$(starship init bash)"
+# ========== end starship prompt setup ==========
+EOF
+cat >> ~/.zshrc <<'EOF'
+# ========== starship prompt setup ==========
+eval "$(starship init zsh)"
+# ========== end starship prompt setup ==========
+EOF
+mkdir -p ~/.config
+vim ~/.config/starship.toml
+apt install -y bat btop
+cat > ~/.bat.sh <<'EOF'
+# 写入 bauto、blog、byaml、bjson、bhttp、raw 以及 docker/ping/systemctl/git 等查看类命令包装函数
+EOF
+cat >> ~/.bashrc <<'EOF'
+# ========== bat 终端着色增强 ==========
+if [ -f ~/.bat.sh ]; then
+    source ~/.bat.sh
+fi
+EOF
+apt install -y tree ripgrep fd-find ranger fastfetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu
+echo "alias fd='fdfind'" >> ~/.bashrc
+git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+~/.fzf/install --key-bindings --completion --no-update-rc
+cat >> ~/.bashrc <<'EOF'
+# ========== fzf 核心配置 ==========
+[ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
+command -v fzf >/dev/null 2>&1 || return
+if command -v fdfind >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+elif command -v fd >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+fi
+if command -v batcat >/dev/null 2>&1; then
+  BAT_PREVIEW='batcat --color=always --style=numbers --line-range=:500 {}'
+elif command -v bat >/dev/null 2>&1; then
+  BAT_PREVIEW='bat --color=always --style=numbers --line-range=:500 {}'
+else
+  BAT_PREVIEW='sed -n "1,500p" {}'
+fi
+export FZF_DEFAULT_OPTS="
+  --height 50%
+  --layout=reverse
+  --border
+  --inline-info
+  --preview '$BAT_PREVIEW'
+  --preview-window=right:50%
+  --bind 'ctrl-/:toggle-preview'
+"
+export FZF_CTRL_T_OPTS="--preview '$BAT_PREVIEW'"
+if command -v tree >/dev/null 2>&1; then
+  export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
+else
+  export FZF_ALT_C_OPTS="--preview 'ls -la {} | head -200'"
+fi
+# ========== end fzf 核心配置 ==========
+EOF
+source ~/.bashrc
+git clone --recursive https://github.com/akinomyoga/ble.sh.git ~/ble.sh
+cd ~/ble.sh
+apt update -y && apt install -y make
+make install
+cat >> ~/.bashrc <<'EOF'
+# ========== ble.sh setup ==========
+[ -f ~/.local/share/blesh/ble.sh ] && source ~/.local/share/blesh/ble.sh
+# ========== end ble.sh setup ==========
+EOF
+cat > ~/.blerc <<'EOF'
+# 自动补全
+bleopt complete_auto_complete=1
+# history 自动补全
+bleopt complete_auto_history=1
+# 如果已安装 fzf，则启用 fzf 快捷键
+if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
+  ble-import -d integration/fzf-key-bindings
+fi
+EOF
+source ~/.bashrc
+apt install -y fail2ban
+systemctl enable fail2ban && systemctl start fail2ban
+apt install -y iptables-persistent
+apt install -y ufw
+ufw status
+apt install -y firewalld
+systemctl enable firewalld && systemctl start firewalld
+firewall-cmd --state
+```
+解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键；防火墙相关工具排在第三方工具列表最后。
+
+特殊卸载：
+
+```bash
+sed -i '/^export EDITOR=vim$/d;/^export VISUAL=vim$/d' ~/.bashrc
+# 删除 ~/.bashrc 中 cpcat clipboard setup 配置块
+# 删除 ~/.bashrc 中 Ctrl+D 改为删除下一个单词配置块
+# 删除 ~/.bashrc / ~/.zshrc 中 starship prompt setup 配置块
+rm -f ~/.config/starship.toml /root/daimon/starship-install.sh /usr/local/bin/starship /usr/bin/starship ~/.local/bin/starship ~/.cargo/bin/starship
+rm -f ~/.bat.sh
+# 删除 ~/.bashrc 中 fzf 核心配置块
+rm -rf ~/.fzf
+# 删除 ~/.bashrc 中 ble.sh setup 配置块
+rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
+rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/fastfetch ~/.config/htop ~/.htoprc
+systemctl stop fail2ban ufw firewalld netfilter-persistent 2>/dev/null
+systemctl disable fail2ban ufw firewalld netfilter-persistent 2>/dev/null
+ufw disable
+rm -rf /etc/fail2ban /var/lib/fail2ban /var/log/fail2ban.log /etc/iptables /etc/ufw /var/lib/ufw /etc/firewalld
+apt purge -y bat batcat btop ripgrep fd-find fzf ranger fastfetch htop fail2ban iptables-persistent netfilter-persistent ufw firewalld
+sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
+npm uninstall -g @anthropic-ai/claude-code
+npm uninstall -g @openai/codex
+rm -rf ~/.bun
+rm -f ~/.local/bin/uv ~/.local/bin/uvx
+```
+解释：卸载第三方工具中的配置类内容，以及 ClaudeCode、Codex、Bun、uv 等特殊安装项。
+
+## 6. 编程工具
+
+编程工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
+
+1. python
+2. npm
+3. nodejs
+4. bun
+5. uv
+6. git
+7. ClaudeCode
+8. Codex
+
+```bash
+command -v python3 || command -v python
+command -v npm
+command -v node
+command -v bun
+command -v uv
+command -v git
+command -v claude
+command -v codex
+```
+解释：判断编程工具是否存在。
+
+菜单操作：
+
+```bash
+apt install -y 工具名
+apt purge -y 工具名
+read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工具编号: " nums
+```
+解释：安装/卸载当前分类中选择的工具，支持多选；“全部安装 / 全部卸载”会先预填当前分类的全部编号，执行前可手动删除不需要的编号。
+
+编程工具安装核心命令：
+
+```bash
+apt install -y python3 python3-pip python3-venv python-is-python3
+apt install -y npm
+apt install -y nodejs
+apt install -y git
+bash /root/daimon/bun-install.sh
+bash /root/daimon/uv-install.sh
+npm install -g @anthropic-ai/claude-code
+npm install -g @openai/codex
+```
+解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Bun 和 uv 安装时会内部安装/使用 curl，但 curl 不再作为第三方工具列表项显示。
+
+## 7. Docker 管理
 
 进入 Docker 管理默认展示：
 
@@ -809,259 +1064,7 @@ rm -f /etc/docker/daemon.json
 ```
 解释：删除 Docker 数据并卸载 Docker。
 
-## 6. 编程工具
-
-编程工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
-
-1. python
-2. npm
-3. nodejs
-4. bun
-5. uv
-6. git
-7. ClaudeCode
-8. Codex
-
-```bash
-command -v python3 || command -v python
-command -v npm
-command -v node
-command -v bun
-command -v uv
-command -v git
-command -v claude
-command -v codex
-```
-解释：判断编程工具是否存在。
-
-菜单操作：
-
-```bash
-apt install -y 工具名
-apt purge -y 工具名
-read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工具编号: " nums
-```
-解释：安装/卸载当前分类中选择的工具，支持多选；“全部安装 / 全部卸载”会先预填当前分类的全部编号，执行前可手动删除不需要的编号。
-
-编程工具安装核心命令：
-
-```bash
-apt install -y python3 python3-pip python3-venv python-is-python3
-apt install -y npm
-apt install -y nodejs
-apt install -y git
-bash /root/daimon/bun-install.sh
-bash /root/daimon/uv-install.sh
-npm install -g @anthropic-ai/claude-code
-npm install -g @openai/codex
-```
-解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Bun 和 uv 安装时会内部安装/使用 curl，但 curl 不再作为第三方工具列表项显示。
-
-## 7. 第三方工具
-
-第三方工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
-
-1. vim
-2. cpcat
-3. Ctrl+D
-4. starship
-5. bat
-6. btop
-7. tree
-8. ripgrep
-9. fd
-10. fzf
-11. ble.sh
-12. ranger
-13. fastfetch
-14. wget
-15. sudo
-16. socat
-17. htop
-18. iftop
-19. unzip
-20. tar
-21. tmux
-22. ffmpeg
-23. ncdu
-24. fail2ban
-25. iptables-persistent
-26. ufw
-27. firewalld
-
-```bash
-command -v 工具名
-grep -qxF 'export EDITOR=vim' ~/.bashrc
-grep -q '^# ========== cpcat clipboard setup ==========$' ~/.bashrc
-grep -q '^# ==================== Ctrl+D 改为删除下一个单词 ====================$' ~/.bashrc
-command -v starship
-command -v batcat || command -v bat
-command -v rg
-command -v fd || command -v fdfind
-test -x ~/.fzf/bin/fzf
-grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
-test -f ~/.local/share/blesh/ble.sh
-grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
-command -v netfilter-persistent || dpkg -s iptables-persistent
-command -v firewall-cmd
-```
-解释：判断第三方工具是否存在。
-
-菜单操作：
-
-```bash
-apt install -y 工具名
-apt purge -y 工具名
-read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工具编号: " nums
-```
-解释：安装/卸载当前分类中选择的工具，支持多选；“全部安装 / 全部卸载”会先预填当前分类的全部编号，执行前可手动删除不需要的编号。
-
-第三方工具安装核心命令：
-
-```bash
-apt install -y vim
-echo 'export EDITOR=vim' >> ~/.bashrc
-echo 'export VISUAL=vim' >> ~/.bashrc
-cat >> ~/.bashrc <<'EOF'
-# ========== cpcat clipboard setup ==========
-# 一键复制文件内容到剪贴板
-cpcat() {
-    if [ -f "$1" ]; then
-        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
-        echo "✅ 已复制到剪贴板: $1"
-    else
-        echo "❌ 文件不存在: $1"
-    fi
-}
-# ========== end cpcat clipboard setup ==========
-EOF
-cat >> ~/.bashrc <<'EOF'
-# ==================== Ctrl+D 改为删除下一个单词 ====================
-bind '"\C-d": kill-word'
-# ==================== end Ctrl+D 改为删除下一个单词 ====================
-EOF
-source ~/.bashrc
-curl -fsSL https://starship.rs/install.sh -o /root/daimon/starship-install.sh
-sh /root/daimon/starship-install.sh -y
-cat >> ~/.bashrc <<'EOF'
-# ========== starship prompt setup ==========
-eval "$(starship init bash)"
-# ========== end starship prompt setup ==========
-EOF
-cat >> ~/.zshrc <<'EOF'
-# ========== starship prompt setup ==========
-eval "$(starship init zsh)"
-# ========== end starship prompt setup ==========
-EOF
-mkdir -p ~/.config
-vim ~/.config/starship.toml
-apt install -y bat btop
-cat > ~/.bat.sh <<'EOF'
-# 写入 bauto、blog、byaml、bjson、bhttp、raw 以及 docker/ping/systemctl/git 等查看类命令包装函数
-EOF
-cat >> ~/.bashrc <<'EOF'
-# ========== bat 终端着色增强 ==========
-if [ -f ~/.bat.sh ]; then
-    source ~/.bat.sh
-fi
-EOF
-apt install -y tree ripgrep fd-find ranger fastfetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu
-echo "alias fd='fdfind'" >> ~/.bashrc
-git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-~/.fzf/install --key-bindings --completion --no-update-rc
-cat >> ~/.bashrc <<'EOF'
-# ========== fzf 核心配置 ==========
-[ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
-command -v fzf >/dev/null 2>&1 || return
-if command -v fdfind >/dev/null 2>&1; then
-  export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
-elif command -v fd >/dev/null 2>&1; then
-  export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
-fi
-if command -v batcat >/dev/null 2>&1; then
-  BAT_PREVIEW='batcat --color=always --style=numbers --line-range=:500 {}'
-elif command -v bat >/dev/null 2>&1; then
-  BAT_PREVIEW='bat --color=always --style=numbers --line-range=:500 {}'
-else
-  BAT_PREVIEW='sed -n "1,500p" {}'
-fi
-export FZF_DEFAULT_OPTS="
-  --height 50%
-  --layout=reverse
-  --border
-  --inline-info
-  --preview '$BAT_PREVIEW'
-  --preview-window=right:50%
-  --bind 'ctrl-/:toggle-preview'
-"
-export FZF_CTRL_T_OPTS="--preview '$BAT_PREVIEW'"
-if command -v tree >/dev/null 2>&1; then
-  export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
-else
-  export FZF_ALT_C_OPTS="--preview 'ls -la {} | head -200'"
-fi
-# ========== end fzf 核心配置 ==========
-EOF
-source ~/.bashrc
-git clone --recursive https://github.com/akinomyoga/ble.sh.git ~/ble.sh
-cd ~/ble.sh
-apt update -y && apt install -y make
-make install
-cat >> ~/.bashrc <<'EOF'
-# ========== ble.sh setup ==========
-[ -f ~/.local/share/blesh/ble.sh ] && source ~/.local/share/blesh/ble.sh
-# ========== end ble.sh setup ==========
-EOF
-cat > ~/.blerc <<'EOF'
-# 自动补全
-bleopt complete_auto_complete=1
-# history 自动补全
-bleopt complete_auto_history=1
-# 如果已安装 fzf，则启用 fzf 快捷键
-if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
-  ble-import -d integration/fzf-key-bindings
-fi
-EOF
-source ~/.bashrc
-apt install -y fail2ban
-systemctl enable fail2ban && systemctl start fail2ban
-apt install -y iptables-persistent
-apt install -y ufw
-ufw status
-apt install -y firewalld
-systemctl enable firewalld && systemctl start firewalld
-firewall-cmd --state
-```
-解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键；防火墙相关工具排在第三方工具列表最后。
-
-特殊卸载：
-
-```bash
-sed -i '/^export EDITOR=vim$/d;/^export VISUAL=vim$/d' ~/.bashrc
-# 删除 ~/.bashrc 中 cpcat clipboard setup 配置块
-# 删除 ~/.bashrc 中 Ctrl+D 改为删除下一个单词配置块
-# 删除 ~/.bashrc / ~/.zshrc 中 starship prompt setup 配置块
-rm -f ~/.config/starship.toml /root/daimon/starship-install.sh /usr/local/bin/starship /usr/bin/starship ~/.local/bin/starship ~/.cargo/bin/starship
-rm -f ~/.bat.sh
-# 删除 ~/.bashrc 中 fzf 核心配置块
-rm -rf ~/.fzf
-# 删除 ~/.bashrc 中 ble.sh setup 配置块
-rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
-rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/fastfetch ~/.config/htop ~/.htoprc
-systemctl stop fail2ban ufw firewalld netfilter-persistent 2>/dev/null
-systemctl disable fail2ban ufw firewalld netfilter-persistent 2>/dev/null
-ufw disable
-rm -rf /etc/fail2ban /var/lib/fail2ban /var/log/fail2ban.log /etc/iptables /etc/ufw /var/lib/ufw /etc/firewalld
-apt purge -y bat batcat btop ripgrep fd-find fzf ranger fastfetch htop fail2ban iptables-persistent netfilter-persistent ufw firewalld
-sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
-npm uninstall -g @anthropic-ai/claude-code
-npm uninstall -g @openai/codex
-rm -rf ~/.bun
-rm -f ~/.local/bin/uv ~/.local/bin/uvx
-```
-解释：卸载第三方工具中的配置类内容，以及 ClaudeCode、Codex、Bun、uv 等特殊安装项。
-
-## 8. SSH 配置
+## 8. SSH 管理
 
 进入 SSH 配置默认展示：
 
@@ -1173,7 +1176,7 @@ sshd -t && systemctl restart sshd
 ```
 解释：手动编辑 SSH 服务端配置，并校验重启。
 
-## 9. UFW 防火墙管理
+## 9. UFW 管理
 
 默认展示：
 
@@ -1209,7 +1212,27 @@ ufw status numbered
 ```
 解释：删除端口 allow 规则。
 
-## 10. SSL 证书申请+自动续期 & Nginx 管理
+## 10. WARP 管理
+
+进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
+
+进入 WARP 官方管理脚本：
+
+```bash
+apt install -y wget curl
+bash /root/daimon/warp-menu.sh
+```
+解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
+
+彻底删除 WARP：
+
+```bash
+apt install -y wget curl
+bash /root/daimon/warp-menu.sh u
+```
+解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
+
+## 11. SSL 证书申请+自动续期 & Nginx 管理
 
 进入菜单前会确保 acme.sh：
 
@@ -1294,7 +1317,7 @@ nginx -t && nginx -s reload
 ```
 解释：创建或删除 Nginx 测试页面。
 
-## 11. BBR 管理
+## 12. BBR 管理
 
 ```bash
 apt install -y wget curl
@@ -1304,26 +1327,6 @@ chmod +x /root/daimon/tcpx.sh
 bash /root/daimon/tcpx.sh
 ```
 解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
-
-## 12. WARP 管理
-
-进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
-
-进入 WARP 官方管理脚本：
-
-```bash
-apt install -y wget curl
-bash /root/daimon/warp-menu.sh
-```
-解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
-
-彻底删除 WARP：
-
-```bash
-apt install -y wget curl
-bash /root/daimon/warp-menu.sh u
-```
-解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
 
 ## 13. 常用的一键脚本
 
