@@ -7743,6 +7743,47 @@ EOF
     echo "已删除 ble.sh、~/.blerc 和 ~/.bashrc 中的 ble.sh 配置"
   }
 
+  stop_disable_service_safely() {
+    local service_name="$1"
+    if command -v systemctl >/dev/null 2>&1 && [ -x /bin/systemctl ]; then
+      /bin/systemctl stop "$service_name" >/dev/null 2>&1 || true
+      /bin/systemctl disable "$service_name" >/dev/null 2>&1 || true
+    elif command -v service >/dev/null 2>&1; then
+      service "$service_name" stop >/dev/null 2>&1 || true
+    fi
+  }
+
+  remove_fail2ban_all() {
+    stop_disable_service_safely fail2ban
+    remove fail2ban
+    rm -rf /etc/fail2ban /var/lib/fail2ban
+    rm -f /var/log/fail2ban.log
+    echo "已彻底删除 fail2ban、配置目录和日志文件"
+  }
+
+  remove_iptables_persistent_all() {
+    stop_disable_service_safely netfilter-persistent
+    stop_disable_service_safely iptables
+    remove iptables-persistent netfilter-persistent iptables-services
+    rm -rf /etc/iptables
+    echo "已彻底删除 iptables-persistent/netfilter-persistent 和 /etc/iptables"
+  }
+
+  remove_ufw_all() {
+    ufw disable >/dev/null 2>&1 || true
+    stop_disable_service_safely ufw
+    remove ufw
+    rm -rf /etc/ufw /var/lib/ufw
+    echo "已彻底删除 ufw、配置目录和状态目录"
+  }
+
+  remove_firewalld_all() {
+    stop_disable_service_safely firewalld
+    remove firewalld
+    rm -rf /etc/firewalld
+    echo "已彻底删除 firewalld 和 /etc/firewalld"
+  }
+
 
   remove_shell_block() {
     local file="$1"
@@ -8419,13 +8460,20 @@ EOF
       ctrld) remove_ctrld_config; reload_bashrc_safely; echo "已删除 Ctrl+D 绑定" ;;
       starship) remove_starship_all ;;
       bat) remove_bat_all ;;
+      btop) remove btop; rm -rf "$HOME/.config/btop" ;;
+      ranger) remove ranger; rm -rf "$HOME/.config/ranger" "$HOME/.local/share/ranger" ;;
+      neofetch) remove neofetch; rm -rf "$HOME/.config/neofetch" ;;
+      htop) remove htop; rm -rf "$HOME/.config/htop" "$HOME/.htoprc" ;;
       ripgrep) remove ripgrep ;;
       fd) remove_fd_alias; remove fd-find ;;
       fzf) remove_fzf_all ;;
       blesh) remove_blesh_all ;;
       python) remove python3 python3-pip python3-venv python-is-python3 ;;
       nodejs) remove nodejs ;;
-      iptables-persistent) remove iptables-persistent iptables-services ;;
+      iptables-persistent) remove_iptables_persistent_all ;;
+      ufw) remove_ufw_all ;;
+      firewalld) remove_firewalld_all ;;
+      fail2ban) remove_fail2ban_all ;;
       claude) npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true ;;
       codex) npm uninstall -g @openai/codex 2>/dev/null || true ;;
       bun) rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true ;;
@@ -8489,7 +8537,7 @@ EOF
       echo -e "${gl_kjlan}2.   ${gl_bai}卸载工具（支持多选，输入工具编号，如: 7 10）"
       echo -e "${gl_kjlan}3.   ${gl_bai}全部安装"
       echo -e "${gl_kjlan}4.   ${gl_bai}全部卸载"
-      echo -e "${gl_kjlan}0.   ${gl_bai}返回基础工具"
+      echo -e "${gl_kjlan}0.   ${gl_bai}返回上一级菜单"
       echo -e "${gl_kjlan}------------------------${gl_bai}"
       read -e -p "请输入你的选择: " sub_choice
       case $sub_choice in
@@ -8502,12 +8550,16 @@ EOF
           handle_tool_numbers remove "$nums"
           ;;
         3)
-          handle_tool_numbers install "$(all_tool_numbers)"
+          nums="$(all_tool_numbers)"
+          read -e -i "$nums" -p "请确认/修改要安装的工具编号（默认全选，空格分隔）: " nums
+          handle_tool_numbers install "$nums"
           ;;
         4)
-          read -e -p "确认卸载当前分类中的全部工具？(y/N): " confirm
+          nums="$(all_tool_numbers)"
+          read -e -i "$nums" -p "请确认/修改要卸载的工具编号（默认全选，空格分隔）: " nums
+          read -e -p "确认卸载以上编号对应工具？(y/N): " confirm
           if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-            handle_tool_numbers remove "$(all_tool_numbers)"
+            handle_tool_numbers remove "$nums"
           else
             echo "已取消"
           fi
@@ -8518,6 +8570,17 @@ EOF
       break_end
     done
   }
+
+  case "${1:-}" in
+    thirdparty)
+      tool_category_menu thirdparty "第三方工具"
+      return
+      ;;
+    programming|basic)
+      tool_category_menu programming "基础工具"
+      return
+      ;;
+  esac
 
   while true; do
     clear
@@ -21989,15 +22052,16 @@ echo -e "${gl_kjlan}3.   ${gl_bai}系统清理"
 echo -e "${gl_kjlan}4.   ${gl_bai}系统工具"
 echo -e "${gl_kjlan}5.   ${gl_bai}Docker管理"
 echo -e "${gl_kjlan}6.   ${gl_bai}基础工具"
-echo -e "${gl_kjlan}7.   ${gl_bai}BBR管理"
-echo -e "${gl_kjlan}8.   ${gl_bai}SSH配置"
-echo -e "${gl_kjlan}9.   ${gl_bai}UFW防火墙管理"
-echo -e "${gl_kjlan}10.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
-echo -e "${gl_kjlan}11.  ${gl_bai}常用的一键脚本"
-echo -e "${gl_kjlan}12.  ${gl_bai}测试脚本合集"
-echo -e "${gl_kjlan}13.  ${gl_bai}WARP管理"
-echo -e "${gl_kjlan}14.  ${gl_bai}甲骨文云脚本合集"
-echo -e "${gl_kjlan}15.  ${gl_bai}应用市场"
+echo -e "${gl_kjlan}7.   ${gl_bai}第三方工具"
+echo -e "${gl_kjlan}8.   ${gl_bai}BBR管理"
+echo -e "${gl_kjlan}9.   ${gl_bai}SSH配置"
+echo -e "${gl_kjlan}10.  ${gl_bai}UFW防火墙管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}12.  ${gl_bai}常用的一键脚本"
+echo -e "${gl_kjlan}13.  ${gl_bai}测试脚本合集"
+echo -e "${gl_kjlan}14.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}15.  ${gl_bai}甲骨文云脚本合集"
+echo -e "${gl_kjlan}16.  ${gl_bai}应用市场"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -22010,16 +22074,17 @@ case $choice in
   3) clear ; send_stats "系统清理" ; linux_clean ;;
   4) linux_Settings ;;
   5) linux_docker ;;
-  6) linux_tools ;;
-  7) linux_bbr ;;
-  8) ssh_config_manager ;;
-  9) ufw_manager ;;
-  10) ssl_nginx_manager ;;
-  11) common_one_click_scripts ;;
-  12) linux_test ;;
-  13) warp_manager ;;
-  14) linux_Oracle ;;
-  15) linux_panel ;;
+  6) linux_tools programming ;;
+  7) linux_tools thirdparty ;;
+  8) linux_bbr ;;
+  9) ssh_config_manager ;;
+  10) ufw_manager ;;
+  11) ssl_nginx_manager ;;
+  12) common_one_click_scripts ;;
+  13) linux_test ;;
+  14) warp_manager ;;
+  15) linux_Oracle ;;
+  16) linux_panel ;;
   00) kejilion_update ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;

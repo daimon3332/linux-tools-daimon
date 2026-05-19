@@ -77,17 +77,20 @@ d
    20. 卸载 Docker 环境
 
 6. 基础工具
-   1. 第三方工具
-      - 按编号安装或卸载第三方工具，支持多选、全部安装、全部卸载。
-      - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、neofetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
-   2. 编程工具
-      - 按编号安装或卸载编程工具，支持多选、全部安装、全部卸载。
-      - 工具顺序包括：python、npm、nodejs、bun、uv、git、ClaudeCode、Codex。
+   - 按编号安装或卸载基础/编程工具，支持多选。
+   - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
+   - 工具顺序包括：python、npm、nodejs、bun、uv、git、ClaudeCode、Codex。
 
-7. BBR 管理
+7. 第三方工具
+   - 按编号安装或卸载第三方工具，支持多选。
+   - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
+   - 带配置的工具卸载时会同步删除脚本写入的配置；fail2ban、iptables-persistent、ufw、firewalld 会停止服务并删除对应配置目录。
+   - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、neofetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
+
+8. BBR 管理
    - 下载并运行 `tcpx.sh`，进入 BBR / 网络加速管理菜单。
 
-8. SSH 配置
+9. SSH 配置
    1. 修改 SSH 端口
    2. 禁用 / 开启密码登录
    3. 开启 / 禁用密钥登录
@@ -99,13 +102,13 @@ d
       - 删除私钥
    6. 修改 `sshd_config` 配置文件
 
-9. UFW 防火墙管理
+10. UFW 防火墙管理
    1. 安装 UFW
    2. 卸载 UFW
    3. 开放端口
    4. 删除端口规则
 
-10. SSL 证书申请 + 自动续期 & Nginx 管理
+11. SSL 证书申请 + 自动续期 & Nginx 管理
     1. 申请证书 + 配置 nginx
     2. 删除 nginx 配置 + 证书
     3. 申请证书
@@ -116,7 +119,7 @@ d
     8. 创建测试页面
     9. 删除测试页面
 
-11. 常用的一键脚本
+12. 常用的一键脚本
     1. NodeQuality
     2. IPQuality
     3. 融合怪
@@ -127,22 +130,22 @@ d
     8. HardwareQuality
     9. 勇哥脚本
 
-12. 测试脚本合集
+13. 测试脚本合集
     - IP / 流媒体解锁检测
     - 三网回程、路由追踪、测速
     - YABS、GeekBench、bench、融合怪、NodeQuality 等性能测试
 
-13. WARP 管理
+14. WARP 管理
     1. 进入 WARP 官方管理脚本
     2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
 
-14. 甲骨文云脚本合集
+15. 甲骨文云脚本合集
     1. 安装闲置机器活跃脚本
     2. 卸载闲置机器活跃脚本
     3. 开启 ROOT 密码登录模式
     4. IPv6 恢复工具
 
-15. 应用市场
+16. 应用市场
     - 宝塔面板、aaPanel、1Panel、NginxProxyManager、OpenList、哪吒探针、qBittorrent、青龙面板、Cloudreve、Emby、Portainer、VSCode 网页版、Uptime Kuma、Nextcloud、WireGuard、Gitea、FileBrowser 等 Docker 应用安装、更新、卸载、备份和还原。
 
 附加菜单：rclone 配置

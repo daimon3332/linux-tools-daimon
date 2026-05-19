@@ -29,15 +29,16 @@ mkdir -p /root/daimon
 4. 系统工具
 5. Docker管理
 6. 基础工具
-7. BBR管理
-8. SSH配置
-9. UFW防火墙管理
-10. SSL证书申请+自动续期 & Nginx管理
-11. 常用的一键脚本
-12. 测试脚本合集
-13. WARP管理
-14. 甲骨文云脚本合集
-15. 应用市场
+7. 第三方工具
+8. BBR管理
+9. SSH配置
+10. UFW防火墙管理
+11. SSL证书申请+自动续期 & Nginx管理
+12. 常用的一键脚本
+13. 测试脚本合集
+14. WARP管理
+15. 甲骨文云脚本合集
+16. 应用市场
 00. 脚本更新
 0. 退出脚本
 
@@ -791,10 +792,53 @@ rm -f /etc/docker/daemon.json
 
 ## 6. 基础工具
 
-进入基础工具先显示两个分类：
+基础工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
 
-1. 第三方工具
-2. 编程工具
+1. python
+2. npm
+3. nodejs
+4. bun
+5. uv
+6. git
+7. ClaudeCode
+8. Codex
+
+```bash
+command -v python3 || command -v python
+command -v npm
+command -v node
+command -v bun
+command -v uv
+command -v git
+command -v claude
+command -v codex
+```
+解释：判断基础/编程工具是否存在。
+
+菜单操作：
+
+```bash
+apt install -y 工具名
+apt purge -y 工具名
+read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工具编号: " nums
+```
+解释：安装/卸载当前分类中选择的工具，支持多选；“全部安装 / 全部卸载”会先预填当前分类的全部编号，执行前可手动删除不需要的编号。
+
+编程工具安装核心命令：
+
+```bash
+apt install -y python3 python3-pip python3-venv python-is-python3
+apt install -y npm
+apt install -y nodejs
+apt install -y git
+bash /root/daimon/bun-install.sh
+bash /root/daimon/uv-install.sh
+npm install -g @anthropic-ai/claude-code
+npm install -g @openai/codex
+```
+解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Bun 和 uv 安装时会内部安装/使用 curl，但 curl 不再作为第三方工具列表项显示。
+
+## 7. 第三方工具
 
 第三方工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
 
@@ -826,17 +870,6 @@ rm -f /etc/docker/daemon.json
 26. ufw
 27. firewalld
 
-编程工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
-
-1. python
-2. npm
-3. nodejs
-4. bun
-5. uv
-6. git
-7. ClaudeCode
-8. Codex
-
 ```bash
 command -v 工具名
 grep -qxF 'export EDITOR=vim' ~/.bashrc
@@ -850,22 +883,19 @@ test -x ~/.fzf/bin/fzf
 grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
 test -f ~/.local/share/blesh/ble.sh
 grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
-command -v python3 || command -v python
-command -v node
 command -v netfilter-persistent || dpkg -s iptables-persistent
 command -v firewall-cmd
-command -v claude
-command -v codex
 ```
-解释：判断工具是否存在。
+解释：判断第三方工具是否存在。
 
-分类菜单操作：
+菜单操作：
 
 ```bash
 apt install -y 工具名
 apt purge -y 工具名
+read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工具编号: " nums
 ```
-解释：安装/卸载当前分类中选择的工具，支持多选、全部安装、全部卸载。
+解释：安装/卸载当前分类中选择的工具，支持多选；“全部安装 / 全部卸载”会先预填当前分类的全部编号，执行前可手动删除不需要的编号。
 
 第三方工具安装核心命令：
 
@@ -985,20 +1015,6 @@ firewall-cmd --state
 ```
 解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键；防火墙相关工具排在第三方工具列表最后。
 
-编程工具安装核心命令：
-
-```bash
-apt install -y python3 python3-pip python3-venv python-is-python3
-apt install -y npm
-apt install -y nodejs
-apt install -y git
-bash /root/daimon/bun-install.sh
-bash /root/daimon/uv-install.sh
-npm install -g @anthropic-ai/claude-code
-npm install -g @openai/codex
-```
-解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Bun 和 uv 安装时会内部安装/使用 curl，但 curl 不再作为第三方工具列表项显示。
-
 特殊卸载：
 
 ```bash
@@ -1012,7 +1028,12 @@ rm -f ~/.bat.sh
 rm -rf ~/.fzf
 # 删除 ~/.bashrc 中 ble.sh setup 配置块
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
-apt purge -y bat batcat btop ripgrep fd-find fzf
+rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/neofetch ~/.config/htop ~/.htoprc
+systemctl stop fail2ban ufw firewalld netfilter-persistent 2>/dev/null
+systemctl disable fail2ban ufw firewalld netfilter-persistent 2>/dev/null
+ufw disable
+rm -rf /etc/fail2ban /var/lib/fail2ban /var/log/fail2ban.log /etc/iptables /etc/ufw /var/lib/ufw /etc/firewalld
+apt purge -y bat batcat btop ripgrep fd-find fzf ranger neofetch htop fail2ban iptables-persistent netfilter-persistent ufw firewalld
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
 npm uninstall -g @anthropic-ai/claude-code
 npm uninstall -g @openai/codex
@@ -1021,7 +1042,7 @@ rm -f ~/.local/bin/uv ~/.local/bin/uvx
 ```
 解释：卸载第三方工具中的配置类内容，以及 ClaudeCode、Codex、Bun、uv 等特殊安装项。
 
-## 7. BBR 管理
+## 8. BBR 管理
 
 ```bash
 apt install -y wget curl
@@ -1032,7 +1053,7 @@ bash /root/daimon/tcpx.sh
 ```
 解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
 
-## 8. SSH 配置
+## 9. SSH 配置
 
 进入 SSH 配置默认展示：
 
@@ -1144,7 +1165,7 @@ sshd -t && systemctl restart sshd
 ```
 解释：手动编辑 SSH 服务端配置，并校验重启。
 
-## 9. UFW 防火墙管理
+## 10. UFW 防火墙管理
 
 默认展示：
 
@@ -1180,7 +1201,7 @@ ufw status numbered
 ```
 解释：删除端口 allow 规则。
 
-## 10. SSL 证书申请+自动续期 & Nginx 管理
+## 11. SSL 证书申请+自动续期 & Nginx 管理
 
 进入菜单前会确保 acme.sh：
 
@@ -1265,7 +1286,7 @@ nginx -t && nginx -s reload
 ```
 解释：创建或删除 Nginx 测试页面。
 
-## 11. 常用的一键脚本
+## 12. 常用的一键脚本
 
 这些脚本会先退出当前脚本，再运行目标脚本，避免输出被主菜单覆盖。
 
@@ -1316,7 +1337,7 @@ bash /root/daimon/x-ui-yg-install.sh
 ```
 解释：勇哥 x-ui-yg 脚本，来源 `https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh`。
 
-## 12. 测试脚本合集
+## 13. 测试脚本合集
 
 默认只显示测试脚本菜单，不执行检测。
 
@@ -1350,7 +1371,7 @@ bash /root/daimon/NodeQuality.sh
 ```
 解释：YABS、GeekBench 5、bench、融合怪、NodeQuality 综合测试。
 
-## 13. WARP 管理
+## 14. WARP 管理
 
 进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
 
@@ -1370,7 +1391,7 @@ bash /root/daimon/warp-menu.sh u
 ```
 解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
 
-## 14. 甲骨文云脚本合集
+## 15. 甲骨文云脚本合集
 
 安装闲置机器活跃脚本：
 
@@ -1403,7 +1424,7 @@ bash /root/daimon/jhb-v6.sh
 ```
 解释：运行 jhb IPv6 修复工具。
 
-## 15. 应用市场
+## 16. 应用市场
 
 进入应用市场默认执行：
 
