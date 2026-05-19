@@ -15948,12 +15948,13 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}8.   ${gl_bai}Docker管理"
 echo -e "${gl_kjlan}9.   ${gl_bai}SSH管理"
 echo -e "${gl_kjlan}10.  ${gl_bai}UFW管理"
-echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
-echo -e "${gl_kjlan}12.  ${gl_bai}fail2ban管理"
-echo -e "${gl_kjlan}13.  ${gl_bai}BBR管理"
-echo -e "${gl_kjlan}14.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}rclone管理"
+echo -e "${gl_kjlan}12.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}13.  ${gl_bai}fail2ban管理"
+echo -e "${gl_kjlan}14.  ${gl_bai}BBR管理"
+echo -e "${gl_kjlan}15.  ${gl_bai}WARP管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}15.  ${gl_bai}常用的一键脚本"
+echo -e "${gl_kjlan}16.  ${gl_bai}常用的一键脚本"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -15972,11 +15973,12 @@ case $choice in
   8) linux_docker; pause_after=false ;;
   9) ssh_config_manager; pause_after=false ;;
   10) ufw_manager; pause_after=false ;;
-  11) ssl_nginx_manager; pause_after=false ;;
-  12) fail2ban_manager; pause_after=false ;;
-  13) linux_bbr; pause_after=false ;;
-  14) warp_manager; pause_after=false ;;
-  15) common_one_click_scripts; pause_after=false ;;
+  11) rclone_manager; pause_after=false ;;
+  12) ssl_nginx_manager; pause_after=false ;;
+  13) fail2ban_manager; pause_after=false ;;
+  14) linux_bbr; pause_after=false ;;
+  15) warp_manager; pause_after=false ;;
+  16) common_one_click_scripts; pause_after=false ;;
   00) kejilion_update; pause_after=false ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
@@ -16002,6 +16004,7 @@ echo "设置虚拟内存        d swap 2048"
 echo "设置虚拟时区        d time Asia/Shanghai | d 时区 Asia/Shanghai"
 echo "Docker管理面板      d docker"
 echo "fail2ban管理        d fail2ban | d f2b"
+echo "rclone管理          d rclone | d rc"
 echo "显示系统信息        d info"
 echo "ROOT密钥管理        d sshkey"
 }
@@ -16212,6 +16215,10 @@ else
 
 		fail2ban|f2b)
 			fail2ban_manager
+			;;
+
+		rclone|rc)
+			rclone_manager
 			;;
 
 
