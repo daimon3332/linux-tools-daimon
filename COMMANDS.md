@@ -35,11 +35,12 @@ mkdir -p /root/daimon
 8. Docker管理
 9. SSH管理
 10. UFW管理
-11. WARP管理
-12. SSL证书申请+自动续期 & Nginx管理
+11. SSL证书申请+自动续期 & Nginx管理
+12. fail2ban管理
 13. BBR管理
+14. WARP管理
 ---
-14. 常用的一键脚本
+15. 常用的一键脚本
 00. 脚本更新
 0. 退出脚本
 
@@ -629,20 +630,7 @@ rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
 11. ble.sh
 12. ranger
 13. fastfetch
-14. wget
-15. sudo
-16. socat
-17. htop
-18. iftop
-19. unzip
-20. tar
-21. tmux
-22. ffmpeg
-23. ncdu
-24. fail2ban
-25. iptables-persistent
-26. ufw
-27. firewalld
+14. ncdu
 
 ```bash
 command -v 工具名
@@ -651,14 +639,17 @@ grep -q '^# ========== cpcat clipboard setup ==========$' ~/.bashrc
 grep -q '^# ==================== Ctrl+D 改为删除下一个单词 ====================$' ~/.bashrc
 command -v starship
 command -v batcat || command -v bat
+command -v btop
+command -v tree
 command -v rg
 command -v fd || command -v fdfind
 test -x ~/.fzf/bin/fzf
 grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
 test -f ~/.local/share/blesh/ble.sh
 grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
-command -v netfilter-persistent || dpkg -s iptables-persistent
-command -v firewall-cmd
+command -v ranger
+command -v fastfetch
+command -v ncdu
 ```
 解释：判断第三方工具是否存在。
 
@@ -720,7 +711,7 @@ if [ -f ~/.bat.sh ]; then
     source ~/.bat.sh
 fi
 EOF
-apt install -y tree ripgrep fd-find ranger fastfetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu
+apt install -y tree ripgrep fd-find ranger fastfetch ncdu
 echo "alias fd='fdfind'" >> ~/.bashrc
 git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
 ~/.fzf/install --key-bindings --completion --no-update-rc
@@ -778,16 +769,8 @@ if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
 fi
 EOF
 source ~/.bashrc
-apt install -y fail2ban
-systemctl enable fail2ban && systemctl start fail2ban
-apt install -y iptables-persistent
-apt install -y ufw
-ufw status
-apt install -y firewalld
-systemctl enable firewalld && systemctl start firewalld
-firewall-cmd --state
 ```
-解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键；防火墙相关工具排在第三方工具列表最后。
+解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ranger、fastfetch、ncdu 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键。
 
 特殊卸载：
 
@@ -802,19 +785,11 @@ rm -f ~/.bat.sh
 rm -rf ~/.fzf
 # 删除 ~/.bashrc 中 ble.sh setup 配置块
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
-rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/fastfetch ~/.config/htop ~/.htoprc
-systemctl stop fail2ban ufw firewalld netfilter-persistent 2>/dev/null
-systemctl disable fail2ban ufw firewalld netfilter-persistent 2>/dev/null
-ufw disable
-rm -rf /etc/fail2ban /var/lib/fail2ban /var/log/fail2ban.log /etc/iptables /etc/ufw /var/lib/ufw /etc/firewalld
-apt purge -y bat batcat btop ripgrep fd-find fzf ranger fastfetch htop fail2ban iptables-persistent netfilter-persistent ufw firewalld
+rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/fastfetch
+apt purge -y vim bat batcat btop tree ripgrep fd-find fzf ranger fastfetch ncdu
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
-npm uninstall -g @anthropic-ai/claude-code
-npm uninstall -g @openai/codex
-rm -rf ~/.bun
-rm -f ~/.local/bin/uv ~/.local/bin/uvx
 ```
-解释：卸载第三方工具中的配置类内容，以及 ClaudeCode、Codex、Bun、uv 等特殊安装项。
+解释：卸载第三方工具第 1-14 项的 apt 包、git clone 目录和脚本写入的配置。
 
 ## 7. 编程工具
 
@@ -1240,27 +1215,7 @@ ufw status numbered
 ```
 解释：删除端口 allow 规则。
 
-## 11. WARP 管理
-
-进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
-
-进入 WARP 官方管理脚本：
-
-```bash
-apt install -y wget curl
-bash /root/daimon/warp-menu.sh
-```
-解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
-
-彻底删除 WARP：
-
-```bash
-apt install -y wget curl
-bash /root/daimon/warp-menu.sh u
-```
-解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
-
-## 12. SSL 证书申请+自动续期 & Nginx 管理
+## 11. SSL 证书申请+自动续期 & Nginx 管理
 
 进入菜单前会确保 acme.sh：
 
@@ -1345,6 +1300,68 @@ nginx -t && nginx -s reload
 ```
 解释：创建或删除 Nginx 测试页面。
 
+## 12. fail2ban 管理
+
+进入 fail2ban 管理默认展示：当前 SSH 实际端口、`fail2ban-client status sshd` 或服务状态。
+
+安装并自动配置 sshd：
+
+```bash
+apt-get update -y
+apt-get install -y fail2ban
+systemctl start fail2ban
+systemctl enable fail2ban
+ss -tlnp | awk '/sshd/ {print $4}'
+sshd -T | awk '$1=="port"{print $2}'
+cp /etc/fail2ban/jail.conf /etc/fail2ban/jail.local
+cp /etc/fail2ban/jail.local /etc/fail2ban/jail.local.bak.$(date +%Y%m%d%H%M%S)
+```
+解释：安装 Fail2ban、启动并设置开机自启；SSH 端口不是写死 64400，而是优先从当前 sshd 监听端口读取，失败时再读 `sshd -T` 和 `/etc/ssh/sshd_config`，最后默认 22。
+
+写入 `/etc/fail2ban/jail.local` 的 sshd 核心配置：
+
+```ini
+[sshd]
+enabled = true
+port = 当前SSH端口
+filter = sshd
+logpath = /var/log/auth.log
+maxretry = 5
+bantime = 3600
+findtime = 600
+```
+解释：脚本会重写 `jail.local` 里的 `[sshd]` 段；Ubuntu 默认日志使用 `/var/log/auth.log`，如果不存在会尝试 `/var/log/secure` 或 Fail2ban 默认 `%(sshd_log)s`。
+
+配置检查和重载：
+
+```bash
+fail2ban-client -t
+systemctl restart fail2ban
+fail2ban-client status sshd
+```
+解释：校验 Fail2ban 配置，重启服务并查看 sshd jail 状态。
+
+卸载 Fail2ban：
+
+```bash
+systemctl stop fail2ban
+systemctl disable fail2ban
+apt purge -y fail2ban
+rm -rf /etc/fail2ban /var/lib/fail2ban /var/log/fail2ban.log
+```
+解释：停止服务、取消开机自启、卸载软件包并删除配置与状态目录。
+
+检查 sshd 配置：
+
+```bash
+sshd -T | awk '$1=="port"{print $2}'
+ss -tlnp | awk '/sshd/ {print $4}'
+awk '/^\[sshd\]/{flag=1;next}/^\[/{flag=0}flag && /^port[[:space:]]*=/{print}' /etc/fail2ban/jail.local
+fail2ban-client -t
+systemctl restart fail2ban
+```
+解释：对比当前 SSH 实际端口和 Fail2ban `[sshd]` 的 `port`；如果不一致，自动把 Fail2ban sshd 端口修正为当前 SSH 端口。
+
 ## 13. BBR 管理
 
 ```bash
@@ -1356,7 +1373,27 @@ bash /root/daimon/tcpx.sh
 ```
 解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
 
-## 14. 常用的一键脚本
+## 14. WARP 管理
+
+进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
+
+进入 WARP 官方管理脚本：
+
+```bash
+apt install -y wget curl
+bash /root/daimon/warp-menu.sh
+```
+解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
+
+彻底删除 WARP：
+
+```bash
+apt install -y wget curl
+bash /root/daimon/warp-menu.sh u
+```
+解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
+
+## 15. 常用的一键脚本
 
 这些脚本会先退出当前脚本，再运行目标脚本，避免输出被主菜单覆盖。
 

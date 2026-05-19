@@ -66,8 +66,8 @@ d
 6. 第三方工具
    - 按编号安装或卸载第三方工具，支持多选。
    - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
-   - 带配置的工具卸载时会同步删除脚本写入的配置；fail2ban、iptables-persistent、ufw、firewalld 会停止服务并删除对应配置目录。
-   - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
+   - 带配置的工具卸载时会同步删除脚本写入的配置。
+   - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch、ncdu。
 
 7. 编程工具
    - 按编号安装或卸载编程工具，支持多选。
@@ -114,11 +114,7 @@ d
    3. 开放端口
    4. 删除端口规则
 
-11. WARP 管理
-    1. 进入 WARP 官方管理脚本
-    2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
-
-12. SSL 证书申请 + 自动续期 & Nginx 管理
+11. SSL 证书申请 + 自动续期 & Nginx 管理
     1. 申请证书 + 配置 nginx
     2. 删除 nginx 配置 + 证书
     3. 申请证书
@@ -129,10 +125,19 @@ d
     8. 创建测试页面
     9. 删除测试页面
 
+12. fail2ban 管理
+    1. 安装 Fail2ban（自动按当前 SSH 端口配置 sshd）
+    2. 卸载 Fail2ban
+    3. 检查 sshd 配置（端口不对自动修正）
+
 13. BBR 管理
     - 下载并运行 `tcpx.sh`，进入 BBR / 网络加速管理菜单。
 
-14. 常用的一键脚本
+14. WARP 管理
+    1. 进入 WARP 官方管理脚本
+    2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
+
+15. 常用的一键脚本
     1. NodeQuality
     2. IPQuality
     3. 融合怪
