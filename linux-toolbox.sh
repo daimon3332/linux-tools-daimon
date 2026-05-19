@@ -7508,9 +7508,9 @@ linux_info() {
 
 
 linux_tools() {
-  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf ranger neofetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu fail2ban iptables-persistent ufw firewalld)
-  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ranger" "neofetch" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "ncdu" "fail2ban" "iptables-persistent" "ufw" "firewalld")
-  local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "文件管理" "系统概览" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "磁盘占用" "SSH 防爆破" "iptables 持久化" "UFW 防火墙" "firewalld 防火墙")
+  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh ranger neofetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu fail2ban iptables-persistent ufw firewalld)
+  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "ranger" "neofetch" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "ncdu" "fail2ban" "iptables-persistent" "ufw" "firewalld")
+  local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "系统概览" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "磁盘占用" "SSH 防爆破" "iptables 持久化" "UFW 防火墙" "firewalld 防火墙")
 
   local programming_ids=(python npm nodejs bun uv git claude codex)
   local programming_names=("python" "npm" "nodejs" "bun" "uv" "git" "ClaudeCode" "Codex")
@@ -7695,6 +7695,52 @@ EOF
     remove fzf
     reload_bashrc_safely
     echo "已删除 fzf、~/.fzf 和 ~/.bashrc 中的 fzf 配置"
+  }
+
+  remove_blesh_config() {
+    remove_shell_block "$HOME/.bashrc" '# ========== ble.sh setup ==========' '# ========== end ble.sh setup =========='
+  }
+
+  configure_blesh() {
+    install git make
+    if [ -d "$HOME/ble.sh/.git" ]; then
+      git -C "$HOME/ble.sh" pull --ff-only || true
+      git -C "$HOME/ble.sh" submodule update --init --recursive || true
+    else
+      rm -rf "$HOME/ble.sh"
+      git clone --recursive https://github.com/akinomyoga/ble.sh.git "$HOME/ble.sh"
+    fi
+
+    (cd "$HOME/ble.sh" && make install)
+
+    touch "$HOME/.bashrc"
+    remove_blesh_config
+    cat >> "$HOME/.bashrc" <<'EOF'
+
+# ========== ble.sh setup ==========
+[ -f ~/.local/share/blesh/ble.sh ] && source ~/.local/share/blesh/ble.sh
+# ========== end ble.sh setup ==========
+EOF
+
+    cat > "$HOME/.blerc" <<'EOF'
+# 自动补全
+bleopt complete_auto_complete=1
+# history 自动补全
+bleopt complete_auto_history=1
+# 如果已安装 fzf，则启用 fzf 快捷键
+if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
+  ble-import -d integration/fzf-key-bindings
+fi
+EOF
+    reload_bashrc_safely
+    echo "ble.sh 已安装并配置 ~/.bashrc 和 ~/.blerc"
+  }
+
+  remove_blesh_all() {
+    remove_blesh_config
+    rm -rf "$HOME/ble.sh" "$HOME/.local/share/blesh" "$HOME/.blerc"
+    reload_bashrc_safely
+    echo "已删除 ble.sh、~/.blerc 和 ~/.bashrc 中的 ble.sh 配置"
   }
 
 
@@ -8215,6 +8261,7 @@ EOF
       ripgrep) command -v rg >/dev/null 2>&1 ;;
       fd) command -v fd >/dev/null 2>&1 || (command -v fdfind >/dev/null 2>&1 && grep -Eq "^alias fd=('fdfind'|\"fdfind\"|fdfind)$" "$HOME/.bashrc" 2>/dev/null) ;;
       fzf) [ -x "$HOME/.fzf/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
+      blesh) [ -f "$HOME/.local/share/blesh/ble.sh" ] && grep -q '^# ========== ble.sh setup ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       python) command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 ;;
       nodejs) command -v node >/dev/null 2>&1 ;;
       iptables-persistent) command -v netfilter-persistent >/dev/null 2>&1 || dpkg -s iptables-persistent >/dev/null 2>&1 ;;
@@ -8274,6 +8321,9 @@ EOF
         ;;
       fzf)
         configure_fzf
+        ;;
+      blesh)
+        configure_blesh
         ;;
       python)
         install python3 python3-pip python3-venv python-is-python3
@@ -8372,6 +8422,7 @@ EOF
       ripgrep) remove ripgrep ;;
       fd) remove_fd_alias; remove fd-find ;;
       fzf) remove_fzf_all ;;
+      blesh) remove_blesh_all ;;
       python) remove python3 python3-pip python3-venv python-is-python3 ;;
       nodejs) remove nodejs ;;
       iptables-persistent) remove iptables-persistent iptables-services ;;

@@ -808,22 +808,23 @@ rm -f /etc/docker/daemon.json
 8. ripgrep
 9. fd
 10. fzf
-11. ranger
-12. neofetch
-13. wget
-14. sudo
-15. socat
-16. htop
-17. iftop
-18. unzip
-19. tar
-20. tmux
-21. ffmpeg
-22. ncdu
-23. fail2ban
-24. iptables-persistent
-25. ufw
-26. firewalld
+11. ble.sh
+12. ranger
+13. neofetch
+14. wget
+15. sudo
+16. socat
+17. htop
+18. iftop
+19. unzip
+20. tar
+21. tmux
+22. ffmpeg
+23. ncdu
+24. fail2ban
+25. iptables-persistent
+26. ufw
+27. firewalld
 
 编程工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
 
@@ -847,6 +848,8 @@ command -v rg
 command -v fd || command -v fdfind
 test -x ~/.fzf/bin/fzf
 grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
+test -f ~/.local/share/blesh/ble.sh
+grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
 command -v python3 || command -v python
 command -v node
 command -v netfilter-persistent || dpkg -s iptables-persistent
@@ -951,6 +954,26 @@ fi
 # ========== end fzf 核心配置 ==========
 EOF
 source ~/.bashrc
+git clone --recursive https://github.com/akinomyoga/ble.sh.git ~/ble.sh
+cd ~/ble.sh
+apt update -y && apt install -y make
+make install
+cat >> ~/.bashrc <<'EOF'
+# ========== ble.sh setup ==========
+[ -f ~/.local/share/blesh/ble.sh ] && source ~/.local/share/blesh/ble.sh
+# ========== end ble.sh setup ==========
+EOF
+cat > ~/.blerc <<'EOF'
+# 自动补全
+bleopt complete_auto_complete=1
+# history 自动补全
+bleopt complete_auto_history=1
+# 如果已安装 fzf，则启用 fzf 快捷键
+if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
+  ble-import -d integration/fzf-key-bindings
+fi
+EOF
+source ~/.bashrc
 apt install -y fail2ban
 systemctl enable fail2ban && systemctl start fail2ban
 apt install -y iptables-persistent
@@ -960,7 +983,7 @@ apt install -y firewalld
 systemctl enable firewalld && systemctl start firewalld
 firewall-cmd --state
 ```
-解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；防火墙相关工具排在第三方工具列表最后。
+解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键；防火墙相关工具排在第三方工具列表最后。
 
 编程工具安装核心命令：
 
@@ -987,6 +1010,8 @@ rm -f ~/.config/starship.toml /root/daimon/starship-install.sh /usr/local/bin/st
 rm -f ~/.bat.sh
 # 删除 ~/.bashrc 中 fzf 核心配置块
 rm -rf ~/.fzf
+# 删除 ~/.bashrc 中 ble.sh setup 配置块
+rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
 apt purge -y bat batcat btop ripgrep fd-find fzf
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
 npm uninstall -g @anthropic-ai/claude-code

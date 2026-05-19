@@ -79,7 +79,7 @@ d
 6. 基础工具
    1. 第三方工具
       - 按编号安装或卸载第三方工具，支持多选、全部安装、全部卸载。
-      - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ranger、neofetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
+      - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、neofetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
    2. 编程工具
       - 按编号安装或卸载编程工具，支持多选、全部安装、全部卸载。
       - 工具顺序包括：python、npm、nodejs、bun、uv、git、ClaudeCode、Codex。
