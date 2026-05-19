@@ -7508,8 +7508,8 @@ linux_info() {
 
 
 linux_tools() {
-  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh ranger neofetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu fail2ban iptables-persistent ufw firewalld)
-  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "ranger" "neofetch" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "ncdu" "fail2ban" "iptables-persistent" "ufw" "firewalld")
+  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh ranger fastfetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu fail2ban iptables-persistent ufw firewalld)
+  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "ranger" "fastfetch" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "ncdu" "fail2ban" "iptables-persistent" "ufw" "firewalld")
   local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "系统概览" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "磁盘占用" "SSH 防爆破" "iptables 持久化" "UFW 防火墙" "firewalld 防火墙")
 
   local programming_ids=(python npm nodejs bun uv git claude codex)
@@ -8420,7 +8420,7 @@ EOF
         systemctl start firewalld >/dev/null 2>&1 || true
         firewall-cmd --state 2>/dev/null || true
         ;;
-      git|curl|tree|ranger|neofetch|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
+      git|curl|tree|ranger|fastfetch|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
@@ -8462,7 +8462,7 @@ EOF
       bat) remove_bat_all ;;
       btop) remove btop; rm -rf "$HOME/.config/btop" ;;
       ranger) remove ranger; rm -rf "$HOME/.config/ranger" "$HOME/.local/share/ranger" ;;
-      neofetch) remove neofetch; rm -rf "$HOME/.config/neofetch" ;;
+      fastfetch) remove fastfetch; rm -rf "$HOME/.config/fastfetch" ;;
       htop) remove htop; rm -rf "$HOME/.config/htop" "$HOME/.htoprc" ;;
       ripgrep) remove ripgrep ;;
       fd) remove_fd_alias; remove fd-find ;;

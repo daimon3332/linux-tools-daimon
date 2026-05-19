@@ -85,7 +85,7 @@ d
    - 按编号安装或卸载第三方工具，支持多选。
    - “全部安装 / 全部卸载”会预填当前分类的全部编号，执行前可以手动删除不需要的编号。
    - 带配置的工具卸载时会同步删除脚本写入的配置；fail2ban、iptables-persistent、ufw、firewalld 会停止服务并删除对应配置目录。
-   - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、neofetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
+   - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
 
 8. BBR 管理
    - 下载并运行 `tcpx.sh`，进入 BBR / 网络加速管理菜单。

@@ -854,7 +854,7 @@ npm install -g @openai/codex
 10. fzf
 11. ble.sh
 12. ranger
-13. neofetch
+13. fastfetch
 14. wget
 15. sudo
 16. socat
@@ -946,7 +946,7 @@ if [ -f ~/.bat.sh ]; then
     source ~/.bat.sh
 fi
 EOF
-apt install -y tree ripgrep fd-find ranger neofetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu
+apt install -y tree ripgrep fd-find ranger fastfetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu
 echo "alias fd='fdfind'" >> ~/.bashrc
 git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
 ~/.fzf/install --key-bindings --completion --no-update-rc
@@ -1028,12 +1028,12 @@ rm -f ~/.bat.sh
 rm -rf ~/.fzf
 # 删除 ~/.bashrc 中 ble.sh setup 配置块
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
-rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/neofetch ~/.config/htop ~/.htoprc
+rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/fastfetch ~/.config/htop ~/.htoprc
 systemctl stop fail2ban ufw firewalld netfilter-persistent 2>/dev/null
 systemctl disable fail2ban ufw firewalld netfilter-persistent 2>/dev/null
 ufw disable
 rm -rf /etc/fail2ban /var/lib/fail2ban /var/log/fail2ban.log /etc/iptables /etc/ufw /var/lib/ufw /etc/firewalld
-apt purge -y bat batcat btop ripgrep fd-find fzf ranger neofetch htop fail2ban iptables-persistent netfilter-persistent ufw firewalld
+apt purge -y bat batcat btop ripgrep fd-find fzf ranger fastfetch htop fail2ban iptables-persistent netfilter-persistent ufw firewalld
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
 npm uninstall -g @anthropic-ai/claude-code
 npm uninstall -g @openai/codex
