@@ -4932,6 +4932,7 @@ set_dns() {
 
 ip_address
 
+backup_resolv_conf_once
 chattr -i /etc/resolv.conf
 > /etc/resolv.conf
 
@@ -4955,6 +4956,33 @@ chattr +i /etc/resolv.conf
 }
 
 
+backup_resolv_conf_once() {
+	local backup_file="/etc/resolv.conf.daimon.bak"
+	if [ -f /etc/resolv.conf ] && [ ! -f "$backup_file" ]; then
+		cp -L /etc/resolv.conf "$backup_file" 2>/dev/null || cat /etc/resolv.conf > "$backup_file" 2>/dev/null || true
+	fi
+}
+
+restore_dns_config() {
+	local backup_file="/etc/resolv.conf.daimon.bak"
+	chattr -i /etc/resolv.conf >/dev/null 2>&1 || true
+
+	if [ -f "$backup_file" ]; then
+		cat "$backup_file" > /etc/resolv.conf
+		echo "已恢复之前备份的 DNS 配置: $backup_file"
+	else
+		cat > /etc/resolv.conf <<'EOF'
+nameserver 127.0.0.53
+options edns0 trust-ad
+search .
+EOF
+		echo "未找到备份，已恢复为 Ubuntu/systemd-resolved 常见本地 DNS: 127.0.0.53"
+	fi
+
+	chattr -i /etc/resolv.conf >/dev/null 2>&1 || true
+}
+
+
 set_dns_ui() {
 root_use
 send_stats "优化DNS"
@@ -4973,6 +5001,7 @@ while true; do
 	echo " v4: 223.5.5.5 183.60.83.19"
 	echo " v6: 2400:3200::1 2400:da00::6666"
 	echo "3. 手动编辑DNS配置"
+	echo "4. 恢复之前的DNS配置（没有备份则恢复为 127.0.0.53）"
 	echo "------------------------"
 	echo "0. 返回上一级选单"
 	echo "------------------------"
@@ -4996,10 +5025,15 @@ while true; do
 		;;
 	  3)
 		install vim
+		backup_resolv_conf_once
 		chattr -i /etc/resolv.conf
 		vim /etc/resolv.conf
 		chattr +i /etc/resolv.conf
 		send_stats "手动编辑DNS配置"
+		;;
+	  4)
+		restore_dns_config
+		send_stats "恢复DNS配置"
 		;;
 	  *)
 		break
@@ -9229,293 +9263,6 @@ linux_docker() {
 
 
 }
-
-
-
-linux_test() {
-
-	while true; do
-	  clear
-	  # send_stats "测试脚本合集"
-	  echo -e "测试脚本合集"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}IP及解锁状态检测"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}ChatGPT 解锁状态检测"
-	  echo -e "${gl_kjlan}2.   ${gl_bai}Region 流媒体解锁测试"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}yeahwu 流媒体解锁检测"
-	  echo -e "${gl_kjlan}4.   ${gl_bai}xykt IP质量体检脚本"
-
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}网络线路测速"
-	  echo -e "${gl_kjlan}11.  ${gl_bai}besttrace 三网回程延迟路由测试"
-	  echo -e "${gl_kjlan}12.  ${gl_bai}mtr_trace 三网回程线路测试"
-	  echo -e "${gl_kjlan}13.  ${gl_bai}Superspeed 三网测速"
-	  echo -e "${gl_kjlan}14.  ${gl_bai}nxtrace 快速回程测试脚本"
-	  echo -e "${gl_kjlan}15.  ${gl_bai}nxtrace 指定IP回程测试脚本"
-	  echo -e "${gl_kjlan}16.  ${gl_bai}ludashi2020 三网线路测试"
-	  echo -e "${gl_kjlan}17.  ${gl_bai}i-abc 多功能测速脚本"
-	  echo -e "${gl_kjlan}18.  ${gl_bai}NetQuality 网络质量体检脚本"
-
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}硬件性能测试"
-	  echo -e "${gl_kjlan}21.  ${gl_bai}yabs 性能测试"
-	  echo -e "${gl_kjlan}22.  ${gl_bai}icu/gb5 CPU性能测试脚本"
-
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}综合性测试"
-	  echo -e "${gl_kjlan}31.  ${gl_bai}bench 性能测试"
-	  echo -e "${gl_kjlan}32.  ${gl_bai}spiritysdx 融合怪测评"
-	  echo -e "${gl_kjlan}33.  ${gl_bai}nodequality 融合怪测评"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
-	  read -e -p "请输入你的选择: " sub_choice
-
-	  case $sub_choice in
-		  1)
-			  clear
-			  send_stats "ChatGPT解锁状态检测"
-			  daimon_run_cached_script "https://cdn.jsdelivr.net/gh/missuo/OpenAI-Checker/openai.sh" "openai-checker.sh"
-			  ;;
-		  2)
-			  clear
-			  send_stats "Region流媒体解锁测试"
-			  daimon_run_cached_script "https://check.unlock.media" "check-unlock-media.sh"
-			  ;;
-		  3)
-			  clear
-			  send_stats "yeahwu流媒体解锁检测"
-			  install wget
-			  daimon_run_cached_script "${gh_proxy}github.com/yeahwu/check/raw/main/check.sh" "yeahwu-check.sh"
-			  ;;
-		  4)
-			  clear
-			  send_stats "xykt_IP质量体检脚本"
-			  daimon_run_cached_script "https://IP.Check.Place" "ip-check-place.sh"
-			  ;;
-
-
-		  11)
-			  clear
-			  send_stats "besttrace三网回程延迟路由测试"
-			  install wget
-			  daimon_run_cached_script "https://git.io/besttrace" "besttrace.sh"
-			  ;;
-		  12)
-			  clear
-			  send_stats "mtr_trace三网回程线路测试"
-			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/zhucaidan/mtr_trace/main/mtr_trace.sh" "mtr_trace.sh"
-			  ;;
-		  13)
-			  clear
-			  send_stats "Superspeed三网测速"
-			  daimon_run_cached_script "https://git.io/superspeed_uxh" "superspeed_uxh.sh"
-			  ;;
-		  14)
-			  clear
-			  send_stats "nxtrace快速回程测试脚本"
-			  daimon_run_cached_script "https://nxtrace.org/nt" "nxtrace-install.sh"
-			  nexttrace --fast-trace --tcp
-			  ;;
-		  15)
-			  clear
-			  send_stats "nxtrace指定IP回程测试脚本"
-			  echo "可参考的IP列表"
-			  echo "------------------------"
-			  echo "北京电信: 219.141.136.12"
-			  echo "北京联通: 202.106.50.1"
-			  echo "北京移动: 221.179.155.161"
-			  echo "上海电信: 202.96.209.133"
-			  echo "上海联通: 210.22.97.1"
-			  echo "上海移动: 211.136.112.200"
-			  echo "广州电信: 58.60.188.222"
-			  echo "广州联通: 210.21.196.6"
-			  echo "广州移动: 120.196.165.24"
-			  echo "成都电信: 61.139.2.69"
-			  echo "成都联通: 119.6.6.6"
-			  echo "成都移动: 211.137.96.205"
-			  echo "湖南电信: 36.111.200.100"
-			  echo "湖南联通: 42.48.16.100"
-			  echo "湖南移动: 39.134.254.6"
-			  echo "------------------------"
-
-			  read -e -p "输入一个指定IP: " testip
-			  daimon_run_cached_script "https://nxtrace.org/nt" "nxtrace-install.sh"
-			  nexttrace $testip
-			  ;;
-
-		  16)
-			  clear
-			  send_stats "ludashi2020三网线路测试"
-			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/ludashi2020/backtrace/main/install.sh" "ludashi-backtrace.sh"
-			  ;;
-
-		  17)
-			  clear
-			  send_stats "i-abc多功能测速脚本"
-			  daimon_run_cached_script "${gh_proxy}raw.githubusercontent.com/i-abc/Speedtest/main/speedtest.sh" "i-abc-speedtest.sh"
-			  ;;
-
-		  18)
-			  clear
-			  send_stats "网络质量测试脚本"
-			  daimon_run_cached_script "https://Net.Check.Place" "net-check-place.sh"
-			  ;;
-
-		  21)
-			  clear
-			  send_stats "yabs性能测试"
-			  check_swap
-			  daimon_run_cached_script "https://yabs.sh" "yabs.sh" -i -5
-			  ;;
-		  22)
-			  clear
-			  send_stats "icu/gb5 CPU性能测试脚本"
-			  check_swap
-			  daimon_run_cached_script "https://bash.icu/gb5" "gb5.sh"
-			  ;;
-
-		  31)
-			  clear
-			  send_stats "bench性能测试"
-			  daimon_run_cached_script "https://bench.sh" "bench.sh"
-			  ;;
-		  32)
-			  send_stats "spiritysdx融合怪测评"
-			  clear
-			  daimon_run_cached_script "${gh_proxy}github.com/spiritLHLS/ecs/raw/main/ecs.sh" "ecs.sh"
-			  ;;
-
-		  33)
-			  send_stats "nodequality融合怪测评"
-			  clear
-			  daimon_run_cached_script "https://run.NodeQuality.com" "NodeQuality.sh"
-			  ;;
-
-
-
-		  0)
-			  kejilion
-
-			  ;;
-		  *)
-			  echo "无效的输入!"
-			  ;;
-	  esac
-	  break_end
-
-	done
-
-
-}
-
-
-linux_Oracle() {
-
-
-	 while true; do
-	  clear
-	  send_stats "甲骨文云脚本合集"
-	  echo -e "甲骨文云脚本合集"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}1.   ${gl_bai}安装闲置机器活跃脚本"
-	  echo -e "${gl_kjlan}2.   ${gl_bai}卸载闲置机器活跃脚本"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}3.   ${gl_bai}R探长开机脚本"
-	  echo -e "${gl_kjlan}4.   ${gl_bai}开启ROOT密码登录模式"
-	  echo -e "${gl_kjlan}5.   ${gl_bai}IPV6恢复工具"
-	  echo -e "${gl_kjlan}------------------------"
-	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-	  echo -e "${gl_kjlan}------------------------${gl_bai}"
-	  read -e -p "请输入你的选择: " sub_choice
-
-	  case $sub_choice in
-		  1)
-			  clear
-			  echo "活跃脚本: CPU占用10-20% 内存占用20% "
-			  read -e -p "确定安装吗？(Y/N): " choice
-			  case "$choice" in
-				[Yy])
-
-				  install_docker
-
-				  # 设置默认值
-				  local DEFAULT_CPU_CORE=1
-				  local DEFAULT_CPU_UTIL="10-20"
-				  local DEFAULT_MEM_UTIL=20
-				  local DEFAULT_SPEEDTEST_INTERVAL=120
-
-				  # 提示用户输入CPU核心数和占用百分比，如果回车则使用默认值
-				  read -e -p "请输入CPU核心数 [默认: $DEFAULT_CPU_CORE]: " cpu_core
-				  local cpu_core=${cpu_core:-$DEFAULT_CPU_CORE}
-
-				  read -e -p "请输入CPU占用百分比范围（例如10-20） [默认: $DEFAULT_CPU_UTIL]: " cpu_util
-				  local cpu_util=${cpu_util:-$DEFAULT_CPU_UTIL}
-
-				  read -e -p "请输入内存占用百分比 [默认: $DEFAULT_MEM_UTIL]: " mem_util
-				  local mem_util=${mem_util:-$DEFAULT_MEM_UTIL}
-
-				  read -e -p "请输入Speedtest间隔时间（秒） [默认: $DEFAULT_SPEEDTEST_INTERVAL]: " speedtest_interval
-				  local speedtest_interval=${speedtest_interval:-$DEFAULT_SPEEDTEST_INTERVAL}
-
-				  # 运行Docker容器
-				  docker run -d --name=lookbusy --restart=always \
-					  -e TZ=Asia/Shanghai \
-					  -e CPU_UTIL="$cpu_util" \
-					  -e CPU_CORE="$cpu_core" \
-					  -e MEM_UTIL="$mem_util" \
-					  -e SPEEDTEST_INTERVAL="$speedtest_interval" \
-					  fogforest/lookbusy
-				  send_stats "甲骨文云安装活跃脚本"
-
-				  ;;
-				[Nn])
-
-				  ;;
-				*)
-				  echo "无效的选择，请输入 Y 或 N。"
-				  ;;
-			  esac
-			  ;;
-		  2)
-			  clear
-			  docker rm -f lookbusy
-			  docker rmi fogforest/lookbusy
-			  send_stats "甲骨文云卸载活跃脚本"
-			  ;;
-
-		  3)
-			  clear
-			  send_stats "R探长开机脚本"
-			  daimon_run_cached_script "${gh_proxy}github.com/Yohann0617/oci-helper/releases/latest/download/sh_oci-helper_install.sh" "oci-helper-install.sh"
-			  ;;
-		  4)
-			  clear
-			  add_sshpasswd
-			  ;;
-		  5)
-			  clear
-			  daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"
-			  echo "该功能由jhb大神提供，感谢他！"
-			  send_stats "ipv6修复"
-			  ;;
-		  0)
-			  kejilion
-
-			  ;;
-		  *)
-			  echo "无效的输入!"
-			  ;;
-	  esac
-	  break_end
-
-	done
-
-
-
-}
-
-
 
 
 
@@ -21408,6 +21155,7 @@ common_one_click_scripts() {
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		echo -e "${gl_kjlan}其他脚本${gl_bai}"
 		echo -e "${gl_kjlan}9.   ${gl_bai}勇哥 x-ui-yg 脚本"
+		echo -e "${gl_kjlan}10.  ${gl_bai}kejilion.sh 脚本"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -21440,6 +21188,11 @@ common_one_click_scripts() {
 				;;
 			9)
 				daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh"
+				;;
+			10)
+				clear
+				echo -e "${gl_kjlan}已退出 daimon，正在运行: bash <(curl -sL kejilion.sh)${gl_bai}"
+				exec bash -c 'bash <(curl -sL kejilion.sh)'
 				;;
 			0) kejilion ;;
 			*) echo "无效的输入!" ;;
@@ -22058,10 +21811,7 @@ echo -e "${gl_kjlan}9.   ${gl_bai}SSH配置"
 echo -e "${gl_kjlan}10.  ${gl_bai}UFW防火墙管理"
 echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
 echo -e "${gl_kjlan}12.  ${gl_bai}常用的一键脚本"
-echo -e "${gl_kjlan}13.  ${gl_bai}测试脚本合集"
-echo -e "${gl_kjlan}14.  ${gl_bai}WARP管理"
-echo -e "${gl_kjlan}15.  ${gl_bai}甲骨文云脚本合集"
-echo -e "${gl_kjlan}16.  ${gl_bai}应用市场"
+echo -e "${gl_kjlan}13.  ${gl_bai}WARP管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -22081,10 +21831,7 @@ case $choice in
   10) ufw_manager ;;
   11) ssl_nginx_manager ;;
   12) common_one_click_scripts ;;
-  13) linux_test ;;
-  14) warp_manager ;;
-  15) linux_Oracle ;;
-  16) linux_panel ;;
+  13) warp_manager ;;
   00) kejilion_update ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
@@ -22109,7 +21856,6 @@ echo "bbr控制面板         d bbr3 | d bbrv3"
 echo "设置虚拟内存        d swap 2048"
 echo "设置虚拟时区        d time Asia/Shanghai | d 时区 Asia/Shanghai"
 echo "Docker管理面板      d docker"
-echo "应用市场管理        d app"
 echo "fail2ban管理        d fail2ban | d f2b"
 echo "显示系统信息        d info"
 echo "ROOT密钥管理        d sshkey"
@@ -22311,9 +22057,7 @@ else
 
 
 		app)
-			shift
-			send_stats "应用$@"
-			linux_panel "$@"
+			echo "应用市场模块已移除"
 			;;
 
 		claw|oc|OpenClaw)

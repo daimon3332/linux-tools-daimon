@@ -35,10 +35,7 @@ mkdir -p /root/daimon
 10. UFW防火墙管理
 11. SSL证书申请+自动续期 & Nginx管理
 12. 常用的一键脚本
-13. 测试脚本合集
-14. WARP管理
-15. 甲骨文云脚本合集
-16. 应用市场
+13. WARP管理
 00. 脚本更新
 0. 退出脚本
 
@@ -157,6 +154,7 @@ cat /etc/resolv.conf
 国外 DNS：
 
 ```bash
+cp -L /etc/resolv.conf /etc/resolv.conf.daimon.bak
 chattr -i /etc/resolv.conf
 cat > /etc/resolv.conf <<EOF
 nameserver 1.1.1.1
@@ -171,6 +169,7 @@ chattr +i /etc/resolv.conf
 国内 DNS：
 
 ```bash
+cp -L /etc/resolv.conf /etc/resolv.conf.daimon.bak
 chattr -i /etc/resolv.conf
 cat > /etc/resolv.conf <<EOF
 nameserver 223.5.5.5
@@ -186,11 +185,28 @@ chattr +i /etc/resolv.conf
 
 ```bash
 apt install -y vim
+cp -L /etc/resolv.conf /etc/resolv.conf.daimon.bak
 chattr -i /etc/resolv.conf
 vim /etc/resolv.conf
 chattr +i /etc/resolv.conf
 ```
 解释：用 vim 手动编辑 DNS。
+
+恢复之前的 DNS 配置：
+
+```bash
+chattr -i /etc/resolv.conf
+cat /etc/resolv.conf.daimon.bak > /etc/resolv.conf
+```
+解释：恢复脚本第一次修改 DNS 前备份的配置。如果没有备份，则写入 Ubuntu/systemd-resolved 常见本地 DNS：
+
+```bash
+cat > /etc/resolv.conf <<EOF
+nameserver 127.0.0.53
+options edns0 trust-ad
+search .
+EOF
+```
 
 ### 4.4 切换优先 IPv4/IPv6
 
@@ -1337,41 +1353,12 @@ bash /root/daimon/x-ui-yg-install.sh
 ```
 解释：勇哥 x-ui-yg 脚本，来源 `https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh`。
 
-## 13. 测试脚本合集
-
-默认只显示测试脚本菜单，不执行检测。
-
 ```bash
-bash /root/daimon/chatgpt.sh
-bash /root/daimon/check.unlock.media.sh
-bash /root/daimon/yeahwu.sh
-bash /root/daimon/IPQuality.sh
+bash <(curl -sL kejilion.sh)
 ```
-解释：ChatGPT 解锁、Region 流媒体、yeahwu 流媒体、xykt IP 质量检测。
+解释：运行 kejilion.sh 一键脚本。
 
-```bash
-bash /root/daimon/besttrace.sh
-bash /root/daimon/mtr_trace.sh
-bash /root/daimon/superspeed.sh
-bash /root/daimon/nxtrace-install.sh
-nexttrace
-nexttrace 指定IP
-bash /root/daimon/ludashi-backtrace.sh
-bash /root/daimon/i-abc-speedtest.sh
-bash /root/daimon/net-check-place.sh
-```
-解释：三网回程、路由、测速、指定 IP 回程、网络质量检测。
-
-```bash
-bash /root/daimon/yabs.sh -i -5
-bash /root/daimon/gb5.sh
-bash /root/daimon/bench.sh
-bash /root/daimon/ecs.sh
-bash /root/daimon/NodeQuality.sh
-```
-解释：YABS、GeekBench 5、bench、融合怪、NodeQuality 综合测试。
-
-## 14. WARP 管理
+## 13. WARP 管理
 
 进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
 
@@ -1390,202 +1377,6 @@ apt install -y wget curl
 bash /root/daimon/warp-menu.sh u
 ```
 解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
-
-## 15. 甲骨文云脚本合集
-
-安装闲置机器活跃脚本：
-
-```bash
-docker run -d --name=lookbusy --restart=always -e TZ=Asia/Shanghai -e CPU_UTIL="10-20" -e CPU_CORE="1" -e MEM_UTIL="20" -e SPEEDTEST_INTERVAL="120" fogforest/lookbusy
-```
-解释：运行 lookbusy 容器保持一定 CPU/内存/测速活动。
-
-卸载闲置机器活跃脚本：
-
-```bash
-docker rm -f lookbusy
-docker rmi fogforest/lookbusy
-```
-解释：删除 lookbusy 容器和镜像。
-
-开启 ROOT 密码登录模式：
-
-```bash
-sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-systemctl restart sshd || systemctl restart ssh
-```
-解释：开启 root 密码登录。
-
-IPv6 恢复工具：
-
-```bash
-bash /root/daimon/jhb-v6.sh
-```
-解释：运行 jhb IPv6 修复工具。
-
-## 16. 应用市场
-
-进入应用市场默认执行：
-
-```bash
-apt install -y git
-cd ~
-git clone https://github.com/kejilion/apps.git apps
-cd ~/apps && git pull https://github.com/kejilion/apps.git main
-cat /home/docker/appno.txt
-```
-解释：安装 git，拉取/更新应用市场列表，并读取已安装应用编号。
-
-应用市场每个应用一般都有“安装/更新/卸载”逻辑，核心命令模式如下：
-
-```bash
-mkdir -p /home/docker/应用名
-cd /home/docker/应用名
-cat > docker-compose.yml
-docker compose up -d
-```
-解释：Docker Compose 应用安装。
-
-```bash
-docker run -d --name 容器名 --restart=always -p 主机端口:容器端口 -v /home/docker/应用名:/data 镜像名
-```
-解释：单容器应用安装。
-
-```bash
-cd /home/docker/应用名 && docker compose pull && docker compose up -d
-cd /home/docker/应用名 && docker compose down
-rm -rf /home/docker/应用名
-docker rm -f 容器名
-docker rmi 镜像名
-```
-解释：更新、卸载 Compose 或 docker run 应用。
-
-备份/还原全部应用数据：
-
-```bash
-tar -czf /root/docker-app-backup.tar.gz /home/docker
-tar -xzf /root/docker-app-backup.tar.gz -C /
-```
-解释：备份或还原 `/home/docker`。
-
-应用市场默认列表：
-
-1. 宝塔面板官方版
-2. aaPanel 宝塔国际版
-3. 1Panel 新一代管理面板
-4. NginxProxyManager 可视化面板
-5. OpenList 多存储文件列表程序
-6. Ubuntu 远程桌面网页版
-7. 哪吒探针 VPS 监控面板
-8. qBittorrent 离线 BT 下载面板
-9. Poste.io 邮件服务器程序
-10. RocketChat 多人在线聊天系统
-11. 项目管理软件
-12. 青龙面板定时任务管理平台
-13. Cloudreve 网盘
-14. 简单图床图片管理程序
-15. Emby 多媒体管理系统
-16. Speedtest 测速面板
-17. AdGuardHome 去广告软件
-18. OnlyOffice 在线办公
-19. 雷池 WAF 防火墙面板
-20. Portainer 容器管理面板
-21. VSCode 网页版
-22. Uptime Kuma 监控工具
-23. Memos 网页备忘录
-24. Webtop 远程桌面网页版
-25. Nextcloud 网盘
-26. QD-Today 定时任务管理框架
-27. Dockge 容器堆栈管理面板
-28. LibreSpeed 测速工具
-29. SearXNG 聚合搜索站
-30. PhotoPrism 私有相册系统
-31. StirlingPDF 工具大全
-32. draw.io 在线图表软件
-33. Sun-Panel 导航面板
-34. Pingvin Share 文件分享平台
-35. 极简朋友圈
-36. LobeChat AI 聊天聚合网站
-37. MyIP 工具箱
-38. 小雅 Alist 全家桶
-39. Bililive 直播录制工具
-40. WebSSH 网页版 SSH 工具
-41. 耗子管理面板
-42. Nexterm 远程连接工具
-43. RustDesk 远程桌面服务端
-44. RustDesk 远程桌面中继端
-45. Docker 加速站
-46. GitHub 加速站
-47. 普罗米修斯监控
-48. 普罗米修斯主机监控
-49. 普罗米修斯容器监控
-50. 补货监控工具
-51. PVE 开小鸡面板
-52. DPanel 容器管理面板
-53. llama3 聊天 AI 大模型
-54. AMH 主机建站管理面板
-55. FRP 内网穿透服务端
-56. FRP 内网穿透客户端
-57. DeepSeek 聊天 AI 大模型
-58. Dify 大模型知识库
-59. NewAPI 大模型资产管理
-60. JumpServer 开源堡垒机
-61. 在线翻译服务器
-62. RAGFlow 大模型知识库
-63. OpenWebUI 自托管 AI 平台
-64. it-tools 工具箱
-65. n8n 自动化工作流平台
-66. yt-dlp 视频下载工具
-67. ddns-go 动态 DNS 管理工具
-68. AllinSSL 证书管理平台
-69. SFTPGo 文件传输工具
-70. AstrBot 聊天机器人框架
-71. Navidrome 私有音乐服务器
-72. Bitwarden 密码管理器
-73. LibreTV 私有影视
-74. MoonTV 私有影视
-75. Melody 音乐精灵
-76. 在线 DOS 合集
-77. 迅雷离线下载工具
-78. PandaWiki 智能文档管理系统
-79. Beszel 服务器监控
-80. Linkwarden 书签管理
-81. Jitsi Meet 视频会议
-82. gpt-load 高性能 AI 透明代理
-83. Komari 服务器监控工具
-84. Wallos 个人财务管理工具
-85. Immich 图片视频管理器
-86. Jellyfin 媒体管理系统
-87. SyncTV 一起看片工具
-88. Owncast 自托管直播平台
-89. FileCodeBox 文件快递
-90. Matrix 去中心化聊天协议
-91. Gitea 私有代码仓库
-92. FileBrowser 文件管理器
-93. Dufs 极简静态文件服务器
-94. Gopeed 高速下载工具
-95. Paperless 文档管理平台
-96. 2FAuth 自托管二步验证器
-97. WireGuard 组网服务端
-98. WireGuard 组网客户端
-99. DSM 黑群晖虚拟机
-100. Syncthing 点对点文件同步工具
-101. AI 视频生成工具
-102. VoceChat 多人在线聊天系统
-103. Umami 网站统计工具
-104. Stream 四层代理转发工具
-105. 思源笔记
-106. Drawnix 开源白板工具
-107. PanSou 网盘搜索
-108. LangBot 聊天机器人
-109. ZFile 在线网盘
-110. Karakeep 书签管理
-111. 多格式文件转换工具
-112. Lucky 大内网穿透工具
-113. Firefox 浏览器
-114. OpenClaw 机器人管理工具
-115. Hermes 机器人管理工具
 
 ## rclone 配置菜单
 

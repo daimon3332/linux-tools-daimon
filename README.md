@@ -129,24 +129,11 @@ d
     7. YABS
     8. HardwareQuality
     9. 勇哥脚本
+    10. kejilion.sh
 
-13. 测试脚本合集
-    - IP / 流媒体解锁检测
-    - 三网回程、路由追踪、测速
-    - YABS、GeekBench、bench、融合怪、NodeQuality 等性能测试
-
-14. WARP 管理
+13. WARP 管理
     1. 进入 WARP 官方管理脚本
     2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
-
-15. 甲骨文云脚本合集
-    1. 安装闲置机器活跃脚本
-    2. 卸载闲置机器活跃脚本
-    3. 开启 ROOT 密码登录模式
-    4. IPv6 恢复工具
-
-16. 应用市场
-    - 宝塔面板、aaPanel、1Panel、NginxProxyManager、OpenList、哪吒探针、qBittorrent、青龙面板、Cloudreve、Emby、Portainer、VSCode 网页版、Uptime Kuma、Nextcloud、WireGuard、Gitea、FileBrowser 等 Docker 应用安装、更新、卸载、备份和还原。
 
 附加菜单：rclone 配置
 
