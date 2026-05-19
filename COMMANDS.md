@@ -197,7 +197,7 @@ auto_optimize_network
 ```bash
 linux_tools thirdparty-install-all
 ```
-解释：调用第三方工具分类的全部安装逻辑，安装 vim、cpcat、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、ranger、fastfetch 等工具。
+解释：调用第三方工具分类的全部安装逻辑，安装 vim、cpcat、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、yazi、fastfetch 等工具。
 
 ## 5. 系统工具
 
@@ -629,7 +629,7 @@ rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
 9. fd
 10. fzf
 11. ble.sh
-12. ranger
+12. yazi
 13. fastfetch
 14. ncdu
 
@@ -648,7 +648,7 @@ test -x ~/.fzf/bin/fzf
 grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
 test -f ~/.local/share/blesh/ble.sh
 grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
-command -v ranger
+command -v yazi
 command -v fastfetch
 command -v ncdu
 ```
@@ -712,7 +712,10 @@ if [ -f ~/.bat.sh ]; then
     source ~/.bat.sh
 fi
 EOF
-apt install -y tree ripgrep fd-find ranger fastfetch ncdu
+apt install -y tree ripgrep fd-find yazi ncdu
+add-apt-repository -y ppa:zhangsongcui3371/fastfetch
+apt update -y
+apt install -y fastfetch
 echo "alias fd='fdfind'" >> ~/.bashrc
 git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
 ~/.fzf/install --key-bindings --completion --no-update-rc
@@ -771,7 +774,7 @@ fi
 EOF
 source ~/.bashrc
 ```
-解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ranger、fastfetch、ncdu 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键。
+解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、yazi、ncdu 使用 apt 安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键。
 
 特殊卸载：
 
@@ -786,8 +789,9 @@ rm -f ~/.bat.sh
 rm -rf ~/.fzf
 # 删除 ~/.bashrc 中 ble.sh setup 配置块
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
-rm -rf ~/.config/btop ~/.config/ranger ~/.local/share/ranger ~/.config/fastfetch
-apt purge -y vim bat batcat btop tree ripgrep fd-find fzf ranger fastfetch ncdu
+rm -rf ~/.config/btop ~/.config/yazi ~/.local/share/yazi ~/.cache/yazi ~/.config/fastfetch
+add-apt-repository --remove -y ppa:zhangsongcui3371/fastfetch
+apt purge -y vim bat batcat btop tree ripgrep fd-find fzf yazi fastfetch ncdu
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
 ```
 解释：卸载第三方工具第 1-14 项的 apt 包、git clone 目录和脚本写入的配置。

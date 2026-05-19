@@ -9471,7 +9471,20 @@ EOF
         systemctl start firewalld >/dev/null 2>&1 || true
         firewall-cmd --state 2>/dev/null || true
         ;;
-      git|curl|tree|yazi|fastfetch|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
+      fastfetch)
+        root_use
+        if command -v apt >/dev/null 2>&1; then
+          apt update -y
+          apt install -y software-properties-common
+          add-apt-repository -y ppa:zhangsongcui3371/fastfetch
+          apt update -y
+          apt install -y fastfetch
+        else
+          install fastfetch
+        fi
+        fastfetch --version 2>/dev/null || true
+        ;;
+      git|curl|tree|yazi|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
@@ -9513,7 +9526,14 @@ EOF
       bat) remove_bat_all ;;
       btop) remove btop; rm -rf "$HOME/.config/btop" ;;
       yazi) remove yazi; rm -rf "$HOME/.config/yazi" "$HOME/.local/share/yazi" "$HOME/.cache/yazi" ;;
-      fastfetch) remove fastfetch; rm -rf "$HOME/.config/fastfetch" ;;
+      fastfetch)
+        remove fastfetch
+        if command -v add-apt-repository >/dev/null 2>&1; then
+          add-apt-repository --remove -y ppa:zhangsongcui3371/fastfetch 2>/dev/null || true
+          apt update -y 2>/dev/null || true
+        fi
+        rm -rf "$HOME/.config/fastfetch"
+        ;;
       htop) remove htop; rm -rf "$HOME/.config/htop" "$HOME/.htoprc" ;;
       ripgrep) remove ripgrep ;;
       fd) remove_fd_alias; remove fd-find ;;
