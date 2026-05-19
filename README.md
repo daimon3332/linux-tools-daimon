@@ -52,7 +52,8 @@ d
    17. 禁用 IPv6
    18. 开启 IPv6
    19. bat 终端高亮配置
-   20. 卸载 daimon 脚本
+   20. 配置/删除 cpcat
+   21. 卸载 daimon 脚本
 
 5. Docker 管理
    1. 安装更新 Docker 环境
@@ -129,7 +130,8 @@ d
     - YABS、GeekBench、bench、融合怪、NodeQuality 等性能测试
 
 13. WARP 管理
-    - 调用 fscarmen WARP 菜单脚本。
+    1. 进入 WARP 官方管理脚本
+    2. 彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）
 
 14. 甲骨文云脚本合集
     1. 安装闲置机器活跃脚本

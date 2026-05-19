@@ -126,7 +126,7 @@ rm -rf /tmp/*
 
 ## 4. 系统工具
 
-进入“系统工具”默认展示 1-20 号子选项，本身不修改系统。
+进入“系统工具”默认展示 1-21 号子选项，本身不修改系统。
 
 ### 4.1 设置脚本启动快捷键
 
@@ -525,32 +525,78 @@ raw docker ps
 ```
 解释：展示常用 bat 改写命令；`bauto` 自动判断有限输出类型，`blog` 按日志高亮，`byaml` 按 YAML 高亮，`raw docker ps` 绕过包装函数执行原始命令。
 
-配置 `~/.bashrc`：
+配置 bat：
 
 ```bash
 command -v batcat || command -v bat
 apt install -y bat
-awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
+awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} /^# ========== bat 终端着色增强 ==========$/ {skip=1; next} skip && /^[[:space:]]*fi[[:space:]]*$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
 cat /tmp/daimon_bashrc > ~/.bashrc
-cat >> ~/.bashrc <<'EOF'
-# ========== bat terminal color setup ==========
+cat > ~/.bat.sh <<'EOF'
 # 写入 bauto、blog、byaml、bjson、bhttp、raw 以及 docker/ping/systemctl/git 等查看类命令包装函数
-# ========== end bat terminal color setup ==========
+EOF
+cat >> ~/.bashrc <<'EOF'
+# ========== bat 终端着色增强 ==========
+if [ -f ~/.bat.sh ]; then
+    source ~/.bat.sh
+fi
 EOF
 source ~/.bashrc
 ```
-解释：检测 `batcat/bat`，没有则先安装；写入前删除旧的 bat 配置块，再追加新的 bat 终端高亮配置。`curl` 不会被自动包装，需要手动使用 `curl -s URL | bjson/bhttp/bauto`。
+解释：检测 `batcat/bat`，没有则先安装；完整 bat 终端高亮函数写入 `~/.bat.sh`，`~/.bashrc` 只写入 `source ~/.bat.sh` 的小配置块。`curl` 不会被自动包装，需要手动使用 `curl -s URL | bjson/bhttp/bauto`。
 
-删除 `~/.bashrc` 中的 bat 配置块：
+删除 bat 配置：
 
 ```bash
-awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
+awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} /^# ========== bat 终端着色增强 ==========$/ {skip=1; next} skip && /^[[:space:]]*fi[[:space:]]*$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
+cat /tmp/daimon_bashrc > ~/.bashrc
+rm -f ~/.bat.sh
+source ~/.bashrc
+```
+解释：删除旧版直接写入 `~/.bashrc` 的 bat 配置块、新版 `source ~/.bat.sh` 配置块，并删除 `~/.bat.sh`。
+
+### 4.20 配置/删除cpcat
+
+默认展示：
+
+```bash
+grep -q '^# ========== cpcat clipboard setup ==========$' ~/.bashrc
+```
+解释：检测 `~/.bashrc` 中是否已经写入 cpcat 配置块，并显示已配置/未配置状态。
+
+配置 cpcat：
+
+```bash
+awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
+cat /tmp/daimon_bashrc > ~/.bashrc
+cat >> ~/.bashrc <<'EOF'
+
+# ========== cpcat clipboard setup ==========
+# 一键复制文件内容到剪贴板（OSC 52）
+cpcat() {
+    if [ -f "$1" ]; then
+        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
+        echo "✅ 已复制到剪贴板: $1"
+    else
+        echo "❌ 文件不存在: $1"
+    fi
+}
+# ========== end cpcat clipboard setup ==========
+EOF
+source ~/.bashrc
+```
+解释：写入 `cpcat 文件路径` 命令，通过 OSC 52 把文件内容复制到本地终端剪贴板。
+
+删除 cpcat：
+
+```bash
+awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
 cat /tmp/daimon_bashrc > ~/.bashrc
 source ~/.bashrc
 ```
-解释：只删除 `# ========== bat terminal color setup ==========` 到 `# ========== end bat terminal color setup ==========` 之间的内容，不删除 `~/.bashrc` 的其他配置。
+解释：只删除 `# ========== cpcat clipboard setup ==========` 到 `# ========== end cpcat clipboard setup ==========` 之间的内容。
 
-### 4.20 卸载 daimon 脚本
+### 4.21 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
@@ -1159,11 +1205,23 @@ bash /root/daimon/NodeQuality.sh
 
 ## 13. WARP 管理
 
+进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
+
+进入 WARP 官方管理脚本：
+
 ```bash
 apt install -y wget curl
 bash /root/daimon/warp-menu.sh
 ```
 解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
+
+彻底删除 WARP：
+
+```bash
+apt install -y wget curl
+bash /root/daimon/warp-menu.sh u
+```
+解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
 
 ## 14. 甲骨文云脚本合集
 

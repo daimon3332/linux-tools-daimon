@@ -19080,8 +19080,8 @@ bat_terminal_manager() {
 		echo "------------------------------------------------"
 		echo "说明：curl 不自动包装，建议手动使用 curl -s URL | bjson/bhttp/bauto"
 		echo "------------------------------------------------"
-		echo "1. 配置 ~/.bashrc"
-		echo "2. 删除 ~/.bashrc 的 bat 配置内容"
+		echo "1. 配置 ~/.bat.sh，并在 ~/.bashrc 中 source"
+		echo "2. 删除 ~/.bat.sh 和 ~/.bashrc 的 bat source 内容"
 		echo "0. 返回上一级菜单"
 		echo "------------------------------------------------"
 		read -e -p "请输入你的选择: " bat_choice
@@ -19099,20 +19099,21 @@ bat_terminal_manager() {
 					continue
 				fi
 				local bashrc_file="$HOME/.bashrc"
+				local bat_file="$HOME/.bat.sh"
 				local tmp_file
 				tmp_file=$(mktemp)
 				touch "$bashrc_file"
 				awk '
 					/^# ========== bat terminal color setup ==========$/ {skip=1; next}
 					/^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next}
+					/^# ========== bat 终端着色增强 ==========$/ {skip=1; next}
+					skip && /^[[:space:]]*fi[[:space:]]*$/ {skip=0; next}
 					!skip {print}
 				' "$bashrc_file" > "$tmp_file"
 				cat "$tmp_file" > "$bashrc_file"
 				rm -f "$tmp_file"
 
-				cat >> "$bashrc_file" <<'EOF'
-# ========== bat terminal color setup ==========
-
+				cat > "$bat_file" <<'EOF'
   # 避免 alias 抢在函数前面生效
   unalias bat cat docker ping ip ss ps df free systemctl journalctl git lsblk netstat ufw 2>/dev/null
 
@@ -19276,16 +19277,109 @@ bat_terminal_manager() {
     }
 
   fi
-
-  # ========== end bat terminal color setup ==========
 EOF
-				echo "bat 终端高亮配置已写入: $bashrc_file"
+
+				cat >> "$bashrc_file" <<'EOF'
+# ========== bat 终端着色增强 ==========
+if [ -f ~/.bat.sh ]; then
+    source ~/.bat.sh
+fi
+EOF
+				echo "bat 终端高亮配置已写入: $bat_file"
+				echo "~/.bashrc 已写入 source ~/.bat.sh"
 				echo "请执行以下命令立即生效：source ~/.bashrc"
 				send_stats "配置bat终端高亮"
 				break_end
 				;;
 			2)
 				local bashrc_file="$HOME/.bashrc"
+				local bat_file="$HOME/.bat.sh"
+				local tmp_file
+				if [ ! -f "$bashrc_file" ]; then
+					echo "未找到 $bashrc_file"
+				else
+					tmp_file=$(mktemp)
+					awk '
+						/^# ========== bat terminal color setup ==========$/ {skip=1; next}
+						/^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next}
+						/^# ========== bat 终端着色增强 ==========$/ {skip=1; next}
+						skip && /^[[:space:]]*fi[[:space:]]*$/ {skip=0; next}
+						!skip {print}
+					' "$bashrc_file" > "$tmp_file"
+					cat "$tmp_file" > "$bashrc_file"
+					rm -f "$tmp_file"
+				fi
+				rm -f "$bat_file"
+				echo "已删除 ~/.bashrc 中的 bat source 配置，并删除 ~/.bat.sh"
+				echo "重新打开终端或执行 source ~/.bashrc 后生效"
+				send_stats "删除bat终端高亮配置"
+				break_end
+				;;
+			0)
+				break
+				;;
+			*)
+				echo "无效选择"
+				break_end
+				;;
+		esac
+	done
+}
+
+cpcat_manager() {
+	while true; do
+		clear
+		local bashrc_file="$HOME/.bashrc"
+		local cpcat_status="${gl_hong}未配置${gl_bai}"
+		if [ -f "$bashrc_file" ] && grep -q '^# ========== cpcat clipboard setup ==========$' "$bashrc_file"; then
+			cpcat_status="${gl_lv}已配置${gl_bai}"
+		fi
+
+		echo "配置/删除cpcat"
+		echo "------------------------------------------------"
+		echo -e "当前状态: $cpcat_status"
+		echo "功能说明: cpcat 文件路径，可以通过 OSC 52 快速复制文件内容到剪贴板"
+		echo "示例: cpcat /root/test.txt"
+		echo "------------------------------------------------"
+		echo "1. 配置 cpcat 到 ~/.bashrc"
+		echo "2. 删除 ~/.bashrc 中的 cpcat 配置"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " cpcat_choice
+
+		case "$cpcat_choice" in
+			1)
+				local tmp_file
+				tmp_file=$(mktemp)
+				touch "$bashrc_file"
+				awk '
+					/^# ========== cpcat clipboard setup ==========$/ {skip=1; next}
+					/^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next}
+					!skip {print}
+				' "$bashrc_file" > "$tmp_file"
+				cat "$tmp_file" > "$bashrc_file"
+				rm -f "$tmp_file"
+
+				cat >> "$bashrc_file" <<'EOF'
+
+# ========== cpcat clipboard setup ==========
+# 一键复制文件内容到剪贴板（OSC 52）
+cpcat() {
+    if [ -f "$1" ]; then
+        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
+        echo "✅ 已复制到剪贴板: $1"
+    else
+        echo "❌ 文件不存在: $1"
+    fi
+}
+# ========== end cpcat clipboard setup ==========
+EOF
+				echo "cpcat 已写入: $bashrc_file"
+				echo "请执行以下命令立即生效：source ~/.bashrc"
+				send_stats "配置cpcat"
+				break_end
+				;;
+			2)
 				local tmp_file
 				if [ ! -f "$bashrc_file" ]; then
 					echo "未找到 $bashrc_file"
@@ -19294,15 +19388,15 @@ EOF
 				fi
 				tmp_file=$(mktemp)
 				awk '
-					/^# ========== bat terminal color setup ==========$/ {skip=1; next}
-					/^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next}
+					/^# ========== cpcat clipboard setup ==========$/ {skip=1; next}
+					/^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next}
 					!skip {print}
 				' "$bashrc_file" > "$tmp_file"
 				cat "$tmp_file" > "$bashrc_file"
 				rm -f "$tmp_file"
-				echo "已删除 ~/.bashrc 中的 bat terminal color setup 配置块"
+				echo "已删除 ~/.bashrc 中的 cpcat 配置块"
 				echo "重新打开终端或执行 source ~/.bashrc 后生效"
-				send_stats "删除bat终端高亮配置"
+				send_stats "删除cpcat配置"
 				break_end
 				;;
 			0)
@@ -19332,7 +19426,8 @@ linux_Settings() {
 	  echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}网卡管理工具"
 	  echo -e "${gl_kjlan}15.  ${gl_bai}journalctl日志管理              ${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
 	  echo -e "${gl_kjlan}17.  ${gl_bai}禁用IPv6                         ${gl_kjlan}18.  ${gl_bai}开启IPv6"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}bat终端高亮配置                 ${gl_kjlan}20.  ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}19.  ${gl_bai}bat终端高亮配置                 ${gl_kjlan}20.  ${gl_bai}配置/删除cpcat"
+	  echo -e "${gl_kjlan}21.  ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -19742,6 +19837,10 @@ EOF
 			  ;;
 
 		  20)
+			  cpcat_manager
+			  ;;
+
+		  21)
 			  clear
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"
@@ -20954,6 +21053,58 @@ rclone_manager() {
 }
 
 
+warp_manager() {
+	while true; do
+		clear
+		echo -e "WARP 管理"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		if command -v warp >/dev/null 2>&1; then
+			echo -e "快捷命令: ${gl_lv}已安装${gl_bai} ($(command -v warp))"
+		else
+			echo -e "快捷命令: ${gl_huang}未检测到${gl_bai}"
+		fi
+		if ip link show warp >/dev/null 2>&1; then
+			echo -e "WARP 网络接口: ${gl_lv}存在${gl_bai}"
+		else
+			echo -e "WARP 网络接口: ${gl_huang}未检测到${gl_bai}"
+		fi
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo -e "${gl_kjlan}1.   ${gl_bai}进入 WARP 官方管理脚本"
+		echo -e "${gl_kjlan}2.   ${gl_bai}彻底删除 WARP（删除 WARP 网络接口、Linux Client 和 WireProxy）"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		read -e -p "请输入你的选择: " sub_choice
+		case $sub_choice in
+			1)
+				clear
+				send_stats "warp管理"
+				install wget curl
+				daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"
+				;;
+			2)
+				clear
+				echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}"
+				read -e -p "确认彻底删除 WARP？(y/N): " confirm
+				if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+					send_stats "彻底删除warp"
+					install wget curl
+					daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh" u
+				else
+					echo "已取消"
+				fi
+				;;
+			0)
+				kejilion
+				;;
+			*)
+				echo "无效的输入!"
+				;;
+		esac
+		break_end
+	done
+}
+
+
 
 
 kejilion_update() {
@@ -21032,7 +21183,7 @@ case $choice in
   10) ssl_nginx_manager ;;
   11) common_one_click_scripts ;;
   12) linux_test ;;
-  13) clear ; send_stats "warp管理" ; install wget curl; daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh" ;;
+  13) warp_manager ;;
   14) linux_Oracle ;;
   15) linux_panel ;;
   00) kejilion_update ;;
