@@ -28,27 +28,30 @@ mkdir -p /root/daimon
 3. 系统清理
 4. 系统工具
 5. Docker管理
-6. 基础工具
+6. 编程工具
 7. 第三方工具
-8. BBR管理
-9. SSH配置
-10. UFW防火墙管理
-11. SSL证书申请+自动续期 & Nginx管理
-12. 常用的一键脚本
-13. WARP管理
+8. SSH配置
+9. UFW防火墙管理
+10. SSL证书申请+自动续期 & Nginx管理
+11. BBR管理
+12. WARP管理
+13. 常用的一键脚本
 00. 脚本更新
 0. 退出脚本
 
 脚本更新：
 
 ```bash
-curl -fsSL --max-time 60 -o /tmp/daimon_tmp.xxxxxx "$DAIMON_UPDATE_URL"
-cp -f ~/linux-toolbox.sh ~/linux-toolbox.sh.bak
+curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o /tmp/daimon_tmp.xxxxxx https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh
+head -1 /tmp/daimon_tmp.xxxxxx | grep -q '^#!/bin/bash'
+grep -q 'DAIMON_NAME="linux-tools-daimon"' /tmp/daimon_tmp.xxxxxx
+cp -f ~/linux-toolbox.sh ~/linux-toolbox.sh.bak.$(date +%Y%m%d%H%M%S)
 mv -f /tmp/daimon_tmp.xxxxxx ~/linux-toolbox.sh
 cp -f ~/linux-toolbox.sh /usr/local/bin/d
+chmod +x ~/linux-toolbox.sh /usr/local/bin/d
 ln -sf /usr/local/bin/d /usr/bin/d
 ```
-解释：下载新脚本、备份旧脚本、更新快捷命令。
+解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，备份旧脚本，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。
 
 ## 1. 系统信息查询
 
@@ -806,9 +809,9 @@ rm -f /etc/docker/daemon.json
 ```
 解释：删除 Docker 数据并卸载 Docker。
 
-## 6. 基础工具
+## 6. 编程工具
 
-基础工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
+编程工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
 
 1. python
 2. npm
@@ -829,7 +832,7 @@ command -v git
 command -v claude
 command -v codex
 ```
-解释：判断基础/编程工具是否存在。
+解释：判断编程工具是否存在。
 
 菜单操作：
 
@@ -1058,18 +1061,7 @@ rm -f ~/.local/bin/uv ~/.local/bin/uvx
 ```
 解释：卸载第三方工具中的配置类内容，以及 ClaudeCode、Codex、Bun、uv 等特殊安装项。
 
-## 8. BBR 管理
-
-```bash
-apt install -y wget curl
-mkdir -p /root/daimon
-curl -fsSL https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh -o /root/daimon/tcpx.sh
-chmod +x /root/daimon/tcpx.sh
-bash /root/daimon/tcpx.sh
-```
-解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
-
-## 9. SSH 配置
+## 8. SSH 配置
 
 进入 SSH 配置默认展示：
 
@@ -1181,7 +1173,7 @@ sshd -t && systemctl restart sshd
 ```
 解释：手动编辑 SSH 服务端配置，并校验重启。
 
-## 10. UFW 防火墙管理
+## 9. UFW 防火墙管理
 
 默认展示：
 
@@ -1217,7 +1209,7 @@ ufw status numbered
 ```
 解释：删除端口 allow 规则。
 
-## 11. SSL 证书申请+自动续期 & Nginx 管理
+## 10. SSL 证书申请+自动续期 & Nginx 管理
 
 进入菜单前会确保 acme.sh：
 
@@ -1302,7 +1294,38 @@ nginx -t && nginx -s reload
 ```
 解释：创建或删除 Nginx 测试页面。
 
-## 12. 常用的一键脚本
+## 11. BBR 管理
+
+```bash
+apt install -y wget curl
+mkdir -p /root/daimon
+curl -fsSL https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh -o /root/daimon/tcpx.sh
+chmod +x /root/daimon/tcpx.sh
+bash /root/daimon/tcpx.sh
+```
+解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
+
+## 12. WARP 管理
+
+进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
+
+进入 WARP 官方管理脚本：
+
+```bash
+apt install -y wget curl
+bash /root/daimon/warp-menu.sh
+```
+解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
+
+彻底删除 WARP：
+
+```bash
+apt install -y wget curl
+bash /root/daimon/warp-menu.sh u
+```
+解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
+
+## 13. 常用的一键脚本
 
 这些脚本会先退出当前脚本，再运行目标脚本，避免输出被主菜单覆盖。
 
@@ -1357,26 +1380,6 @@ bash /root/daimon/x-ui-yg-install.sh
 bash <(curl -sL kejilion.sh)
 ```
 解释：运行 kejilion.sh 一键脚本。
-
-## 13. WARP 管理
-
-进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
-
-进入 WARP 官方管理脚本：
-
-```bash
-apt install -y wget curl
-bash /root/daimon/warp-menu.sh
-```
-解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
-
-彻底删除 WARP：
-
-```bash
-apt install -y wget curl
-bash /root/daimon/warp-menu.sh u
-```
-解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
 
 ## rclone 配置菜单
 

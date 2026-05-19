@@ -7541,6 +7541,132 @@ linux_info() {
 
 
 
+
+
+linux_Settings() {
+	while true; do
+		clear
+		echo "系统工具"
+		echo "------------------------"
+		echo -e "${gl_kjlan}1.   ${gl_bai}设置脚本启动快捷键"
+		echo -e "${gl_kjlan}2.   ${gl_bai}更换系统软件包镜像源"
+		echo -e "${gl_kjlan}3.   ${gl_bai}优化 DNS 地址"
+		echo -e "${gl_kjlan}4.   ${gl_bai}IPv4 / IPv6 优先级调整"
+		echo -e "${gl_kjlan}5.   ${gl_bai}Swap 管理"
+		echo -e "${gl_kjlan}6.   ${gl_bai}用户密码管理"
+		echo -e "${gl_kjlan}7.   ${gl_bai}系统时区调整"
+		echo -e "${gl_kjlan}8.   ${gl_bai}修改主机名"
+		echo -e "${gl_kjlan}9.   ${gl_bai}hosts 文件管理"
+		echo -e "${gl_kjlan}10.  ${gl_bai}环境变量管理"
+		echo -e "${gl_kjlan}11.  ${gl_bai}github 镜像源"
+		echo -e "${gl_kjlan}12.  ${gl_bai}DD 重装系统"
+		echo -e "${gl_kjlan}13.  ${gl_bai}查看 ssh 的 ip"
+		echo -e "${gl_kjlan}14.  ${gl_bai}网卡管理工具"
+		echo -e "${gl_kjlan}15.  ${gl_bai}journalctl 日志管理"
+		echo -e "${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
+		echo -e "${gl_kjlan}17.  ${gl_bai}禁用 IPv6"
+		echo -e "${gl_kjlan}18.  ${gl_bai}开启 IPv6"
+		echo -e "${gl_kjlan}19.  ${gl_bai}卸载 daimon 脚本"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1)
+				read -e -p "请输入快捷命令名称（默认 d）: " cmd
+				cmd=${cmd:-d}
+				ln -sf /usr/local/bin/d "/usr/local/bin/$cmd" 2>/dev/null || true
+				ln -sf /usr/local/bin/d "/usr/bin/$cmd" 2>/dev/null || true
+				echo "快捷命令已设置为: $cmd"
+				;;
+			2) bash <(curl -sSL https://linuxmirrors.cn/main.sh) ;;
+			3) set_dns_ui ;;
+			4)
+				echo "1. IPv4 优先    2. 恢复默认"
+				read -e -p "请选择: " mode
+				if [ "$mode" = "1" ]; then
+					grep -q '^precedence ::ffff:0:0/96  100' /etc/gai.conf 2>/dev/null || echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
+				else
+					sed -i '/^precedence ::ffff:0:0\/96  100/d' /etc/gai.conf 2>/dev/null || true
+				fi
+				;;
+			5) read -e -p "请输入 Swap 大小 MB（默认 1024）: " swap_size; add_swap "${swap_size:-1024}" ;;
+			6) read -e -p "请输入要修改密码的用户名（默认 root）: " user_name; add_sshpasswd "${user_name:-root}" ;;
+			7) set_timedate ;;
+			8) read -e -p "请输入新主机名: " new_host; [ -n "$new_host" ] && hostnamectl set-hostname "$new_host" ;;
+			9) install vim; vim /etc/hosts ;;
+			10) install vim; vim /etc/environment ;;
+			11)
+				local raw_url="https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh"
+				local names=("raw.githubusercontent.com" "gh-proxy.com" "ghproxy.net" "testingcf.jsdelivr.net" "ghfast.top" "ghproxy.homeboyc.cn" "github.akams.cn")
+				local urls=(
+					"$raw_url"
+					"https://gh-proxy.com/$raw_url"
+					"https://ghproxy.net/$raw_url"
+					"https://testingcf.jsdelivr.net/gh/komari-monitor/komari-agent@main/install.sh"
+					"https://ghfast.top/$raw_url"
+					"https://ghproxy.homeboyc.cn/$raw_url"
+					"https://github.akams.cn/$raw_url"
+				)
+				local out="/tmp/daimon_github_proxy_speed.txt"
+				: > "$out"
+				for i in "${!names[@]}"; do
+					local tmp="/tmp/daimon_github_proxy_${i}.tmp"
+					local result http_code time_total speed size
+					result=$(curl -L --connect-timeout 5 --max-time 15 --retry 0 -o "$tmp" -w "%{http_code} %{time_total} %{speed_download} %{size_download}" -s "${urls[$i]}")
+					http_code=$(echo "$result" | awk '{print $1}')
+					time_total=$(echo "$result" | awk '{print $2}')
+					speed=$(echo "$result" | awk '{print $3}')
+					size=$(echo "$result" | awk '{print $4}')
+					[ "$http_code" = "200" ] && [ "${size:-0}" -gt 1000 ] || speed=0
+					printf "%s\t%s\t%s\t%s\t%s\n" "$speed" "$time_total" "$size" "$http_code" "${names[$i]}" >> "$out"
+					rm -f "$tmp"
+				done
+				sort -nr "$out" | awk -F '\t' 'BEGIN{printf "%-4s %-28s %-12s %-10s %-10s %-8s\n","Rank","Proxy","Speed","Time","Size","HTTP"}{s=$1; if(s>=1048576){sf=sprintf("%.2f MB/s",s/1048576)}else if(s>=1024){sf=sprintf("%.2f KB/s",s/1024)}else{sf=sprintf("%.0f B/s",s)} printf "%-4d %-28s %-12s %-10ss %-10s %-8s\n",NR,$5,sf,$2,$3,$4}'
+				rm -f "$out"
+				;;
+			12)
+				cd /root || return
+				wget --no-check-certificate -qO InstallNET.sh 'https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh' && chmod a+x InstallNET.sh
+				read -e -p "系统类型参数（默认 -ubuntu 22.04）: " os_arg
+				read -e -p "密码（默认 Tgadw2145qewO）: " dd_pwd
+				read -e -p "端口（默认 41000）: " dd_port
+				os_arg=${os_arg:--ubuntu 22.04}
+				dd_pwd=${dd_pwd:-Tgadw2145qewO}
+				dd_port=${dd_port:-41000}
+				bash InstallNET.sh $os_arg -pwd "$dd_pwd" -port "$dd_port"
+				;;
+			13) echo "当前 SSH_CLIENT: ${SSH_CLIENT:-无}"; echo "所有 SSH 连接:"; ss -tnp 2>/dev/null | grep -E 'sshd|:22|:64400|:41000' || true ;;
+			14) ip -br addr; echo; ip route ;;
+			15)
+				echo "1. 配置自动清理  2. 查看占用  3. 查看服务日志  4. 按时间清理  5. 按大小清理"
+				read -e -p "请选择: " j
+				case "$j" in
+					1) read -e -p "SystemMaxUse 默认 500M: " a; read -e -p "SystemKeepFree 默认 1G: " b; read -e -p "SystemMaxFileSize 默认 50M: " c; read -e -p "MaxRetentionSec 默认 1month: " d; mkdir -p /etc/systemd/journald.conf.d; cat > /etc/systemd/journald.conf.d/99-daimon.conf <<EOF
+[Journal]
+SystemMaxUse=${a:-500M}
+SystemKeepFree=${b:-1G}
+SystemMaxFileSize=${c:-50M}
+MaxRetentionSec=${d:-1month}
+EOF
+systemctl restart systemd-journald ;;
+					2) journalctl --disk-usage ;;
+					3) read -e -p "请输入服务名: " svc; [[ "$svc" != *.service ]] && svc="$svc.service"; journalctl -u "$svc" -n 200 --no-pager ;;
+					4) read -e -p "保留时间（默认 7d）: " t; journalctl --vacuum-time="${t:-7d}" ;;
+					5) read -e -p "保留大小（默认 500M）: " z; journalctl --vacuum-size="${z:-500M}" ;;
+				esac
+				;;
+			16) daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && auto_optimize_network ;;
+			17) echo 'net.ipv6.conf.all.disable_ipv6 = 1' > /etc/sysctl.d/99-disable-ipv6.conf; echo 'net.ipv6.conf.default.disable_ipv6 = 1' >> /etc/sysctl.d/99-disable-ipv6.conf; sysctl --system ;;
+			18) rm -f /etc/sysctl.d/99-disable-ipv6.conf; sysctl -w net.ipv6.conf.all.disable_ipv6=0 net.ipv6.conf.default.disable_ipv6=0 ;;
+			19) read -e -p "确认卸载 daimon 脚本？(y/N): " c; [ "$c" = "y" ] || [ "$c" = "Y" ] && rm -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d /usr/bin/d ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+
 linux_tools() {
   local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh ranger fastfetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu fail2ban iptables-persistent ufw firewalld)
   local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "ranger" "fastfetch" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "ncdu" "fail2ban" "iptables-persistent" "ufw" "firewalld")
@@ -8611,14 +8737,14 @@ EOF
       return
       ;;
     programming|basic)
-      tool_category_menu programming "基础工具"
+      tool_category_menu programming "编程工具"
       return
       ;;
   esac
 
   while true; do
     clear
-    echo -e "基础工具"
+    echo -e "工具管理"
     echo -e "${gl_kjlan}1.   ${gl_bai}第三方工具"
     echo -e "${gl_kjlan}2.   ${gl_bai}编程工具"
     echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
@@ -8627,7 +8753,7 @@ EOF
     case $sub_choice in
       1) tool_category_menu thirdparty "第三方工具" ;;
       2) tool_category_menu programming "编程工具" ;;
-      0) kejilion ;;
+      0) return ;;
       *) echo "无效的输入!"; break_end ;;
     esac
   done
@@ -9250,7 +9376,7 @@ linux_docker() {
 			  ;;
 
 		  0)
-			  kejilion
+			  return
 			  ;;
 		  *)
 			  echo "无效的输入!"
@@ -14819,6 +14945,383 @@ openclaw_backup_restore_menu() {
 
 
 
+
+
+ssh_config_manager() {
+	local SSH_CONFIG="/etc/ssh/sshd_config"
+	local DEFAULT_SSH_PORT="64400"
+
+	ssh_config_backup() {
+		[ -f "$SSH_CONFIG" ] && cp "$SSH_CONFIG" "$SSH_CONFIG.bak.$(date +%Y%m%d%H%M%S)"
+	}
+
+	ssh_set_option() {
+		local key="$1" value="$2"
+		if grep -qiE "^[#[:space:]]*${key}[[:space:]]+" "$SSH_CONFIG" 2>/dev/null; then
+			sed -i "s|^[#[:space:]]*${key}[[:space:]].*|${key} ${value}|I" "$SSH_CONFIG"
+		else
+			echo "${key} ${value}" >> "$SSH_CONFIG"
+		fi
+	}
+
+	ssh_restart_safe() {
+		if ! sshd -t; then
+			echo -e "${gl_hong}SSH 配置语法错误，未重启 SSH。请检查 $SSH_CONFIG${gl_bai}"
+			return 1
+		fi
+		systemctl stop ssh.socket sshd.socket 2>/dev/null || true
+		systemctl disable ssh.socket sshd.socket 2>/dev/null || true
+		if systemctl list-unit-files 2>/dev/null | grep -q '^sshd\.service'; then
+			systemctl restart sshd
+		elif systemctl list-unit-files 2>/dev/null | grep -q '^ssh\.service'; then
+			systemctl restart ssh
+		else
+			service sshd restart 2>/dev/null || service ssh restart 2>/dev/null || true
+		fi
+	}
+
+	ssh_current_ports() {
+		sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null || grep -Ei '^[[:space:]]*Port[[:space:]]+' "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' | xargs
+	}
+
+	ssh_auth_status() {
+		local key="$1"
+		sshd -T 2>/dev/null | awk -v k="$key" '$1==k{print $2; found=1} END{if(!found) print "unknown"}'
+	}
+
+	ssh_add_public_key() {
+		local public_key="$1"
+		[ -z "$public_key" ] && return 0
+		if ! echo "$public_key" | grep -Eq '^ssh-(ed25519|rsa|ecdsa)[[:space:]]+'; then
+			echo -e "${gl_hong}公钥格式不正确，应以 ssh-ed25519、ssh-rsa 或 ssh-ecdsa 开头${gl_bai}"
+			return 1
+		fi
+		mkdir -p /root/.ssh
+		chmod 700 /root/.ssh
+		touch /root/.ssh/authorized_keys
+		if grep -qxF "$public_key" /root/.ssh/authorized_keys 2>/dev/null; then
+			echo "公钥已存在，跳过添加"
+		else
+			echo "$public_key" >> /root/.ssh/authorized_keys
+			echo "公钥已添加"
+		fi
+		chmod 600 /root/.ssh/authorized_keys
+	}
+
+	ssh_key_manager() {
+		mkdir -p /root/.ssh
+		chmod 700 /root/.ssh
+		touch /root/.ssh/authorized_keys
+		chmod 600 /root/.ssh/authorized_keys
+		while true; do
+			clear
+			echo "SSH 公钥和私钥管理"
+			echo "------------------------"
+			echo "当前公钥:"
+			nl -ba /root/.ssh/authorized_keys 2>/dev/null || true
+			echo "------------------------"
+			echo "当前私钥:"
+			find /root/.ssh -maxdepth 1 -type f ! -name '*.pub' ! -name 'authorized_keys' ! -name 'known_hosts' ! -name 'config' -printf '%f\n' 2>/dev/null | nl -ba || true
+			echo "------------------------"
+			echo -e "${gl_kjlan}1.   ${gl_bai}添加公钥"
+			echo -e "${gl_kjlan}2.   ${gl_bai}删除公钥"
+			echo -e "${gl_kjlan}3.   ${gl_bai}添加私钥"
+			echo -e "${gl_kjlan}4.   ${gl_bai}删除私钥"
+			echo -e "${gl_kjlan}0.   ${gl_bai}返回上一级菜单"
+			read -e -p "请输入你的选择: " sub_choice
+			case "$sub_choice" in
+				1) read -e -p "请粘贴公钥: " public_key; ssh_add_public_key "$public_key" ;;
+				2) read -e -p "请输入要删除的公钥行号: " line_no; [[ "$line_no" =~ ^[0-9]+$ ]] && sed -i "${line_no}d" /root/.ssh/authorized_keys ;;
+				3) read -e -p "请输入私钥文件名（默认 id_ed25519）: " key_name; key_name=${key_name:-id_ed25519}; echo "请粘贴私钥内容，结束后按 Ctrl+D:"; cat > "/root/.ssh/$key_name"; chmod 600 "/root/.ssh/$key_name" ;;
+				4) read -e -p "请输入要删除的私钥文件名: " key_name; [ -n "$key_name" ] && rm -f "/root/.ssh/$key_name" ;;
+				0) return ;;
+				*) echo "无效的输入!" ;;
+			esac
+			break_end
+		done
+	}
+
+	while true; do
+		clear
+		root_use
+		echo "SSH 配置"
+		echo "------------------------"
+		echo -e "当前 SSH 端口: ${gl_huang}$(ssh_current_ports)${gl_bai}"
+		echo -e "密码登录 PasswordAuthentication: ${gl_huang}$(ssh_auth_status passwordauthentication)${gl_bai}"
+		echo -e "密钥登录 PubkeyAuthentication: ${gl_huang}$(ssh_auth_status pubkeyauthentication)${gl_bai}"
+		echo "------------------------"
+		echo -e "${gl_kjlan}1.   ${gl_bai}修改 SSH 端口"
+		echo -e "${gl_kjlan}2.   ${gl_bai}禁用/开启密码登录"
+		echo -e "${gl_kjlan}3.   ${gl_bai}开启/禁用密钥登录"
+		echo -e "${gl_kjlan}4.   ${gl_bai}一键配置（关闭密码登录、关闭 22、改用 $DEFAULT_SSH_PORT、开启密钥登录、配置 UFW）"
+		echo -e "${gl_kjlan}5.   ${gl_bai}公钥和私钥管理"
+		echo -e "${gl_kjlan}6.   ${gl_bai}修改 sshd_config 配置文件"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1)
+				read -e -p "请输入新 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port
+				new_port=${new_port:-$DEFAULT_SSH_PORT}
+				if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1 ] && [ "$new_port" -le 65535 ]; then
+					ssh_config_backup
+					ssh_set_option Port "$new_port"
+					ssh_restart_safe && { command -v ufw >/dev/null 2>&1 && ufw allow "$new_port/tcp"; }
+				else
+					echo "端口不合法"
+				fi
+				;;
+			2)
+				echo "1. 禁用密码登录    2. 开启密码登录"
+				read -e -p "请选择: " mode
+				ssh_config_backup
+				if [ "$mode" = "1" ]; then
+					ssh_set_option PasswordAuthentication no
+					ssh_set_option KbdInteractiveAuthentication no
+					ssh_set_option ChallengeResponseAuthentication no
+					ssh_set_option PermitEmptyPasswords no
+				elif [ "$mode" = "2" ]; then
+					ssh_set_option PasswordAuthentication yes
+					ssh_set_option KbdInteractiveAuthentication yes
+					ssh_set_option ChallengeResponseAuthentication yes
+				fi
+				ssh_restart_safe
+				;;
+			3)
+				echo "1. 开启密钥登录    2. 禁用密钥登录"
+				read -e -p "请选择: " mode
+				ssh_config_backup
+				if [ "$mode" = "1" ]; then
+					read -e -p "请粘贴公钥（可直接回车跳过）: " public_key
+					ssh_add_public_key "$public_key"
+					ssh_set_option PubkeyAuthentication yes
+					ssh_set_option AuthorizedKeysFile ".ssh/authorized_keys"
+				elif [ "$mode" = "2" ]; then
+					ssh_set_option PubkeyAuthentication no
+				fi
+				ssh_restart_safe
+				;;
+			4)
+				read -e -p "请粘贴公钥: " public_key
+				ssh_add_public_key "$public_key" || { break_end; continue; }
+				read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port
+				new_port=${new_port:-$DEFAULT_SSH_PORT}
+				ssh_config_backup
+				ssh_set_option Port "$new_port"
+				ssh_set_option PubkeyAuthentication yes
+				ssh_set_option AuthorizedKeysFile ".ssh/authorized_keys"
+				ssh_set_option PasswordAuthentication no
+				ssh_set_option KbdInteractiveAuthentication no
+				ssh_set_option ChallengeResponseAuthentication no
+				ssh_set_option PermitEmptyPasswords no
+				ssh_set_option PermitRootLogin prohibit-password
+				install ufw
+				ufw allow "$new_port/tcp" >/dev/null 2>&1 || true
+				ufw deny 22/tcp >/dev/null 2>&1 || true
+				echo y | ufw enable >/dev/null 2>&1 || true
+				ufw reload >/dev/null 2>&1 || true
+				ssh_restart_safe
+				;;
+			5) ssh_key_manager ;;
+			6) install vim; vim "$SSH_CONFIG"; ssh_restart_safe ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+ufw_manager() {
+	while true; do
+		clear
+		echo "UFW 防火墙管理"
+		echo "------------------------"
+		if command -v ufw >/dev/null 2>&1; then
+			ufw status | head -n 12
+		else
+			echo -e "当前状态: ${gl_huang}未安装${gl_bai}"
+		fi
+		echo "------------------------"
+		echo -e "${gl_kjlan}1.   ${gl_bai}安装 UFW（apt install -y ufw，并启用）"
+		echo -e "${gl_kjlan}2.   ${gl_bai}卸载 UFW（禁用后 apt purge -y ufw）"
+		echo -e "${gl_kjlan}3.   ${gl_bai}开放端口（例如 80 或 80/tcp，对应 ufw allow）"
+		echo -e "${gl_kjlan}4.   ${gl_bai}删除端口规则（例如 80 或 80/tcp，对应 ufw delete allow）"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1) root_use; install ufw; echo y | ufw enable; ufw status ;;
+			2) root_use; ufw disable 2>/dev/null || true; remove ufw; rm -rf /etc/ufw /var/lib/ufw ;;
+			3) root_use; read -e -p "请输入要开放的端口/协议: " port_rule; [ -n "$port_rule" ] && ufw allow "$port_rule"; ufw status numbered ;;
+			4) root_use; read -e -p "请输入要删除的端口/协议: " port_rule; [ -n "$port_rule" ] && ufw delete allow "$port_rule"; ufw status numbered ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+ssl_nginx_manager() {
+	local ACME="$HOME/.acme.sh/acme.sh"
+
+	ssl_install_deps() {
+		install curl socat lsof dnsutils ufw openssl nginx
+	}
+
+	ssl_install_acme() {
+		ssl_install_deps
+		if [ ! -f "$ACME" ]; then
+			curl -fsSL https://get.acme.sh -o "$DAIMON_SCRIPT_DIR/acme-install.sh" || return 1
+			sh "$DAIMON_SCRIPT_DIR/acme-install.sh" email=asdad@163.com
+		fi
+		[ -f "$ACME" ] && "$ACME" --set-default-ca --server letsencrypt >/dev/null 2>&1 || true
+	}
+
+	ssl_issue_cert() {
+		local domain="$1"
+		[ -z "$domain" ] && { echo "域名不能为空"; return 1; }
+		ssl_install_acme || return 1
+		mkdir -p "/root/domain/$domain"
+		ufw allow 80/tcp >/dev/null 2>&1 || true
+		ufw allow 443/tcp >/dev/null 2>&1 || true
+		systemctl stop nginx apache2 httpd caddy 2>/dev/null || true
+		lsof -t -iTCP:80 -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+		"$ACME" --issue -d "$domain" --standalone --server letsencrypt --force || return 1
+		"$ACME" --install-cert -d "$domain" --fullchain-file "/root/domain/$domain/fullchain.pem" --key-file "/root/domain/$domain/privkey.pem" --force
+		(crontab -l 2>/dev/null | grep -v "$HOME/.acme.sh/acme.sh --cron"; echo "0 3 * * * $HOME/.acme.sh/acme.sh --cron --home $HOME/.acme.sh >/dev/null 2>&1") | crontab -
+	}
+
+	ssl_config_nginx() {
+		local domain="$1" name="$2" port="$3"
+		if [ -z "$domain" ] || [ -z "$name" ] || [ -z "$port" ]; then
+			echo "域名、配置名、端口不能为空"
+			return 1
+		fi
+		install nginx
+		mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
+		cat > "/etc/nginx/sites-available/$name" <<EOF
+server {
+    listen 80;
+    server_name $domain;
+    return 301 https://\$host\$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name $domain;
+    ssl_certificate /root/domain/$domain/fullchain.pem;
+    ssl_certificate_key /root/domain/$domain/privkey.pem;
+    location / {
+        proxy_pass http://127.0.0.1:$port;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+		ln -sf "/etc/nginx/sites-available/$name" "/etc/nginx/sites-enabled/$name"
+		nginx -t && systemctl reload nginx || systemctl restart nginx
+	}
+
+	ssl_remove_cert() {
+		read -e -p "请输入域名: " domain
+		[ -z "$domain" ] && return
+		[ -f "$ACME" ] && "$ACME" --remove -d "$domain" 2>/dev/null || true
+		rm -rf "/root/domain/$domain"
+	}
+
+	ssl_remove_nginx_config() {
+		read -e -p "请输入 nginx 配置文件名称: " name
+		[ -z "$name" ] && return
+		rm -f "/etc/nginx/sites-available/$name" "/etc/nginx/sites-enabled/$name"
+		nginx -t && systemctl reload nginx
+	}
+
+	ssl_create_test_page() {
+		read -e -p "请输入测试站点名称: " name
+		read -e -p "请输入监听端口（默认 8080）: " port
+		port=${port:-8080}
+		[ -z "$name" ] && return
+		mkdir -p "/var/www/$name"
+		echo "linux-tools-daimon nginx test page" > "/var/www/$name/index.html"
+		cat > "/etc/nginx/sites-available/$name" <<EOF
+server {
+    listen $port;
+    root /var/www/$name;
+    index index.html;
+}
+EOF
+		ln -sf "/etc/nginx/sites-available/$name" "/etc/nginx/sites-enabled/$name"
+		nginx -t && systemctl reload nginx
+		echo "测试地址: http://服务器IP:$port"
+	}
+
+	while true; do
+		clear
+		echo "SSL 证书申请+自动续期 & Nginx 管理"
+		echo "------------------------"
+		echo -e "${gl_kjlan}1.   ${gl_bai}申请证书 + 配置 nginx"
+		echo -e "${gl_kjlan}2.   ${gl_bai}删除 nginx 配置 + 证书"
+		echo -e "${gl_kjlan}3.   ${gl_bai}申请证书"
+		echo -e "${gl_kjlan}4.   ${gl_bai}移除证书"
+		echo -e "${gl_kjlan}5.   ${gl_bai}查看证书列表"
+		echo -e "${gl_kjlan}6.   ${gl_bai}配置 nginx"
+		echo -e "${gl_kjlan}7.   ${gl_bai}删除 nginx 配置"
+		echo -e "${gl_kjlan}8.   ${gl_bai}创建测试页面"
+		echo -e "${gl_kjlan}9.   ${gl_bai}删除测试页面"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1) read -e -p "请输入域名: " domain; read -e -p "请输入 nginx 配置文件名称: " name; read -e -p "请输入代理端口号: " port; ssl_issue_cert "$domain" && ssl_config_nginx "$domain" "$name" "$port" ;;
+			2) ssl_remove_nginx_config; ssl_remove_cert ;;
+			3) read -e -p "请输入域名: " domain; ssl_issue_cert "$domain" ;;
+			4) ssl_remove_cert ;;
+			5) [ -f "$ACME" ] && "$ACME" --list || echo "acme.sh 未安装"; ls -la /root/domain 2>/dev/null || true ;;
+			6) read -e -p "请输入域名: " domain; read -e -p "请输入 nginx 配置文件名称: " name; read -e -p "请输入代理端口号: " port; ssl_config_nginx "$domain" "$name" "$port" ;;
+			7) ssl_remove_nginx_config ;;
+			8) ssl_create_test_page ;;
+			9) ssl_remove_nginx_config ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+common_one_click_scripts() {
+	while true; do
+		clear
+		echo "常用的一键脚本"
+		echo "------------------------"
+		echo -e "${gl_kjlan}1.   ${gl_bai}NodeQuality"
+		echo -e "${gl_kjlan}2.   ${gl_bai}IPQuality"
+		echo -e "${gl_kjlan}3.   ${gl_bai}融合怪"
+		echo -e "${gl_kjlan}4.   ${gl_bai}NetQuality"
+		echo -e "${gl_kjlan}5.   ${gl_bai}RegionRestrictionCheck"
+		echo -e "${gl_kjlan}6.   ${gl_bai}bench.sh"
+		echo -e "${gl_kjlan}7.   ${gl_bai}YABS"
+		echo -e "${gl_kjlan}8.   ${gl_bai}HardwareQuality"
+		echo -e "${gl_kjlan}9.   ${gl_bai}勇哥脚本"
+		echo -e "${gl_kjlan}10.  ${gl_bai}kejilion.sh 脚本"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1) daimon_exec_cached_script "https://run.NodeQuality.com" "NodeQuality.sh" ;;
+			2) daimon_exec_cached_script "https://IP.Check.Place" "IPQuality.sh" ;;
+			3) daimon_exec_cached_script "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" "ecs.sh" ;;
+			4) daimon_exec_cached_script "https://Net.Check.Place" "NetQuality.sh" ;;
+			5) daimon_exec_cached_script "https://check.unlock.media" "RegionRestrictionCheck.sh" ;;
+			6) daimon_exec_cached_script "https://bench.sh" "bench.sh" ;;
+			7) daimon_exec_cached_script "https://yabs.sh" "yabs.sh" ;;
+			8) daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H ;;
+			9) daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh" ;;
+			10) exec bash -c 'bash <(curl -sL kejilion.sh)' ;;
+			0) return ;;
+			*) echo "无效的输入!"; break_end ;;
+		esac
+	done
+}
+
+
 rclone_status_text() {
 	if command -v rclone >/dev/null 2>&1; then
 		rclone version 2>/dev/null | head -n 1 | awk '{print $2}'
@@ -14899,7 +15402,7 @@ rclone_manager() {
 			1) rclone_install_tool ;;
 			2) rclone_edit_config ;;
 			3) rclone_uninstall_tool ;;
-			0) kejilion ;;
+			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
 		break_end
@@ -14948,7 +15451,7 @@ warp_manager() {
 				fi
 				;;
 			0)
-				kejilion
+				return
 				;;
 			*)
 				echo "无效的输入!"
@@ -14962,31 +15465,82 @@ warp_manager() {
 
 
 kejilion_update() {
+	root_use
 	clear
 	echo "linux-tools-daimon 脚本更新"
 	echo "------------------------"
-	if [ -z "$DAIMON_UPDATE_URL" ]; then
-		echo "当前未配置 DAIMON_UPDATE_URL。"
-		echo "后续部署到你的 CDN 后，把 DAIMON_UPDATE_URL 设置为 linux-toolbox.sh 的下载地址即可。"
-		break_end
-		return
+
+	local update_url="${DAIMON_UPDATE_URL:-https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh}"
+	local tmp_file backup_file keep_permission="false" keep_canshu="" keep_stats=""
+	tmp_file=$(mktemp /tmp/daimon_tmp.XXXXXX) || { echo -e "${gl_hong}创建临时文件失败${gl_bai}"; break_end; return 1; }
+	backup_file="${DAIMON_LOCAL_SCRIPT}.bak.$(date +%Y%m%d%H%M%S)"
+
+	echo "下载地址: $update_url"
+	if ! curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o "$tmp_file" "$update_url"; then
+		if command -v wget >/dev/null 2>&1; then
+			wget -qO "$tmp_file" "$update_url" 2>/dev/null || true
+		fi
 	fi
-	local tmp_file
-	tmp_file=$(mktemp /tmp/daimon_tmp.XXXXXX)
-	if curl -fsSL --max-time 60 -o "$tmp_file" "$DAIMON_UPDATE_URL" && head -1 "$tmp_file" | grep -q '^#!/bin/bash'; then
-		cp -f "$DAIMON_LOCAL_SCRIPT" "$DAIMON_LOCAL_SCRIPT.bak" 2>/dev/null || true
-		[ -f "$DAIMON_OLD_LOCAL_SCRIPT" ] && cp -f "$DAIMON_OLD_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT.bak" 2>/dev/null || true
-		chmod +x "$tmp_file"
-		mv -f "$tmp_file" "$DAIMON_LOCAL_SCRIPT"
-		cp -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d >/dev/null 2>&1
-		chmod +x "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d >/dev/null 2>&1
-		ln -sf /usr/local/bin/d /usr/bin/d >/dev/null 2>&1
-		rm -f "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null || true
-		echo -e "${gl_lv}linux-tools-daimon 已更新${gl_bai}"
-	else
+
+	if [ ! -s "$tmp_file" ]; then
 		rm -f "$tmp_file"
-		echo -e "${gl_hong}更新失败${gl_bai}"
+		echo -e "${gl_hong}更新失败：下载文件为空或下载地址不可访问${gl_bai}"
+		break_end
+		return 1
 	fi
+
+	if ! head -1 "$tmp_file" 2>/dev/null | grep -q '^#!/bin/bash'; then
+		echo -e "${gl_hong}更新失败：下载到的不是 linux-toolbox.sh 脚本${gl_bai}"
+		echo "文件首行: $(head -1 "$tmp_file" 2>/dev/null)"
+		rm -f "$tmp_file"
+		break_end
+		return 1
+	fi
+
+	if ! grep -q 'DAIMON_NAME="linux-tools-daimon"' "$tmp_file" 2>/dev/null; then
+		echo -e "${gl_hong}更新失败：未检测到 linux-tools-daimon 标识，已停止覆盖本地脚本${gl_bai}"
+		rm -f "$tmp_file"
+		break_end
+		return 1
+	fi
+
+	if grep -q '^permission_granted="true"' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" >/dev/null 2>&1; then
+		keep_permission="true"
+	fi
+	keep_canshu=$(grep -h '^canshu=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
+	keep_stats=$(grep -h '^ENABLE_STATS=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
+
+	[ -f "$DAIMON_LOCAL_SCRIPT" ] && cp -f "$DAIMON_LOCAL_SCRIPT" "$backup_file" 2>/dev/null || true
+	chmod +x "$tmp_file"
+	if ! mv -f "$tmp_file" "$DAIMON_LOCAL_SCRIPT"; then
+		rm -f "$tmp_file"
+		echo -e "${gl_hong}更新失败：无法写入 $DAIMON_LOCAL_SCRIPT${gl_bai}"
+		break_end
+		return 1
+	fi
+	if ! cp -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d; then
+		echo -e "${gl_hong}更新失败：无法写入 /usr/local/bin/d${gl_bai}"
+		[ -f "$backup_file" ] && cp -f "$backup_file" "$DAIMON_LOCAL_SCRIPT" 2>/dev/null || true
+		break_end
+		return 1
+	fi
+	chmod +x "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d
+	ln -sf /usr/local/bin/d /usr/bin/d 2>/dev/null || true
+	rm -f "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null || true
+
+	if [ "$keep_permission" = "true" ]; then
+		sed -i 's/^permission_granted="false"/permission_granted="true"/' "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d 2>/dev/null || true
+	fi
+	if [ -n "$keep_canshu" ]; then
+		sed -i "s/^canshu=.*/$keep_canshu/" "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d 2>/dev/null || true
+	fi
+	if [ -n "$keep_stats" ]; then
+		sed -i "s/^ENABLE_STATS=.*/$keep_stats/" "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d 2>/dev/null || true
+	fi
+
+	echo -e "${gl_lv}linux-tools-daimon 已更新${gl_bai}"
+	[ -f "$backup_file" ] && echo "旧版本备份: $backup_file"
+	echo "快捷命令: d"
 	break_end
 }
 
@@ -15011,39 +15565,40 @@ echo -e "${gl_kjlan}2.   ${gl_bai}系统更新"
 echo -e "${gl_kjlan}3.   ${gl_bai}系统清理"
 echo -e "${gl_kjlan}4.   ${gl_bai}系统工具"
 echo -e "${gl_kjlan}5.   ${gl_bai}Docker管理"
-echo -e "${gl_kjlan}6.   ${gl_bai}基础工具"
+echo -e "${gl_kjlan}6.   ${gl_bai}编程工具"
 echo -e "${gl_kjlan}7.   ${gl_bai}第三方工具"
-echo -e "${gl_kjlan}8.   ${gl_bai}BBR管理"
-echo -e "${gl_kjlan}9.   ${gl_bai}SSH配置"
-echo -e "${gl_kjlan}10.  ${gl_bai}UFW防火墙管理"
-echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
-echo -e "${gl_kjlan}12.  ${gl_bai}常用的一键脚本"
-echo -e "${gl_kjlan}13.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}8.   ${gl_bai}SSH配置"
+echo -e "${gl_kjlan}9.   ${gl_bai}UFW防火墙管理"
+echo -e "${gl_kjlan}10.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}BBR管理"
+echo -e "${gl_kjlan}12.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}13.  ${gl_bai}常用的一键脚本"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}0.   ${gl_bai}退出脚本"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 read -e -p "请输入你的选择: " choice
+pause_after=true
 case $choice in
   1) linux_info ;;
   2) clear ; send_stats "系统更新" ; linux_update ;;
   3) clear ; send_stats "系统清理" ; linux_clean ;;
-  4) linux_Settings ;;
-  5) linux_docker ;;
-  6) linux_tools programming ;;
-  7) linux_tools thirdparty ;;
-  8) linux_bbr ;;
-  9) ssh_config_manager ;;
-  10) ufw_manager ;;
-  11) ssl_nginx_manager ;;
-  12) common_one_click_scripts ;;
-  13) warp_manager ;;
-  00) kejilion_update ;;
+  4) linux_Settings; pause_after=false ;;
+  5) linux_docker; pause_after=false ;;
+  6) linux_tools programming; pause_after=false ;;
+  7) linux_tools thirdparty; pause_after=false ;;
+  8) ssh_config_manager; pause_after=false ;;
+  9) ufw_manager; pause_after=false ;;
+  10) ssl_nginx_manager; pause_after=false ;;
+  11) linux_bbr; pause_after=false ;;
+  12) warp_manager; pause_after=false ;;
+  13) common_one_click_scripts; pause_after=false ;;
+  00) kejilion_update; pause_after=false ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
 esac
-	break_end
+	[ "$pause_after" = "true" ] && break_end
 done
 }
 
