@@ -5,7 +5,7 @@
 ## 运行与目录
 
 ```bash
-bash <(curl -sSL https://daimon-linux-scripts.333186.xyz/tools-linux.sh)
+bash <(curl -fsSL https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh)
 ```
 解释：在线拉取并运行主脚本。
 
@@ -45,9 +45,9 @@ mkdir -p /root/daimon
 
 ```bash
 curl -fsSL --max-time 60 -o /tmp/daimon_tmp.xxxxxx "$DAIMON_UPDATE_URL"
-cp -f ~/daimon.sh ~/daimon.sh.bak
-mv -f /tmp/daimon_tmp.xxxxxx ~/daimon.sh
-cp -f ~/daimon.sh /usr/local/bin/d
+cp -f ~/linux-toolbox.sh ~/linux-toolbox.sh.bak
+mv -f /tmp/daimon_tmp.xxxxxx ~/linux-toolbox.sh
+cp -f ~/linux-toolbox.sh /usr/local/bin/d
 ln -sf /usr/local/bin/d /usr/bin/d
 ```
 解释：下载新脚本、备份旧脚本、更新快捷命令。
@@ -126,7 +126,7 @@ rm -rf /tmp/*
 
 ## 4. 系统工具
 
-进入“系统工具”默认展示 1-21 号子选项，本身不修改系统。
+进入“系统工具”默认展示 1-20 号子选项，本身不修改系统。
 
 ### 4.1 设置脚本启动快捷键
 
@@ -513,49 +513,7 @@ ip -6 addr show scope global
 ```
 解释：通过 sysctl 配置开启 IPv6，并同步当前所有网卡的 IPv6 状态。
 
-### 4.19 bat 终端高亮配置
-
-默认展示：
-
-```bash
-bauto
-blog
-byaml
-raw docker ps
-```
-解释：展示常用 bat 改写命令；`bauto` 自动判断有限输出类型，`blog` 按日志高亮，`byaml` 按 YAML 高亮，`raw docker ps` 绕过包装函数执行原始命令。
-
-配置 bat：
-
-```bash
-command -v batcat || command -v bat
-apt install -y bat
-awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} /^# ========== bat 终端着色增强 ==========$/ {skip=1; next} skip && /^[[:space:]]*fi[[:space:]]*$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
-cat /tmp/daimon_bashrc > ~/.bashrc
-cat > ~/.bat.sh <<'EOF'
-# 写入 bauto、blog、byaml、bjson、bhttp、raw 以及 docker/ping/systemctl/git 等查看类命令包装函数
-EOF
-cat >> ~/.bashrc <<'EOF'
-# ========== bat 终端着色增强 ==========
-if [ -f ~/.bat.sh ]; then
-    source ~/.bat.sh
-fi
-EOF
-source ~/.bashrc
-```
-解释：检测 `batcat/bat`，没有则先安装；完整 bat 终端高亮函数写入 `~/.bat.sh`，`~/.bashrc` 只写入 `source ~/.bat.sh` 的小配置块。`curl` 不会被自动包装，需要手动使用 `curl -s URL | bjson/bhttp/bauto`。
-
-删除 bat 配置：
-
-```bash
-awk '/^# ========== bat terminal color setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next} /^# ========== bat 终端着色增强 ==========$/ {skip=1; next} skip && /^[[:space:]]*fi[[:space:]]*$/ {skip=0; next} !skip {print}' ~/.bashrc > /tmp/daimon_bashrc
-cat /tmp/daimon_bashrc > ~/.bashrc
-rm -f ~/.bat.sh
-source ~/.bashrc
-```
-解释：删除旧版直接写入 `~/.bashrc` 的 bat 配置块、新版 `source ~/.bat.sh` 配置块，并删除 `~/.bat.sh`。
-
-### 4.20 配置/删除cpcat
+### 4.19 配置/删除cpcat
 
 默认展示：
 
@@ -596,7 +554,7 @@ source ~/.bashrc
 ```
 解释：只删除 `# ========== cpcat clipboard setup ==========` 到 `# ========== end cpcat clipboard setup ==========` 之间的内容。
 
-### 4.21 卸载 daimon 脚本
+### 4.20 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
@@ -826,53 +784,217 @@ docker ps -a -q | xargs -r docker rm -f
 docker images -q | xargs -r docker rmi
 docker network prune -f
 docker volume prune -f
-apt remove -y docker docker-compose docker-ce docker-ce-cli containerd.io
+apt purge -y docker docker-compose docker-ce docker-ce-cli containerd.io
 rm -f /etc/docker/daemon.json
 ```
 解释：删除 Docker 数据并卸载 Docker。
 
 ## 6. 基础工具
 
-进入基础工具默认展示每个工具编号、说明、是否已安装：
+进入基础工具先显示两个分类：
+
+1. 第三方工具
+2. 编程工具
+
+第三方工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
+
+1. vim
+2. cpcat
+3. Ctrl+D
+4. starship
+5. bat
+6. btop
+7. tree
+8. ripgrep
+9. fd
+10. fzf
+11. ranger
+12. neofetch
+13. wget
+14. sudo
+15. socat
+16. htop
+17. iftop
+18. unzip
+19. tar
+20. tmux
+21. ffmpeg
+22. ncdu
+23. fail2ban
+24. iptables-persistent
+25. ufw
+26. firewalld
+
+编程工具默认展示每个工具编号、说明、是否已安装，当前顺序为：
+
+1. python
+2. npm
+3. nodejs
+4. bun
+5. uv
+6. git
+7. ClaudeCode
+8. Codex
 
 ```bash
 command -v 工具名
+grep -qxF 'export EDITOR=vim' ~/.bashrc
+grep -q '^# ========== cpcat clipboard setup ==========$' ~/.bashrc
+grep -q '^# ==================== Ctrl+D 改为删除下一个单词 ====================$' ~/.bashrc
+command -v starship
+command -v batcat || command -v bat
+command -v rg
+command -v fd || command -v fdfind
+test -x ~/.fzf/bin/fzf
+grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
+command -v python3 || command -v python
+command -v node
+command -v netfilter-persistent || dpkg -s iptables-persistent
+command -v firewall-cmd
+command -v claude
+command -v codex
 ```
 解释：判断工具是否存在。
 
-菜单操作：
+分类菜单操作：
 
 ```bash
 apt install -y 工具名
-apt remove -y 工具名
+apt purge -y 工具名
 ```
-解释：安装/卸载所选工具，支持多选、全部安装、全部卸载。
+解释：安装/卸载当前分类中选择的工具，支持多选、全部安装、全部卸载。
 
-各工具安装核心命令：
+第三方工具安装核心命令：
+
+```bash
+apt install -y vim
+echo 'export EDITOR=vim' >> ~/.bashrc
+echo 'export VISUAL=vim' >> ~/.bashrc
+cat >> ~/.bashrc <<'EOF'
+# ========== cpcat clipboard setup ==========
+# 一键复制文件内容到剪贴板
+cpcat() {
+    if [ -f "$1" ]; then
+        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
+        echo "✅ 已复制到剪贴板: $1"
+    else
+        echo "❌ 文件不存在: $1"
+    fi
+}
+# ========== end cpcat clipboard setup ==========
+EOF
+cat >> ~/.bashrc <<'EOF'
+# ==================== Ctrl+D 改为删除下一个单词 ====================
+bind '"\C-d": kill-word'
+# ==================== end Ctrl+D 改为删除下一个单词 ====================
+EOF
+source ~/.bashrc
+curl -fsSL https://starship.rs/install.sh -o /root/daimon/starship-install.sh
+sh /root/daimon/starship-install.sh -y
+cat >> ~/.bashrc <<'EOF'
+# ========== starship prompt setup ==========
+eval "$(starship init bash)"
+# ========== end starship prompt setup ==========
+EOF
+cat >> ~/.zshrc <<'EOF'
+# ========== starship prompt setup ==========
+eval "$(starship init zsh)"
+# ========== end starship prompt setup ==========
+EOF
+mkdir -p ~/.config
+vim ~/.config/starship.toml
+apt install -y bat btop
+cat > ~/.bat.sh <<'EOF'
+# 写入 bauto、blog、byaml、bjson、bhttp、raw 以及 docker/ping/systemctl/git 等查看类命令包装函数
+EOF
+cat >> ~/.bashrc <<'EOF'
+# ========== bat 终端着色增强 ==========
+if [ -f ~/.bat.sh ]; then
+    source ~/.bat.sh
+fi
+EOF
+apt install -y tree ripgrep fd-find ranger neofetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu
+echo "alias fd='fdfind'" >> ~/.bashrc
+git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
+~/.fzf/install --key-bindings --completion --no-update-rc
+cat >> ~/.bashrc <<'EOF'
+# ========== fzf 核心配置 ==========
+[ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
+command -v fzf >/dev/null 2>&1 || return
+if command -v fdfind >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+elif command -v fd >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+fi
+if command -v batcat >/dev/null 2>&1; then
+  BAT_PREVIEW='batcat --color=always --style=numbers --line-range=:500 {}'
+elif command -v bat >/dev/null 2>&1; then
+  BAT_PREVIEW='bat --color=always --style=numbers --line-range=:500 {}'
+else
+  BAT_PREVIEW='sed -n "1,500p" {}'
+fi
+export FZF_DEFAULT_OPTS="
+  --height 50%
+  --layout=reverse
+  --border
+  --inline-info
+  --preview '$BAT_PREVIEW'
+  --preview-window=right:50%
+  --bind 'ctrl-/:toggle-preview'
+"
+export FZF_CTRL_T_OPTS="--preview '$BAT_PREVIEW'"
+if command -v tree >/dev/null 2>&1; then
+  export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
+else
+  export FZF_ALT_C_OPTS="--preview 'ls -la {} | head -200'"
+fi
+# ========== end fzf 核心配置 ==========
+EOF
+source ~/.bashrc
+apt install -y fail2ban
+systemctl enable fail2ban && systemctl start fail2ban
+apt install -y iptables-persistent
+apt install -y ufw
+ufw status
+apt install -y firewalld
+systemctl enable firewalld && systemctl start firewalld
+firewall-cmd --state
+```
+解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd 使用 apt 安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；防火墙相关工具排在第三方工具列表最后。
+
+编程工具安装核心命令：
 
 ```bash
 apt install -y python3 python3-pip python3-venv python-is-python3
 apt install -y npm
 apt install -y nodejs
+apt install -y git
 bash /root/daimon/bun-install.sh
 bash /root/daimon/uv-install.sh
-apt install -y git curl iptables-persistent ufw firewalld fail2ban tree fzf ranger neofetch vim wget sudo socat htop iftop unzip tar tmux ffmpeg btop ncdu
-systemctl enable firewalld && systemctl start firewalld
-systemctl enable fail2ban && systemctl start fail2ban
 npm install -g @anthropic-ai/claude-code
 npm install -g @openai/codex
 ```
-解释：安装基础工具、Bun、uv、Claude Code、Codex CLI。
+解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Bun 和 uv 安装时会内部安装/使用 curl，但 curl 不再作为第三方工具列表项显示。
 
 特殊卸载：
 
 ```bash
+sed -i '/^export EDITOR=vim$/d;/^export VISUAL=vim$/d' ~/.bashrc
+# 删除 ~/.bashrc 中 cpcat clipboard setup 配置块
+# 删除 ~/.bashrc 中 Ctrl+D 改为删除下一个单词配置块
+# 删除 ~/.bashrc / ~/.zshrc 中 starship prompt setup 配置块
+rm -f ~/.config/starship.toml /root/daimon/starship-install.sh /usr/local/bin/starship /usr/bin/starship ~/.local/bin/starship ~/.cargo/bin/starship
+rm -f ~/.bat.sh
+# 删除 ~/.bashrc 中 fzf 核心配置块
+rm -rf ~/.fzf
+apt purge -y bat batcat btop ripgrep fd-find fzf
+sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
 npm uninstall -g @anthropic-ai/claude-code
 npm uninstall -g @openai/codex
 rm -rf ~/.bun
 rm -f ~/.local/bin/uv ~/.local/bin/uvx
 ```
-解释：卸载 Claude Code、Codex、Bun、uv。
+解释：卸载第三方工具中的配置类内容，以及 ClaudeCode、Codex、Bun、uv 等特殊安装项。
 
 ## 7. BBR 管理
 
@@ -1015,7 +1137,7 @@ ufw status
 
 ```bash
 ufw disable
-apt remove -y ufw
+apt purge -y ufw
 ```
 解释：禁用并卸载 UFW。
 

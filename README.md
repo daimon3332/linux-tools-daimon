@@ -51,9 +51,8 @@ d
    16. 系统网络自适应优化
    17. 禁用 IPv6
    18. 开启 IPv6
-   19. bat 终端高亮配置
-   20. 配置/删除 cpcat
-   21. 卸载 daimon 脚本
+   19. 配置/删除 cpcat
+   20. 卸载 daimon 脚本
 
 5. Docker 管理
    1. 安装更新 Docker 环境
@@ -78,8 +77,12 @@ d
    20. 卸载 Docker 环境
 
 6. 基础工具
-   - 按编号安装或卸载常用基础工具，支持多选、全部安装、全部卸载。
-   - 工具顺序包括：python、npm、nodejs、bun、uv、git、curl、iptables-persistent、ufw、firewalld、fail2ban、tree、fzf、ranger、neofetch、vim、Claude Code、Codex CLI 等。
+   1. 第三方工具
+      - 按编号安装或卸载第三方工具，支持多选、全部安装、全部卸载。
+      - 工具顺序包括：vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ranger、neofetch、wget、sudo、socat、htop、iftop、unzip、tar、tmux、ffmpeg、ncdu、fail2ban、iptables-persistent、ufw、firewalld。
+   2. 编程工具
+      - 按编号安装或卸载编程工具，支持多选、全部安装、全部卸载。
+      - 工具顺序包括：python、npm、nodejs、bun、uv、git、ClaudeCode、Codex。
 
 7. BBR 管理
    - 下载并运行 `tcpx.sh`，进入 BBR / 网络加速管理菜单。

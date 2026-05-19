@@ -16,11 +16,13 @@ canshu="default"
 permission_granted="false"
 ENABLE_STATS="false"
 
-# daimon 本地脚本缓存目录：除 daimon.sh 主脚本外，所有需要落地保存的外部脚本统一放这里
+# daimon 本地脚本缓存目录：除 linux-toolbox.sh 主脚本外，所有需要落地保存的外部脚本统一放这里
 DAIMON_NAME="linux-tools-daimon"
 DAIMON_BIN="d"
 DAIMON_SCRIPT_DIR="/root/daimon"
-DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/daimon.sh"
+DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh"
+DAIMON_LOCAL_SCRIPT="$HOME/linux-toolbox.sh"
+DAIMON_OLD_LOCAL_SCRIPT="$HOME/daimon.sh"
 DAIMON_REPO_URL="https://github.com/daimon3332/daimon-linux-scripts"
 DAIMON_AGREEMENT_URL="https://github.com/daimon3332/daimon-linux-scripts/blob/master/USER_AGREEMENT.md"
 mkdir -p "$DAIMON_SCRIPT_DIR" >/dev/null 2>&1 || true
@@ -89,18 +91,18 @@ run_command() {
 
 canshu_v6() {
 	if grep -q '^canshu="V6"' /usr/local/bin/d > /dev/null 2>&1; then
-		sed -i 's/^canshu="default"/canshu="V6"/' ~/daimon.sh
-	elif grep -q '^canshu="V6"' ~/daimon.sh.bak > /dev/null 2>&1; then
-		sed -i 's/^canshu="default"/canshu="V6"/' ~/daimon.sh
+		sed -i 's/^canshu="default"/canshu="V6"/' "$DAIMON_LOCAL_SCRIPT"
+	elif grep -q '^canshu="V6"' "$DAIMON_LOCAL_SCRIPT.bak" "$DAIMON_OLD_LOCAL_SCRIPT.bak" > /dev/null 2>&1; then
+		sed -i 's/^canshu="default"/canshu="V6"/' "$DAIMON_LOCAL_SCRIPT"
 	fi
 }
 
 
 CheckFirstRun_true() {
 	if grep -q '^permission_granted="true"' /usr/local/bin/d > /dev/null 2>&1; then
-		sed -i 's/^permission_granted="false"/permission_granted="true"/' ~/daimon.sh
-	elif grep -q '^permission_granted="true"' ~/daimon.sh.bak > /dev/null 2>&1; then
-		sed -i 's/^permission_granted="false"/permission_granted="true"/' ~/daimon.sh
+		sed -i 's/^permission_granted="false"/permission_granted="true"/' "$DAIMON_LOCAL_SCRIPT"
+	elif grep -q '^permission_granted="true"' "$DAIMON_LOCAL_SCRIPT.bak" "$DAIMON_OLD_LOCAL_SCRIPT.bak" > /dev/null 2>&1; then
+		sed -i 's/^permission_granted="false"/permission_granted="true"/' "$DAIMON_LOCAL_SCRIPT"
 	fi
 }
 
@@ -134,9 +136,9 @@ send_stats() {
 yinsiyuanquan2() {
 
 if grep -q '^ENABLE_STATS="false"' /usr/local/bin/d > /dev/null 2>&1; then
-	sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' ~/daimon.sh
-elif grep -q '^ENABLE_STATS="false"' ~/daimon.sh.bak > /dev/null 2>&1; then
-	sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' ~/daimon.sh
+	sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' "$DAIMON_LOCAL_SCRIPT"
+elif grep -q '^ENABLE_STATS="false"' "$DAIMON_LOCAL_SCRIPT.bak" "$DAIMON_OLD_LOCAL_SCRIPT.bak" > /dev/null 2>&1; then
+	sed -i 's/^ENABLE_STATS="false"/ENABLE_STATS="false"/' "$DAIMON_LOCAL_SCRIPT"
 fi
 
 }
@@ -149,22 +151,22 @@ yinsiyuanquan2
 
 
 daimon_self_install() {
-	# 直接运行 daimon.sh 时自动安装快捷命令 d，不再需要单独的 install.sh
+	# 直接运行 linux-toolbox.sh 时自动安装快捷命令 d，不再需要单独的 install.sh
 	sed -i '/^alias d=/d' ~/.bashrc > /dev/null 2>&1
 	sed -i '/^alias d=/d' ~/.profile > /dev/null 2>&1
 	sed -i '/^alias d=/d' ~/.bash_profile > /dev/null 2>&1
 
-	local tmp_file="/tmp/daimon.sh"
+	local tmp_file="/tmp/linux-toolbox.sh"
 	local local_source=""
 	local keep_permission="false"
 
-	if grep -q '^permission_granted="true"' /usr/local/bin/d >/dev/null 2>&1 || grep -q '^permission_granted="true"' ~/daimon.sh >/dev/null 2>&1; then
+	if grep -q '^permission_granted="true"' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" >/dev/null 2>&1; then
 		keep_permission="true"
 	fi
 
-	# 本地执行 ./daimon.sh 时，优先复制本地文件；通过 bash <(curl ...) 运行时，优先重新下载完整脚本。
-	if [ -f ./daimon.sh ] && head -1 ./daimon.sh 2>/dev/null | grep -q '^#!/bin/bash'; then
-		local_source="./daimon.sh"
+	# 本地执行 ./linux-toolbox.sh 时，优先复制本地文件；通过 bash <(curl ...) 运行时，优先重新下载完整脚本。
+	if [ -f ./linux-toolbox.sh ] && head -1 ./linux-toolbox.sh 2>/dev/null | grep -q '^#!/bin/bash'; then
+		local_source="./linux-toolbox.sh"
 	elif [ -n "${BASH_SOURCE[0]}" ] && [ -f "${BASH_SOURCE[0]}" ] && ! echo "${BASH_SOURCE[0]}" | grep -Eq '^/dev/fd/|^/proc/.*/fd/' && head -1 "${BASH_SOURCE[0]}" 2>/dev/null | grep -q '^#!/bin/bash'; then
 		local_source="${BASH_SOURCE[0]}"
 	elif [ -f "$0" ] && ! echo "$0" | grep -Eq '^/dev/fd/|^/proc/.*/fd/' && head -1 "$0" 2>/dev/null | grep -q '^#!/bin/bash'; then
@@ -172,21 +174,21 @@ daimon_self_install() {
 	fi
 
 	if [ -n "$local_source" ]; then
-		cp -f "$local_source" ~/daimon.sh > /dev/null 2>&1
+		cp -f "$local_source" "$DAIMON_LOCAL_SCRIPT" > /dev/null 2>&1
 	elif [ -n "$DAIMON_UPDATE_URL" ]; then
 		curl -fsSL --connect-timeout 10 --retry 2 "$DAIMON_UPDATE_URL" -o "$tmp_file" > /dev/null 2>&1 || wget -qO "$tmp_file" "$DAIMON_UPDATE_URL" > /dev/null 2>&1
 		if [ -s "$tmp_file" ] && head -1 "$tmp_file" 2>/dev/null | grep -q '^#!/bin/bash'; then
-			cp -f "$tmp_file" ~/daimon.sh > /dev/null 2>&1
+			cp -f "$tmp_file" "$DAIMON_LOCAL_SCRIPT" > /dev/null 2>&1
 		fi
 	fi
 
-	if [ -s ~/daimon.sh ]; then
-		chmod +x ~/daimon.sh > /dev/null 2>&1
-		cp -f ~/daimon.sh /usr/local/bin/d > /dev/null 2>&1
+	if [ -s "$DAIMON_LOCAL_SCRIPT" ]; then
+		chmod +x "$DAIMON_LOCAL_SCRIPT" > /dev/null 2>&1
+		cp -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d > /dev/null 2>&1
 		chmod +x /usr/local/bin/d > /dev/null 2>&1
 		ln -sf /usr/local/bin/d /usr/bin/d > /dev/null 2>&1
 		if [ "$keep_permission" = "true" ]; then
-			sed -i 's/^permission_granted="false"/permission_granted="true"/' ~/daimon.sh >/dev/null 2>&1
+			sed -i 's/^permission_granted="false"/permission_granted="true"/' "$DAIMON_LOCAL_SCRIPT" >/dev/null 2>&1
 			sed -i 's/^permission_granted="false"/permission_granted="true"/' /usr/local/bin/d >/dev/null 2>&1
 		fi
 	fi
@@ -218,7 +220,7 @@ UserLicenseAgreement() {
 
 	if [ "$user_input" = "y" ] || [ "$user_input" = "Y" ]; then
 		send_stats "许可同意"
-		sed -i 's/^permission_granted="false"/permission_granted="true"/' ~/daimon.sh
+		sed -i 's/^permission_granted="false"/permission_granted="true"/' "$DAIMON_LOCAL_SCRIPT"
 		sed -i 's/^permission_granted="false"/permission_granted="true"/' /usr/local/bin/d
 	else
 		send_stats "许可拒绝"
@@ -7506,13 +7508,713 @@ linux_info() {
 
 
 linux_tools() {
-  local tool_ids=(python npm nodejs bun uv git curl iptables-persistent ufw firewalld fail2ban tree fzf ranger neofetch vim wget sudo socat htop iftop unzip tar tmux ffmpeg btop ncdu claude codex)
-  local tool_names=("python" "npm" "nodejs" "bun" "uv" "git" "curl" "iptables-persistent" "ufw" "firewalld" "fail2ban" "tree" "fzf" "ranger" "neofetch" "vim" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "btop" "ncdu" "Claude Code" "Codex CLI")
-  local tool_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "下载工具" "iptables 持久化" "UFW 防火墙" "firewalld 防火墙" "SSH 防爆破" "目录树" "模糊搜索" "文件管理" "系统概览" "文本编辑器" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "现代监控" "磁盘占用" "AI 编程助手" "AI 编程助手")
+  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf ranger neofetch wget sudo socat htop iftop unzip tar tmux ffmpeg ncdu fail2ban iptables-persistent ufw firewalld)
+  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ranger" "neofetch" "wget" "sudo" "socat" "htop" "iftop" "unzip" "tar" "tmux" "ffmpeg" "ncdu" "fail2ban" "iptables-persistent" "ufw" "firewalld")
+  local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "文件管理" "系统概览" "下载工具" "权限工具" "通信工具" "系统监控" "流量监控" "解压工具" "打包工具" "终端复用" "音视频工具" "磁盘占用" "SSH 防爆破" "iptables 持久化" "UFW 防火墙" "firewalld 防火墙")
+
+  local programming_ids=(python npm nodejs bun uv git claude codex)
+  local programming_names=("python" "npm" "nodejs" "bun" "uv" "git" "ClaudeCode" "Codex")
+  local programming_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "AI 编程助手" "AI 编程助手")
+
+  reload_bashrc_safely() {
+    [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" >/dev/null 2>&1 || true
+  }
+
+  configure_vim_editor() {
+    touch "$HOME/.bashrc"
+    grep -qxF 'export EDITOR=vim' "$HOME/.bashrc" 2>/dev/null || echo 'export EDITOR=vim' >> "$HOME/.bashrc"
+    grep -qxF 'export VISUAL=vim' "$HOME/.bashrc" 2>/dev/null || echo 'export VISUAL=vim' >> "$HOME/.bashrc"
+    reload_bashrc_safely
+    echo "已设置默认编辑器: EDITOR=vim, VISUAL=vim"
+  }
+
+  remove_vim_editor_config() {
+    [ -f "$HOME/.bashrc" ] && sed -i '/^export EDITOR=vim$/d;/^export VISUAL=vim$/d' "$HOME/.bashrc"
+    reload_bashrc_safely
+    echo "已删除 vim 默认编辑器配置"
+  }
+
+  remove_cpcat_config() {
+    [ -f "$HOME/.bashrc" ] || return 0
+    local tmp_file
+    tmp_file=$(mktemp)
+    awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' "$HOME/.bashrc" > "$tmp_file"
+    cat "$tmp_file" > "$HOME/.bashrc"
+    rm -f "$tmp_file"
+  }
+
+  configure_cpcat() {
+    touch "$HOME/.bashrc"
+    remove_cpcat_config
+    cat >> "$HOME/.bashrc" << 'EOF'
+
+# ========== cpcat clipboard setup ==========
+# 一键复制文件内容到剪贴板
+cpcat() {
+    if [ -f "$1" ]; then
+        printf "\033]52;c;$(base64 < "$1" | tr -d '\n')\a"
+        echo "✅ 已复制到剪贴板: $1"
+    else
+        echo "❌ 文件不存在: $1"
+    fi
+}
+# ========== end cpcat clipboard setup ==========
+EOF
+    reload_bashrc_safely
+    echo "已配置 cpcat"
+  }
+
+  remove_ctrld_config() {
+    [ -f "$HOME/.bashrc" ] || return 0
+    local tmp_file
+    tmp_file=$(mktemp)
+    awk '/^# ==================== Ctrl\+D 改为删除下一个单词 ====================$/ {skip=1; next} /^[[:space:]]*# ==================== end Ctrl\+D 改为删除下一个单词 ====================$/ {skip=0; next} !skip {print}' "$HOME/.bashrc" | sed '/^bind '\''"\\C-d": kill-word'\''$/d' > "$tmp_file"
+    cat "$tmp_file" > "$HOME/.bashrc"
+    rm -f "$tmp_file"
+  }
+
+  configure_ctrld() {
+    touch "$HOME/.bashrc"
+    remove_ctrld_config
+    cat >> "$HOME/.bashrc" << 'EOF'
+
+# ==================== Ctrl+D 改为删除下一个单词 ====================
+bind '"\C-d": kill-word'
+# ==================== end Ctrl+D 改为删除下一个单词 ====================
+EOF
+    reload_bashrc_safely
+    echo "已配置 Ctrl+D 删除下一个单词"
+  }
+
+  configure_fd_alias() {
+    touch "$HOME/.bashrc"
+    sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" "$HOME/.bashrc" 2>/dev/null || true
+    echo "alias fd='fdfind'" >> "$HOME/.bashrc"
+    if [ -L /usr/local/bin/fd ] && readlink /usr/local/bin/fd 2>/dev/null | grep -q 'fdfind'; then
+      rm -f /usr/local/bin/fd 2>/dev/null || true
+    fi
+    reload_bashrc_safely
+    echo "已配置 fd 别名: alias fd='fdfind'"
+  }
+
+  remove_fd_alias() {
+    [ -f "$HOME/.bashrc" ] && sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" "$HOME/.bashrc" 2>/dev/null || true
+    if [ -L /usr/local/bin/fd ] && readlink /usr/local/bin/fd 2>/dev/null | grep -q 'fdfind'; then
+      rm -f /usr/local/bin/fd 2>/dev/null || true
+    fi
+    reload_bashrc_safely
+    echo "已删除 fd 别名"
+  }
+
+  remove_fzf_config() {
+    remove_shell_block "$HOME/.bashrc" '# ========== fzf 核心配置 ==========' '# ========== end fzf 核心配置 =========='
+    [ -f "$HOME/.bashrc" ] && sed -i '/\.fzf\.bash/d;/FZF_DEFAULT_COMMAND/d;/FZF_DEFAULT_OPTS/d;/FZF_CTRL_T_OPTS/d;/FZF_ALT_C_OPTS/d;/BAT_PREVIEW/d' "$HOME/.bashrc" 2>/dev/null || true
+  }
+
+  configure_fzf() {
+    if ! tool_installed fd; then
+      echo "fzf 需要 fd/fdfind，正在安装 fd..."
+      install_tool_by_id fd
+    fi
+    if ! tool_installed bat; then
+      echo "fzf 预览需要 bat/batcat，正在安装 bat..."
+      install_tool_by_id bat
+    fi
+    if ! tool_installed tree; then
+      echo "fzf Alt+C 目录预览需要 tree，正在安装 tree..."
+      install_tool_by_id tree
+    fi
+    install git
+
+    if [ -d "$HOME/.fzf/.git" ]; then
+      git -C "$HOME/.fzf" pull --ff-only || true
+    else
+      rm -rf "$HOME/.fzf"
+      git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME/.fzf"
+    fi
+
+    if [ -x "$HOME/.fzf/install" ]; then
+      "$HOME/.fzf/install" --key-bindings --completion --no-update-rc
+    fi
+
+    touch "$HOME/.bashrc"
+    remove_fzf_config
+    cat >> "$HOME/.bashrc" <<'EOF'
+
+# ========== fzf 核心配置 ==========
+
+# git clone 安装的 fzf 默认在 ~/.fzf/bin，先加入 PATH，避免 command -v 找不到
+[ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
+
+# 如果没有安装 fzf，则直接跳过
+command -v fzf >/dev/null 2>&1 || return
+
+# 默认使用 fd/fdfind 列文件
+if command -v fdfind >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+elif command -v fd >/dev/null 2>&1; then
+  export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+fi
+
+# bat/batcat 兼容
+if command -v batcat >/dev/null 2>&1; then
+  BAT_PREVIEW='batcat --color=always --style=numbers --line-range=:500 {}'
+elif command -v bat >/dev/null 2>&1; then
+  BAT_PREVIEW='bat --color=always --style=numbers --line-range=:500 {}'
+else
+  BAT_PREVIEW='sed -n "1,500p" {}'
+fi
+
+export FZF_DEFAULT_OPTS="
+  --height 50%
+  --layout=reverse
+  --border
+  --inline-info
+  --preview '$BAT_PREVIEW'
+  --preview-window=right:50%
+  --bind 'ctrl-/:toggle-preview'
+"
+
+export FZF_CTRL_T_OPTS="--preview '$BAT_PREVIEW'"
+
+if command -v tree >/dev/null 2>&1; then
+  export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
+else
+  export FZF_ALT_C_OPTS="--preview 'ls -la {} | head -200'"
+fi
+# ========== end fzf 核心配置 ==========
+EOF
+    reload_bashrc_safely
+    "$HOME/.fzf/bin/fzf" --version 2>/dev/null || fzf --version 2>/dev/null || true
+    echo "fzf 已通过 git clone 安装并写入 ~/.bashrc 配置"
+  }
+
+  remove_fzf_all() {
+    remove_fzf_config
+    rm -rf "$HOME/.fzf"
+    remove fzf
+    reload_bashrc_safely
+    echo "已删除 fzf、~/.fzf 和 ~/.bashrc 中的 fzf 配置"
+  }
+
+
+  remove_shell_block() {
+    local file="$1"
+    local start_pattern="$2"
+    local end_pattern="$3"
+    [ -f "$file" ] || return 0
+    local tmp_file
+    tmp_file=$(mktemp)
+    awk -v start="$start_pattern" -v end="$end_pattern" '
+      $0 == start {skip=1; next}
+      $0 == end {skip=0; next}
+      !skip {print}
+    ' "$file" > "$tmp_file"
+    cat "$tmp_file" > "$file"
+    rm -f "$tmp_file"
+  }
+
+  remove_starship_config() {
+    remove_shell_block "$HOME/.bashrc" '# ========== starship prompt setup ==========' '# ========== end starship prompt setup =========='
+    remove_shell_block "$HOME/.zshrc" '# ========== starship prompt setup ==========' '# ========== end starship prompt setup =========='
+    [ -f "$HOME/.bashrc" ] && sed -i '/starship init bash/d' "$HOME/.bashrc"
+    [ -f "$HOME/.zshrc" ] && sed -i '/starship init zsh/d' "$HOME/.zshrc"
+  }
+
+  configure_starship() {
+    root_use
+    install curl
+    mkdir -p "$DAIMON_SCRIPT_DIR" "$HOME/.config"
+    local installer="$DAIMON_SCRIPT_DIR/starship-install.sh"
+    curl -fsSL https://starship.rs/install.sh -o "$installer" || wget -qO "$installer" https://starship.rs/install.sh
+    chmod +x "$installer"
+    sh "$installer" -y
+
+    touch "$HOME/.bashrc"
+    remove_starship_config
+    cat >> "$HOME/.bashrc" <<'EOF'
+# ========== starship prompt setup ==========
+eval "$(starship init bash)"
+# ========== end starship prompt setup ==========
+EOF
+    touch "$HOME/.zshrc"
+    cat >> "$HOME/.zshrc" <<'EOF'
+# ========== starship prompt setup ==========
+eval "$(starship init zsh)"
+# ========== end starship prompt setup ==========
+EOF
+
+    cat > "$HOME/.config/starship.toml" <<'EOF'
+"$schema" = 'https://starship.rs/config-schema.json'
+
+format = """
+[](red)\
+$os\
+$username\
+[](bg:peach fg:red)\
+$directory\
+[](bg:yellow fg:peach)\
+$git_branch\
+$git_status\
+[](fg:yellow bg:green)\
+$c\
+$rust\
+$golang\
+$nodejs\
+$bun\
+$php\
+$java\
+$kotlin\
+$haskell\
+$python\
+[](fg:green bg:sapphire)\
+$conda\
+[](fg:sapphire bg:lavender)\
+$time\
+[ ](fg:lavender)\
+$cmd_duration\
+$line_break\
+$character"""
+
+palette = 'catppuccin_mocha'
+
+[os]
+disabled = false
+style = "bg:red fg:crust"
+
+[os.symbols]
+Windows = ""
+Ubuntu = ""
+SUSE = ""
+Raspbian = ""
+Mint = ""
+Macos = ""
+Manjaro = ""
+Linux = ""
+Gentoo = ""
+Fedora = ""
+Alpine = ""
+Amazon = ""
+Android = ""
+AOSC = ""
+Arch = ""
+Artix = ""
+CentOS = ""
+Debian = ""
+Redhat = ""
+RedHatEnterprise = ""
+
+[username]
+show_always = true
+style_user = "bg:red fg:crust"
+style_root = "bg:red fg:crust"
+format = '[ $user]($style)'
+
+[directory]
+style = "bg:peach fg:crust"
+format = "[ $path ]($style)"
+home_symbol = "/root"
+truncate_to_repo = false
+truncation_length = 100
+truncation_symbol = ""
+fish_style_pwd_dir_length = 0
+
+[directory.substitutions]
+"Documents" = " "
+"Downloads" = " "
+"Music" = " "
+"Pictures" = " "
+"Developer" = " "
+
+[git_branch]
+symbol = ""
+style = "bg:yellow"
+format = '[[ $symbol $branch ](fg:crust bg:yellow)]($style)'
+
+[git_status]
+style = "bg:yellow"
+format = '[[($all_status$ahead_behind )](fg:crust bg:yellow)]($style)'
+
+[nodejs]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[bun]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[c]
+symbol = " "
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[rust]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[golang]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[php]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[java]
+symbol = " "
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[kotlin]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[haskell]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version) ](fg:crust bg:green)]($style)'
+
+[python]
+symbol = ""
+style = "bg:green"
+format = '[[ $symbol( $version)(\(#$virtualenv\)) ](fg:crust bg:green)]($style)'
+
+[docker_context]
+symbol = ""
+style = "bg:sapphire"
+format = '[[ $symbol( $context) ](fg:crust bg:sapphire)]($style)'
+
+[conda]
+symbol = "  "
+style = "fg:crust bg:sapphire"
+format = '[$symbol$environment ]($style)'
+ignore_base = false
+
+[time]
+disabled = false
+time_format = "%R"
+style = "bg:lavender"
+format = '[[  $time ](fg:crust bg:lavender)]($style)'
+
+[line_break]
+disabled = false
+
+[character]
+disabled = false
+success_symbol = '[❯](bold fg:green)'
+error_symbol = '[❯](bold fg:red)'
+vimcmd_symbol = '[❮](bold fg:green)'
+vimcmd_replace_one_symbol = '[❮](bold fg:lavender)'
+vimcmd_replace_symbol = '[❮](bold fg:lavender)'
+vimcmd_visual_symbol = '[❮](bold fg:yellow)'
+
+[cmd_duration]
+show_milliseconds = true
+format = " in $duration "
+style = "bg:lavender"
+disabled = false
+show_notifications = true
+min_time_to_notify = 45000
+
+[palettes.catppuccin_mocha]
+rosewater = "#f5e0dc"
+flamingo = "#f2cdcd"
+pink = "#f5c2e7"
+mauve = "#cba6f7"
+red = "#f38ba8"
+maroon = "#eba0ac"
+peach = "#fab387"
+yellow = "#f9e2af"
+green = "#a6e3a1"
+teal = "#94e2d5"
+sky = "#89dceb"
+sapphire = "#74c7ec"
+blue = "#89b4fa"
+lavender = "#b4befe"
+text = "#cdd6f4"
+subtext1 = "#bac2de"
+subtext0 = "#a6adc8"
+overlay2 = "#9399b2"
+overlay1 = "#7f849c"
+overlay0 = "#6c7086"
+surface2 = "#585b70"
+surface1 = "#45475a"
+surface0 = "#313244"
+base = "#1e1e2e"
+mantle = "#181825"
+crust = "#11111b"
+
+[palettes.catppuccin_frappe]
+rosewater = "#f2d5cf"
+flamingo = "#eebebe"
+pink = "#f4b8e4"
+mauve = "#ca9ee6"
+red = "#e78284"
+maroon = "#ea999c"
+peach = "#ef9f76"
+yellow = "#e5c890"
+green = "#a6d189"
+teal = "#81c8be"
+sky = "#99d1db"
+sapphire = "#85c1dc"
+blue = "#8caaee"
+lavender = "#babbf1"
+text = "#c6d0f5"
+subtext1 = "#b5bfe2"
+subtext0 = "#a5adce"
+overlay2 = "#949cbb"
+overlay1 = "#838ba7"
+overlay0 = "#737994"
+surface2 = "#626880"
+surface1 = "#51576d"
+surface0 = "#414559"
+base = "#303446"
+mantle = "#292c3c"
+crust = "#232634"
+
+[palettes.catppuccin_latte]
+rosewater = "#dc8a78"
+flamingo = "#dd7878"
+pink = "#ea76cb"
+mauve = "#8839ef"
+red = "#d20f39"
+maroon = "#e64553"
+peach = "#fe640b"
+yellow = "#df8e1d"
+green = "#40a02b"
+teal = "#179299"
+sky = "#04a5e5"
+sapphire = "#209fb5"
+blue = "#1e66f5"
+lavender = "#7287fd"
+text = "#4c4f69"
+subtext1 = "#5c5f77"
+subtext0 = "#6c6f85"
+overlay2 = "#7c7f93"
+overlay1 = "#8c8fa1"
+overlay0 = "#9ca0b0"
+surface2 = "#acb0be"
+surface1 = "#bcc0cc"
+surface0 = "#ccd0da"
+base = "#eff1f5"
+mantle = "#e6e9ef"
+crust = "#dce0e8"
+
+[palettes.catppuccin_macchiato]
+rosewater = "#f4dbd6"
+flamingo = "#f0c6c6"
+pink = "#f5bde6"
+mauve = "#c6a0f6"
+red = "#ed8796"
+maroon = "#ee99a0"
+peach = "#f5a97f"
+yellow = "#eed49f"
+green = "#a6da95"
+teal = "#8bd5ca"
+sky = "#91d7e3"
+sapphire = "#7dc4e4"
+blue = "#8aadf4"
+lavender = "#b7bdf8"
+text = "#cad3f5"
+subtext1 = "#b8c0e0"
+subtext0 = "#a5adcb"
+overlay2 = "#939ab7"
+overlay1 = "#8087a2"
+overlay0 = "#6e738d"
+surface2 = "#5b6078"
+surface1 = "#494d64"
+surface0 = "#363a4f"
+base = "#24273a"
+mantle = "#1e2030"
+crust = "#181926"
+EOF
+    reload_bashrc_safely
+    starship --version 2>/dev/null || true
+    echo "starship 已安装并写入配置: $HOME/.config/starship.toml"
+  }
+
+  remove_starship_all() {
+    remove_starship_config
+    rm -f "$HOME/.config/starship.toml"
+    rm -f "$DAIMON_SCRIPT_DIR/starship-install.sh"
+    rm -f /usr/local/bin/starship /usr/bin/starship "$HOME/.local/bin/starship" "$HOME/.cargo/bin/starship" 2>/dev/null || true
+    reload_bashrc_safely
+    echo "已彻底删除 starship、shell 初始化配置和 ~/.config/starship.toml"
+  }
+
+  remove_bat_config() {
+    local bashrc_file="$HOME/.bashrc"
+    [ -f "$bashrc_file" ] || return 0
+    local tmp_file
+    tmp_file=$(mktemp)
+    awk '
+      /^# ========== bat terminal color setup ==========$/ {skip=1; next}
+      /^[[:space:]]*# ========== end bat terminal color setup ==========$/ {skip=0; next}
+      /^# ========== bat 终端着色增强 ==========$/ {skip=1; next}
+      skip && /^[[:space:]]*fi[[:space:]]*$/ {skip=0; next}
+      !skip {print}
+    ' "$bashrc_file" > "$tmp_file"
+    cat "$tmp_file" > "$bashrc_file"
+    rm -f "$tmp_file"
+    rm -f "$HOME/.bat.sh"
+  }
+
+  configure_bat_terminal() {
+    if ! command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
+      install bat
+    fi
+    if ! command -v batcat >/dev/null 2>&1 && ! command -v bat >/dev/null 2>&1; then
+      echo "bat 安装失败或当前系统未提供 bat/batcat 命令"
+      return 1
+    fi
+    local bashrc_file="$HOME/.bashrc"
+    local bat_file="$HOME/.bat.sh"
+    touch "$bashrc_file"
+    remove_bat_config
+    cat > "$bat_file" <<'EOF'
+  # 避免 alias 抢在函数前面生效
+  unalias bat cat docker ping ip ss ps df free systemctl journalctl git lsblk netstat ufw 2>/dev/null
+
+  # Debian/Ubuntu 上 bat 通常叫 batcat
+  if command -v batcat >/dev/null 2>&1; then
+    __BAT_BIN="batcat"
+  elif command -v bat >/dev/null 2>&1; then
+    __BAT_BIN="bat"
+  else
+    __BAT_BIN=""
+  fi
+
+  if [ -n "$__BAT_BIN" ]; then
+    alias bat="$__BAT_BIN"
+
+    __bat_filter() {
+      local lang="${1:-log}"
+      if [ -t 1 ]; then
+        "$__BAT_BIN" --paging=never --style=plain --color=always -l "$lang"
+      else
+        command cat
+      fi
+    }
+
+    cat() {
+      if [ -t 1 ]; then
+        "$__BAT_BIN" --paging=never --style=plain "$@"
+      else
+        command cat "$@"
+      fi
+    }
+
+    bcat()  { __bat_filter log; }
+    blog()  { __bat_filter log; }
+    bjson() { __bat_filter json; }
+    byaml() { __bat_filter yaml; }
+    bconf() { __bat_filter conf; }
+    bsh()   { __bat_filter bash; }
+    bdiff() { __bat_filter diff; }
+    bhttp() { __bat_filter http; }
+
+    bauto() {
+      local tmp lang
+      tmp="$(mktemp)"
+      command cat > "$tmp"
+      if python3 -m json.tool "$tmp" >/dev/null 2>&1; then
+        lang="json"
+      elif grep -qE '^(diff --git|@@ |--- |\+\+\+ )' "$tmp"; then
+        lang="diff"
+      elif grep -qE '^[[:space:]]*[A-Za-z0-9_.-]+:[[:space:]]*' "$tmp"; then
+        lang="yaml"
+      elif head -n 1 "$tmp" | grep -qE '^#!.*(ba|z|k)?sh'; then
+        lang="bash"
+      else
+        lang="log"
+      fi
+      if [ -t 1 ]; then
+        "$__BAT_BIN" --paging=never --style=plain --color=always -l "$lang" "$tmp"
+      else
+        command cat "$tmp"
+      fi
+      rm -f "$tmp"
+    }
+
+    raw() { command "$@"; }
+
+    docker() {
+      case "$1" in
+        ps|images|info|version|stats|events) command docker "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]} ;;
+        inspect) command docker "$@" 2>&1 | __bat_filter json; return ${PIPESTATUS[0]} ;;
+        logs) command docker "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]} ;;
+        compose)
+          case "$2" in
+            config) command docker "$@" 2>&1 | __bat_filter yaml; return ${PIPESTATUS[0]} ;;
+            ps|logs|events|images|top) command docker "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]} ;;
+            *) command docker "$@" ;;
+          esac
+          ;;
+        *) command docker "$@" ;;
+      esac
+    }
+
+    ping() { command ping "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    ip() { command ip "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    ss() { command ss "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    netstat() { command netstat "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    ps() { command ps "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    df() { command df "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    free() { command free "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    lsblk() { command lsblk "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    systemctl() { command systemctl --no-pager "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+    journalctl() { command journalctl --no-pager "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]}; }
+
+    ufw() {
+      case "$1" in
+        status|show|app) command ufw "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]} ;;
+        *) command ufw "$@" ;;
+      esac
+    }
+
+    git() {
+      case "$1" in
+        diff|show) command git -c color.ui=never "$@" 2>&1 | __bat_filter diff; return ${PIPESTATUS[0]} ;;
+        status|log|branch|remote) command git -c color.ui=never "$@" 2>&1 | __bat_filter log; return ${PIPESTATUS[0]} ;;
+        *) command git "$@" ;;
+      esac
+    }
+  fi
+EOF
+    cat >> "$bashrc_file" <<'EOF'
+# ========== bat 终端着色增强 ==========
+if [ -f ~/.bat.sh ]; then
+    source ~/.bat.sh
+fi
+EOF
+    reload_bashrc_safely
+    echo "bat 终端高亮配置已写入: $bat_file"
+  }
+
+  remove_bat_all() {
+    remove_bat_config
+    remove bat batcat
+    reload_bashrc_safely
+    echo "已删除 bat 终端高亮配置，并尝试卸载 bat/batcat"
+  }
 
   tool_installed() {
     local id="$1"
     case "$id" in
+      vim) command -v vim >/dev/null 2>&1 && grep -qxF 'export EDITOR=vim' "$HOME/.bashrc" 2>/dev/null && grep -qxF 'export VISUAL=vim' "$HOME/.bashrc" 2>/dev/null ;;
+      cpcat) grep -q '^# ========== cpcat clipboard setup ==========$' "$HOME/.bashrc" 2>/dev/null ;;
+      ctrld) grep -q '^# ==================== Ctrl+D 改为删除下一个单词 ====================$' "$HOME/.bashrc" 2>/dev/null || grep -q '^bind '\''"\\C-d": kill-word'\''$' "$HOME/.bashrc" 2>/dev/null ;;
+      starship) command -v starship >/dev/null 2>&1 && [ -f "$HOME/.config/starship.toml" ] ;;
+      bat) (command -v batcat >/dev/null 2>&1 || command -v bat >/dev/null 2>&1) && [ -f "$HOME/.bat.sh" ] && grep -q '^# ========== bat 终端着色增强 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
+      ripgrep) command -v rg >/dev/null 2>&1 ;;
+      fd) command -v fd >/dev/null 2>&1 || (command -v fdfind >/dev/null 2>&1 && grep -Eq "^alias fd=('fdfind'|\"fdfind\"|fdfind)$" "$HOME/.bashrc" 2>/dev/null) ;;
+      fzf) [ -x "$HOME/.fzf/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       python) command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 ;;
       nodejs) command -v node >/dev/null 2>&1 ;;
       iptables-persistent) command -v netfilter-persistent >/dev/null 2>&1 || dpkg -s iptables-persistent >/dev/null 2>&1 ;;
@@ -7532,7 +8234,7 @@ linux_tools() {
         status="已安装"
         color="$gl_lv"
       fi
-      printf "%2d. %-12s %-18s %b%s%b\n" "$((i+1))" "${tool_names[i]}" "${tool_desc[i]}" "$color" "$status" "$gl_bai"
+      printf "%2d. %-20s %-18s %b%s%b\n" "$((i+1))" "${tool_names[i]}" "${tool_desc[i]}" "$color" "$status" "$gl_bai"
     done
     echo -e "${gl_kjlan}------------------------${gl_bai}"
   }
@@ -7540,6 +8242,39 @@ linux_tools() {
   install_tool_by_id() {
     local id="$1"
     case "$id" in
+      vim)
+        if tool_installed vim || command -v vim >/dev/null 2>&1; then
+          echo "vim 已安装，正在检查并设置默认编辑器..."
+        else
+          install vim
+        fi
+        configure_vim_editor
+        vim --version 2>/dev/null | head -n 1 || true
+        ;;
+      cpcat)
+        configure_cpcat
+        ;;
+      ctrld)
+        configure_ctrld
+        ;;
+      starship)
+        configure_starship
+        ;;
+      bat)
+        configure_bat_terminal
+        ;;
+      ripgrep)
+        install ripgrep
+        rg --version 2>/dev/null | head -n 1 || true
+        ;;
+      fd)
+        install fd-find
+        configure_fd_alias
+        fd --version 2>/dev/null || fdfind --version 2>/dev/null || true
+        ;;
+      fzf)
+        configure_fzf
+        ;;
       python)
         install python3 python3-pip python3-venv python-is-python3
         python3 --version 2>/dev/null || python --version 2>/dev/null
@@ -7594,7 +8329,7 @@ linux_tools() {
         systemctl start firewalld >/dev/null 2>&1 || true
         firewall-cmd --state 2>/dev/null || true
         ;;
-      git|curl|tree|fzf|ranger|neofetch|vim|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
+      git|curl|tree|ranger|neofetch|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
@@ -7629,6 +8364,14 @@ linux_tools() {
   remove_tool_by_id() {
     local id="$1"
     case "$id" in
+      vim) remove_vim_editor_config; remove vim ;;
+      cpcat) remove_cpcat_config; reload_bashrc_safely; echo "已删除 cpcat 配置" ;;
+      ctrld) remove_ctrld_config; reload_bashrc_safely; echo "已删除 Ctrl+D 绑定" ;;
+      starship) remove_starship_all ;;
+      bat) remove_bat_all ;;
+      ripgrep) remove ripgrep ;;
+      fd) remove_fd_alias; remove fd-find ;;
+      fzf) remove_fzf_all ;;
       python) remove python3 python3-pip python3-venv python-is-python3 ;;
       nodejs) remove nodejs ;;
       iptables-persistent) remove iptables-persistent iptables-services ;;
@@ -7662,41 +8405,83 @@ linux_tools() {
     seq 1 ${#tool_ids[@]} | tr '\n' ' '
   }
 
+  tool_category_menu() {
+    local category_key="$1"
+    local category_title="$2"
+    local tool_ids=()
+    local tool_names=()
+    local tool_desc=()
+
+    case "$category_key" in
+      thirdparty)
+        tool_ids=("${thirdparty_ids[@]}")
+        tool_names=("${thirdparty_names[@]}")
+        tool_desc=("${thirdparty_desc[@]}")
+        ;;
+      programming)
+        tool_ids=("${programming_ids[@]}")
+        tool_names=("${programming_names[@]}")
+        tool_desc=("${programming_desc[@]}")
+        ;;
+      *)
+        echo "未知分类: $category_key"
+        break_end
+        return
+        ;;
+    esac
+
+    while true; do
+      clear
+      echo -e "$category_title"
+      show_tool_status
+      echo -e "${gl_kjlan}1.   ${gl_bai}安装工具（支持多选，输入工具编号，如: 1 4 6）"
+      echo -e "${gl_kjlan}2.   ${gl_bai}卸载工具（支持多选，输入工具编号，如: 7 10）"
+      echo -e "${gl_kjlan}3.   ${gl_bai}全部安装"
+      echo -e "${gl_kjlan}4.   ${gl_bai}全部卸载"
+      echo -e "${gl_kjlan}0.   ${gl_bai}返回基础工具"
+      echo -e "${gl_kjlan}------------------------${gl_bai}"
+      read -e -p "请输入你的选择: " sub_choice
+      case $sub_choice in
+        1)
+          read -e -p "请输入要安装的工具编号（支持多选，空格分隔）: " nums
+          handle_tool_numbers install "$nums"
+          ;;
+        2)
+          read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums
+          handle_tool_numbers remove "$nums"
+          ;;
+        3)
+          handle_tool_numbers install "$(all_tool_numbers)"
+          ;;
+        4)
+          read -e -p "确认卸载当前分类中的全部工具？(y/N): " confirm
+          if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+            handle_tool_numbers remove "$(all_tool_numbers)"
+          else
+            echo "已取消"
+          fi
+          ;;
+        0) return ;;
+        *) echo "无效的输入!" ;;
+      esac
+      break_end
+    done
+  }
+
   while true; do
     clear
     echo -e "基础工具"
-    show_tool_status
-    echo -e "${gl_kjlan}1.   ${gl_bai}安装工具（支持多选，输入工具编号，如: 1 4 6）"
-    echo -e "${gl_kjlan}2.   ${gl_bai}卸载工具（支持多选，输入工具编号，如: 7 10）"
-    echo -e "${gl_kjlan}3.   ${gl_bai}全部安装"
-    echo -e "${gl_kjlan}4.   ${gl_bai}全部卸载"
+    echo -e "${gl_kjlan}1.   ${gl_bai}第三方工具"
+    echo -e "${gl_kjlan}2.   ${gl_bai}编程工具"
     echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
     echo -e "${gl_kjlan}------------------------${gl_bai}"
     read -e -p "请输入你的选择: " sub_choice
     case $sub_choice in
-      1)
-        read -e -p "请输入要安装的工具编号（支持多选，空格分隔）: " nums
-        handle_tool_numbers install "$nums"
-        ;;
-      2)
-        read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums
-        handle_tool_numbers remove "$nums"
-        ;;
-      3)
-        handle_tool_numbers install "$(all_tool_numbers)"
-        ;;
-      4)
-        read -e -p "确认卸载基础工具列表中的全部工具？(y/N): " confirm
-        if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-          handle_tool_numbers remove "$(all_tool_numbers)"
-        else
-          echo "已取消"
-        fi
-        ;;
+      1) tool_category_menu thirdparty "第三方工具" ;;
+      2) tool_category_menu programming "编程工具" ;;
       0) kejilion ;;
-      *) echo "无效的输入!" ;;
+      *) echo "无效的输入!"; break_end ;;
     esac
-    break_end
   done
 }
 
@@ -19426,8 +20211,7 @@ linux_Settings() {
 	  echo -e "${gl_kjlan}13.  ${gl_bai}查看ssh的ip                     ${gl_kjlan}14.  ${gl_bai}网卡管理工具"
 	  echo -e "${gl_kjlan}15.  ${gl_bai}journalctl日志管理              ${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
 	  echo -e "${gl_kjlan}17.  ${gl_bai}禁用IPv6                         ${gl_kjlan}18.  ${gl_bai}开启IPv6"
-	  echo -e "${gl_kjlan}19.  ${gl_bai}bat终端高亮配置                 ${gl_kjlan}20.  ${gl_bai}配置/删除cpcat"
-	  echo -e "${gl_kjlan}21.  ${gl_bai}卸载daimon脚本"
+	  echo -e "${gl_kjlan}19.  ${gl_bai}配置/删除cpcat                  ${gl_kjlan}20.  ${gl_bai}卸载daimon脚本"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 	  echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -19833,14 +20617,10 @@ EOF
 			  ;;
 
 		  19)
-			  bat_terminal_manager
-			  ;;
-
-		  20)
 			  cpcat_manager
 			  ;;
 
-		  21)
+		  20)
 			  clear
 			  send_stats "卸载daimon脚本"
 			  echo "卸载daimon脚本"
@@ -19853,7 +20633,7 @@ EOF
 				  clear
 				  (crontab -l | grep -v "kejilion.sh") | crontab -
 				  rm -f /usr/local/bin/d
-				  rm ~/daimon.sh
+				  rm -f "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT"
 				  echo "脚本已卸载，再见！"
 				  break_end
 				  clear
@@ -21011,7 +21791,7 @@ rclone_uninstall_tool() {
 	read -e -p "确认卸载 rclone？(y/N): " confirm
 	[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return; }
 	if command -v apt >/dev/null 2>&1; then
-		apt remove -y rclone 2>/dev/null || true
+		apt purge -y rclone 2>/dev/null || true
 	elif command -v dnf >/dev/null 2>&1; then
 		dnf remove -y rclone 2>/dev/null || true
 	elif command -v yum >/dev/null 2>&1; then
@@ -21113,18 +21893,21 @@ kejilion_update() {
 	echo "------------------------"
 	if [ -z "$DAIMON_UPDATE_URL" ]; then
 		echo "当前未配置 DAIMON_UPDATE_URL。"
-		echo "后续部署到你的 CDN 后，把 DAIMON_UPDATE_URL 设置为 daimon.sh 的下载地址即可。"
+		echo "后续部署到你的 CDN 后，把 DAIMON_UPDATE_URL 设置为 linux-toolbox.sh 的下载地址即可。"
 		break_end
 		return
 	fi
 	local tmp_file
 	tmp_file=$(mktemp /tmp/daimon_tmp.XXXXXX)
 	if curl -fsSL --max-time 60 -o "$tmp_file" "$DAIMON_UPDATE_URL" && head -1 "$tmp_file" | grep -q '^#!/bin/bash'; then
-		cp -f ~/daimon.sh ~/daimon.sh.bak 2>/dev/null || true
+		cp -f "$DAIMON_LOCAL_SCRIPT" "$DAIMON_LOCAL_SCRIPT.bak" 2>/dev/null || true
+		[ -f "$DAIMON_OLD_LOCAL_SCRIPT" ] && cp -f "$DAIMON_OLD_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT.bak" 2>/dev/null || true
 		chmod +x "$tmp_file"
-		mv -f "$tmp_file" ~/daimon.sh
-		cp -f ~/daimon.sh /usr/local/bin/d >/dev/null 2>&1
+		mv -f "$tmp_file" "$DAIMON_LOCAL_SCRIPT"
+		cp -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d >/dev/null 2>&1
+		chmod +x "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d >/dev/null 2>&1
 		ln -sf /usr/local/bin/d /usr/bin/d >/dev/null 2>&1
+		rm -f "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null || true
 		echo -e "${gl_lv}linux-tools-daimon 已更新${gl_bai}"
 	else
 		rm -f "$tmp_file"
