@@ -21,6 +21,8 @@ DAIMON_NAME="linux-tools-daimon"
 DAIMON_BIN="d"
 DAIMON_SCRIPT_DIR="/root/daimon"
 DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh"
+DAIMON_UPDATE_GITHUB_URL="https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh"
+DAIMON_UPDATE_GITHUB_PROXY_URL="https://gh-proxy.com/raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh"
 DAIMON_LOCAL_SCRIPT="$HOME/linux-toolbox.sh"
 DAIMON_OLD_LOCAL_SCRIPT="$HOME/daimon.sh"
 DAIMON_REPO_URL="https://github.com/daimon3332/daimon-linux-scripts"
@@ -117,6 +119,70 @@ daimon_download_to() {
 			return 0
 		fi
 	done < <(daimon_github_url_candidates "$url")
+	return 1
+}
+
+daimon_update_fallback_url() {
+	if [ "$canshu" = "CN" ] || daimon_is_cn; then
+		echo "$DAIMON_UPDATE_GITHUB_PROXY_URL"
+	else
+		echo "$DAIMON_UPDATE_GITHUB_URL"
+	fi
+}
+
+daimon_try_download_url() {
+	local url="$1"
+	local target="$2"
+	echo "下载地址: $url"
+	rm -f "$target" 2>/dev/null || true
+	curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o "$target" "$url" 2>/dev/null && [ -s "$target" ] && return 0
+	if command -v wget >/dev/null 2>&1; then
+		wget -qO "$target" "$url" 2>/dev/null && [ -s "$target" ] && return 0
+	fi
+	return 1
+}
+
+daimon_validate_update_file() {
+	local file="$1"
+	if [ ! -s "$file" ]; then
+		echo -e "${gl_hong}校验失败：下载文件为空${gl_bai}"
+		return 1
+	fi
+	if ! head -1 "$file" 2>/dev/null | grep -q '^#!/bin/bash'; then
+		echo -e "${gl_hong}校验失败：下载到的不是 linux-toolbox.sh 脚本${gl_bai}"
+		echo "文件首行: $(head -1 "$file" 2>/dev/null)"
+		return 1
+	fi
+	if ! grep -q 'DAIMON_NAME="linux-tools-daimon"' "$file" 2>/dev/null; then
+		echo -e "${gl_hong}校验失败：未检测到 linux-tools-daimon 标识${gl_bai}"
+		return 1
+	fi
+	return 0
+}
+
+daimon_download_update_file() {
+	local target="$1"
+	local primary="${DAIMON_UPDATE_URL:-https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh}"
+	local fallback
+	fallback=$(daimon_update_fallback_url)
+
+	if daimon_try_download_url "$primary" "$target" && daimon_validate_update_file "$target"; then
+		return 0
+	fi
+
+	echo -e "${gl_huang}主更新地址失败，切换 GitHub 仓库地址...${gl_bai}"
+	if daimon_try_download_url "$fallback" "$target" && daimon_validate_update_file "$target"; then
+		return 0
+	fi
+
+	if [ "$fallback" != "$DAIMON_UPDATE_GITHUB_URL" ]; then
+		echo -e "${gl_huang}指定 GitHub 代理失败，继续尝试备用 GitHub 代理...${gl_bai}"
+		if daimon_download_to "$DAIMON_UPDATE_GITHUB_URL" "$target" && daimon_validate_update_file "$target"; then
+			return 0
+		fi
+	fi
+
+	rm -f "$target" 2>/dev/null || true
 	return 1
 }
 
@@ -282,8 +348,7 @@ daimon_self_install() {
 	if [ -n "$local_source" ]; then
 		cp -f "$local_source" "$DAIMON_LOCAL_SCRIPT" > /dev/null 2>&1
 	elif [ -n "$DAIMON_UPDATE_URL" ]; then
-		curl -fsSL --connect-timeout 10 --retry 2 "$DAIMON_UPDATE_URL" -o "$tmp_file" > /dev/null 2>&1 || wget -qO "$tmp_file" "$DAIMON_UPDATE_URL" > /dev/null 2>&1
-		if [ -s "$tmp_file" ] && head -1 "$tmp_file" 2>/dev/null | grep -q '^#!/bin/bash'; then
+		if daimon_download_update_file "$tmp_file" >/dev/null 2>&1; then
 			cp -f "$tmp_file" "$DAIMON_LOCAL_SCRIPT" > /dev/null 2>&1
 		fi
 	fi
@@ -16703,36 +16768,13 @@ kejilion_update() {
 	echo "linux-tools-daimon 脚本更新"
 	echo "------------------------"
 
-	local update_url="${DAIMON_UPDATE_URL:-https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh}"
 	local tmp_file rollback_file keep_permission="false" keep_canshu="" keep_stats=""
 	tmp_file=$(mktemp /tmp/daimon_tmp.XXXXXX) || { echo -e "${gl_hong}创建临时文件失败${gl_bai}"; break_end; return 1; }
 	rollback_file=$(mktemp /tmp/daimon_rollback.XXXXXX) || rollback_file=""
 
-	echo "下载地址: $update_url"
-	if ! curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o "$tmp_file" "$update_url"; then
-		if command -v wget >/dev/null 2>&1; then
-			wget -qO "$tmp_file" "$update_url" 2>/dev/null || true
-		fi
-	fi
-
-	if [ ! -s "$tmp_file" ]; then
+	if ! daimon_download_update_file "$tmp_file"; then
 		rm -f "$tmp_file" "$rollback_file"
-		echo -e "${gl_hong}更新失败：下载文件为空或下载地址不可访问${gl_bai}"
-		break_end
-		return 1
-	fi
-
-	if ! head -1 "$tmp_file" 2>/dev/null | grep -q '^#!/bin/bash'; then
-		echo -e "${gl_hong}更新失败：下载到的不是 linux-toolbox.sh 脚本${gl_bai}"
-		echo "文件首行: $(head -1 "$tmp_file" 2>/dev/null)"
-		rm -f "$tmp_file" "$rollback_file"
-		break_end
-		return 1
-	fi
-
-	if ! grep -q 'DAIMON_NAME="linux-tools-daimon"' "$tmp_file" 2>/dev/null; then
-		echo -e "${gl_hong}更新失败：未检测到 linux-tools-daimon 标识，已停止覆盖本地脚本${gl_bai}"
-		rm -f "$tmp_file" "$rollback_file"
+		echo -e "${gl_hong}更新失败：主地址和 GitHub 备用地址都不可用，已停止覆盖本地脚本${gl_bai}"
 		break_end
 		return 1
 	fi
