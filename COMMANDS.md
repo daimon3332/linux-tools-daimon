@@ -201,7 +201,7 @@ linux_tools thirdparty-install-all
 
 ## 5. 系统工具
 
-进入“系统工具”默认展示 1-19 号子选项，本身不修改系统。
+进入“系统工具”默认展示 1-18 号子选项，本身不修改系统。
 
 ### 5.1 设置脚本启动快捷键
 
@@ -480,21 +480,7 @@ rm -f /tmp/daimon_proxy_test_xxx
 ```
 解释：添加、删除、测速 GitHub 镜像源，测速文件会删除。
 
-### 5.12 DD重装系统
-
-默认展示：脚本来源、默认 Ubuntu 22.04、默认登录 `root / Tgadw2145qewO / 41000 端口`。
-
-```bash
-apt update -y
-apt install -y wget
-wget --no-check-certificate -qO /root/InstallNET.sh 'https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh'
-chmod a+x /root/InstallNET.sh
-bash /root/InstallNET.sh -ubuntu 22.04 -pwd 'Tgadw2145qewO' -port 41000
-reboot
-```
-解释：下载 leitbogioro/Tools 的 InstallNET 脚本到 `/root`，执行 Ubuntu DD 重装；默认指定 SSH 端口为 41000，除非用户在菜单中另行输入。
-
-### 5.13 查看 ssh 的 ip
+### 5.12 查看 ssh 的 ip
 
 ```bash
 echo "$SSH_CONNECTION" | awk '{print $1,$2}'
@@ -504,7 +490,7 @@ ss -Htnp | awk '$1=="ESTAB" && $0 ~ /(sshd|ssh)/ {print $5}'
 ```
 解释：查看当前 SSH 来源 IP、登录会话来源 IP、已建立 SSH 连接 IP。
 
-### 5.14 网卡管理工具
+### 5.13 网卡管理工具
 
 默认展示：
 
@@ -524,7 +510,7 @@ ip route
 ```
 解释：启用网卡、禁用网卡、查看详情、查看路由。
 
-### 5.15 journalctl日志管理
+### 5.14 journalctl日志管理
 
 ```bash
 cp /etc/systemd/journald.conf /etc/systemd/journald.conf.bak.$(date +%Y%m%d%H%M%S)
@@ -547,7 +533,7 @@ journalctl --vacuum-size=500M
 ```
 解释：查看日志占用、服务日志、按时间清理、按大小清理。
 
-### 5.16 系统网络自适应优化
+### 5.15 系统网络自适应优化
 
 默认展示：
 
@@ -579,7 +565,7 @@ bash /root/daimon/network-optimize.sh restore
 ```
 解释：调用脚本内置回滚逻辑，恢复备份或删除自动优化配置。
 
-### 5.17 禁用 IPv6
+### 5.16 禁用 IPv6
 
 ```bash
 cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
@@ -593,7 +579,7 @@ ip -6 addr show scope global
 ```
 解释：通过 sysctl 配置禁用 IPv6，并同步当前所有网卡的 IPv6 状态。
 
-### 5.18 开启 IPv6
+### 5.17 开启 IPv6
 
 ```bash
 cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
@@ -607,7 +593,7 @@ ip -6 addr show scope global
 ```
 解释：通过 sysctl 配置开启 IPv6，并同步当前所有网卡的 IPv6 状态。
 
-### 5.19 卸载 daimon 脚本
+### 5.18 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
@@ -712,7 +698,11 @@ if [ -f ~/.bat.sh ]; then
     source ~/.bat.sh
 fi
 EOF
-apt install -y tree ripgrep fd-find yazi ncdu
+apt install -y tree ripgrep fd-find ncdu
+curl -sS https://debian.griffo.io/EA0F721D231FDD3A0A17B9AC7808B4DD62C41256.asc | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
+echo "deb https://debian.griffo.io/apt $(lsb_release -sc 2>/dev/null) main" | tee /etc/apt/sources.list.d/debian.griffo.io.list >/dev/null
+apt update -y
+apt install -y yazi
 add-apt-repository -y ppa:zhangsongcui3371/fastfetch
 apt update -y
 apt install -y fastfetch
@@ -773,8 +763,9 @@ if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
 fi
 EOF
 source ~/.bashrc
+exec bash
 ```
-解释：安装第三方常用工具；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、yazi、ncdu 使用 apt 安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键。
+解释：安装第三方常用工具；安装完成后会 source shell 配置并 `exec bash` 重新进入命令行；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ncdu 使用 apt 安装；yazi 通过 `debian.griffo.io` apt 源安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键。
 
 特殊卸载：
 
@@ -790,6 +781,7 @@ rm -rf ~/.fzf
 # 删除 ~/.bashrc 中 ble.sh setup 配置块
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
 rm -rf ~/.config/btop ~/.config/yazi ~/.local/share/yazi ~/.cache/yazi ~/.config/fastfetch
+rm -f /etc/apt/sources.list.d/debian.griffo.io.list /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
 add-apt-repository --remove -y ppa:zhangsongcui3371/fastfetch
 apt purge -y vim bat batcat btop tree ripgrep fd-find fzf yazi fastfetch ncdu
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc

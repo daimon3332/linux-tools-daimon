@@ -6562,13 +6562,13 @@ shell_bianse_profile() {
 if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
 	sed -i '/^PS1=/d' ~/.bashrc
 	echo "${bianse}" >> ~/.bashrc
-	# source ~/.bashrc
+	source ~/.bashrc >/dev/null 2>&1 || true
 else
 	sed -i '/^PS1=/d' ~/.profile
 	echo "${bianse}" >> ~/.profile
-	# source ~/.profile
+	source ~/.profile >/dev/null 2>&1 || true
 fi
-echo -e "${gl_lv}变更完成。重新连接SSH后可查看变化！${gl_bai}"
+echo -e "${gl_lv}变更完成，已尝试重新加载 shell 配置；重新连接 SSH 后完全生效。${gl_bai}"
 
 hash -r
 break_end
@@ -7976,8 +7976,9 @@ env_menu() {
 		touch "$file"
 		sed -i "/^export ${name}=/d" "$file"
 		echo "export ${name}=\"${value}\"" >> "$file"
+		source "$file" >/dev/null 2>&1 || true
 		export "$name=$value"
-		echo "已写入: $file"
+		echo "已写入并尝试重新加载: $file"
 	}
 
 	delete_env_var() {
@@ -7986,7 +7987,9 @@ env_menu() {
 		[ -z "$name" ] && return
 		sed -i "/^export ${name}=/d" "$bashrc_file" "$profile_file" 2>/dev/null || true
 		unset "$name"
-		echo "已删除变量配置: $name"
+		[ -f "$bashrc_file" ] && source "$bashrc_file" >/dev/null 2>&1 || true
+		[ -f "$profile_file" ] && source "$profile_file" >/dev/null 2>&1 || true
+		echo "已删除变量配置并尝试重新加载: $name"
 	}
 
 	while true; do
@@ -8121,51 +8124,6 @@ github_proxy_manager() {
 		esac
 		break_end
 	done
-}
-
-dd_installnet_manager() {
-	root_use
-	clear
-	send_stats "DD重装系统"
-	echo "DD重装系统（leitbogioro/Tools InstallNET）"
-	echo "------------------------------------------------"
-	echo -e "${gl_hong}注意：DD/重装会清空当前服务器硬盘数据，请确认已备份重要数据！${gl_bai}"
-	echo "脚本来源：https://github.com/leitbogioro/Tools"
-	echo "默认系统：Ubuntu 22.04"
-	echo "默认登录：root / Tgadw2145qewO / 41000 端口"
-	echo "------------------------------------------------"
-
-	local ubuntu_version root_pwd ssh_port script_url script_path cmd_preview confirm reboot_choice
-	read -e -p "请输入 Ubuntu 版本（默认 22.04）: " ubuntu_version
-	ubuntu_version=${ubuntu_version:-22.04}
-	case "$ubuntu_version" in
-		18.04|20.04|22.04|24.04) ;;
-		*) echo "暂只支持 Ubuntu 18.04 / 20.04 / 22.04 / 24.04"; return 1 ;;
-	esac
-	read -e -p "请输入 root 密码（默认 Tgadw2145qewO）: " root_pwd
-	root_pwd=${root_pwd:-Tgadw2145qewO}
-	read -e -p "请输入 SSH 端口（默认 41000）: " ssh_port
-	ssh_port=${ssh_port:-41000}
-	[[ "$ssh_port" =~ ^[0-9]+$ ]] || { echo "端口必须是数字"; return 1; }
-
-	script_url="https://gitee.com/mb9e8j2/Tools/raw/master/Linux_reinstall/InstallNET.sh"
-	script_path="/root/InstallNET.sh"
-	cmd_preview="bash $script_path -ubuntu $ubuntu_version -pwd '$root_pwd' -port $ssh_port"
-	echo "------------------------------------------------"
-	echo "将执行："
-	echo "wget --no-check-certificate -qO $script_path '$script_url' && chmod a+x $script_path"
-	echo "$cmd_preview"
-	echo "------------------------------------------------"
-	read -e -p "确认开始 DD 重装吗？(y/N): " confirm
-	[[ "$confirm" =~ ^[Yy]$ ]] || { echo "已取消"; return 0; }
-
-	cd /root || return 1
-	wget --no-check-certificate -qO "$script_path" "$script_url" && chmod a+x "$script_path" || return 1
-	bash "$script_path" -ubuntu "$ubuntu_version" -pwd "$root_pwd" -port "$ssh_port"
-	echo "------------------------------------------------"
-	echo "脚本执行完成后通常需要重启，重装过程可能需要 7-15 分钟。"
-	read -e -p "是否现在 reboot？(y/N): " reboot_choice
-	[[ "$reboot_choice" =~ ^[Yy]$ ]] && reboot
 }
 
 show_ssh_ip_info() {
@@ -8400,7 +8358,8 @@ cpcat() {
 }
 # ========== end cpcat clipboard setup ==========
 EOF
-				echo "已配置 cpcat。重新连接 SSH 或执行 source ~/.bashrc 后生效。"
+				source "$bashrc_file" >/dev/null 2>&1 || true
+				echo "已配置 cpcat。已执行 source ~/.bashrc。"
 				;;
 			2)
 				[ -f "$bashrc_file" ] || { echo "~/.bashrc 不存在"; break_end; continue; }
@@ -8409,6 +8368,7 @@ EOF
 				awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' "$bashrc_file" > "$tmp_file"
 				cat "$tmp_file" > "$bashrc_file"
 				rm -f "$tmp_file"
+				source "$bashrc_file" >/dev/null 2>&1 || true
 				echo "已删除 cpcat 配置。"
 				;;
 			0) return ;;
@@ -8431,11 +8391,10 @@ linux_Settings() {
 		printf "%b\033[55G%b\n" "${gl_kjlan}5.   ${gl_bai}修改虚拟内存大小" "${gl_kjlan}6.   ${gl_bai}用户管理"
 		printf "%b\033[55G%b\n" "${gl_kjlan}7.   ${gl_bai}系统时区调整" "${gl_kjlan}8.   ${gl_bai}修改主机名"
 		printf "%b\033[55G%b\n" "${gl_kjlan}9.   ${gl_bai}本机host解析" "${gl_kjlan}10.  ${gl_bai}系统变量管理工具"
-		printf "%b\033[55G%b\n" "${gl_kjlan}11.  ${gl_bai}github镜像源" "${gl_kjlan}12.  ${gl_bai}DD重装系统"
-		printf "%b\033[55G%b\n" "${gl_kjlan}13.  ${gl_bai}查看ssh的ip" "${gl_kjlan}14.  ${gl_bai}网卡管理工具"
-		printf "%b\033[55G%b\n" "${gl_kjlan}15.  ${gl_bai}journalctl日志管理" "${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
-		printf "%b\033[55G%b\n" "${gl_kjlan}17.  ${gl_bai}禁用IPv6" "${gl_kjlan}18.  ${gl_bai}开启IPv6"
-		echo -e "${gl_kjlan}19.  ${gl_bai}卸载daimon脚本"
+		printf "%b\033[55G%b\n" "${gl_kjlan}11.  ${gl_bai}github镜像源" "${gl_kjlan}12.  ${gl_bai}查看ssh的ip"
+		printf "%b\033[55G%b\n" "${gl_kjlan}13.  ${gl_bai}网卡管理工具" "${gl_kjlan}14.  ${gl_bai}journalctl日志管理"
+		printf "%b\033[55G%b\n" "${gl_kjlan}15.  ${gl_bai}系统网络自适应优化" "${gl_kjlan}16.  ${gl_bai}禁用IPv6"
+		printf "%b\033[55G%b\n" "${gl_kjlan}17.  ${gl_bai}开启IPv6" "${gl_kjlan}18.  ${gl_bai}卸载daimon脚本"
 		echo -e "${gl_kjlan}------------------------"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -8695,14 +8654,13 @@ linux_Settings() {
 				;;
 			10) clear; env_menu ;;
 			11) github_proxy_manager ;;
-			12) dd_installnet_manager ;;
-			13) show_ssh_ip_info; break_end ;;
-			14) clear; net_menu ;;
-			15) journalctl_log_manager ;;
-			16) system_network_auto_optimize ;;
-			17) clear; system_disable_ipv6; break_end ;;
-			18) clear; system_enable_ipv6; break_end ;;
-			19)
+			12) show_ssh_ip_info; break_end ;;
+			13) clear; net_menu ;;
+			14) journalctl_log_manager ;;
+			15) system_network_auto_optimize ;;
+			16) clear; system_disable_ipv6; break_end ;;
+			17) clear; system_enable_ipv6; break_end ;;
+			18)
 				clear
 				send_stats "卸载daimon脚本"
 				echo "卸载daimon脚本"
@@ -8742,6 +8700,19 @@ linux_tools() {
 
   reload_bashrc_safely() {
     [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" >/dev/null 2>&1 || true
+  }
+
+  reload_shell_configs_safely() {
+    reload_bashrc_safely
+    [ -f "$HOME/.profile" ] && source "$HOME/.profile" >/dev/null 2>&1 || true
+    [ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" >/dev/null 2>&1 || true
+    hash -r 2>/dev/null || true
+  }
+
+  restart_shell_after_tool_install() {
+    reload_shell_configs_safely
+    echo -e "${gl_lv}工具安装完成，正在使用 exec bash 重新进入命令行...${gl_bai}"
+    exec bash
   }
 
   configure_vim_editor() {
@@ -9515,6 +9486,32 @@ EOF
     echo "已删除 bat 终端高亮配置，并尝试卸载 bat/batcat"
   }
 
+  install_yazi_griffo() {
+    root_use
+    if command -v apt >/dev/null 2>&1; then
+      install curl gnupg ca-certificates lsb-release
+      curl -sS https://debian.griffo.io/EA0F721D231FDD3A0A17B9AC7808B4DD62C41256.asc \
+        | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/debian.griffo.io.gpg || return 1
+      echo "deb https://debian.griffo.io/apt $(lsb_release -sc 2>/dev/null) main" \
+        | tee /etc/apt/sources.list.d/debian.griffo.io.list >/dev/null
+      apt update -y
+      apt install -y yazi
+    else
+      install yazi
+    fi
+    yazi --version 2>/dev/null || true
+  }
+
+  remove_yazi_all() {
+    remove yazi
+    rm -rf "$HOME/.config/yazi" "$HOME/.local/share/yazi" "$HOME/.cache/yazi"
+    if command -v apt >/dev/null 2>&1; then
+      rm -f /etc/apt/sources.list.d/debian.griffo.io.list
+      rm -f /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
+      apt update -y 2>/dev/null || true
+    fi
+  }
+
   tool_installed() {
     local id="$1"
     case "$id" in
@@ -9610,6 +9607,7 @@ EOF
           daimon_run_cached_script "https://bun.sh/install" "bun-install.sh"
           export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
           export PATH="$BUN_INSTALL/bin:$PATH"
+          reload_shell_configs_safely
           bun --version 2>/dev/null || true
         fi
         ;;
@@ -9620,6 +9618,7 @@ EOF
           install curl
           daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh"
           export PATH="$HOME/.local/bin:$PATH"
+          reload_shell_configs_safely
           uv --version 2>/dev/null || true
         fi
         ;;
@@ -9657,7 +9656,10 @@ EOF
         fi
         fastfetch --version 2>/dev/null || true
         ;;
-      git|curl|tree|yazi|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
+      yazi)
+        install_yazi_griffo
+        ;;
+      git|curl|tree|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
@@ -9698,7 +9700,7 @@ EOF
       starship) remove_starship_all ;;
       bat) remove_bat_all ;;
       btop) remove btop; rm -rf "$HOME/.config/btop" ;;
-      yazi) remove yazi; rm -rf "$HOME/.config/yazi" "$HOME/.local/share/yazi" "$HOME/.cache/yazi" ;;
+      yazi) remove_yazi_all ;;
       fastfetch)
         remove fastfetch
         if command -v add-apt-repository >/dev/null 2>&1; then
@@ -9720,8 +9722,8 @@ EOF
       fail2ban) remove_fail2ban_all ;;
       claude) npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true ;;
       codex) npm uninstall -g @openai/codex 2>/dev/null || true ;;
-      bun) rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true ;;
-      uv) rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx" ;;
+      bun) rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true; reload_shell_configs_safely ;;
+      uv) rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"; reload_shell_configs_safely ;;
       *) remove "$id" ;;
     esac
   }
@@ -9788,6 +9790,7 @@ EOF
         1)
           read -e -p "请输入要安装的工具编号（支持多选，空格分隔）: " nums
           handle_tool_numbers install "$nums"
+          [ -n "$nums" ] && restart_shell_after_tool_install
           ;;
         2)
           read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums
@@ -9797,6 +9800,7 @@ EOF
           nums="$(all_tool_numbers)"
           read -e -i "$nums" -p "请确认/修改要安装的工具编号（默认全选，空格分隔）: " nums
           handle_tool_numbers install "$nums"
+          [ -n "$nums" ] && restart_shell_after_tool_install
           ;;
         4)
           nums="$(all_tool_numbers)"
@@ -9824,6 +9828,7 @@ EOF
       local tool_ids=("${thirdparty_ids[@]}")
       handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '
 ' ' ')"
+      restart_shell_after_tool_install
       return
       ;;
     programming|basic)
@@ -9834,6 +9839,7 @@ EOF
       local tool_ids=("${programming_ids[@]}")
       handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '
 ' ' ')"
+      restart_shell_after_tool_install
       return
       ;;
   esac
