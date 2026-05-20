@@ -698,8 +698,13 @@ bind '"\C-d": kill-word'
 # ==================== end Ctrl+D 改为删除下一个单词 ====================
 EOF
 source ~/.bashrc
-curl -fsSL https://starship.rs/install.sh -o /root/daimon/starship-install.sh
-sh /root/daimon/starship-install.sh -y
+# 国外机器：
+curl -sS https://starship.rs/install.sh | sh -s -- -y
+# 国内机器：
+cd /tmp
+curl -L --retry 5 -o starship.tar.gz https://gh-proxy.com/https://github.com/starship/starship/releases/latest/download/starship-x86_64-unknown-linux-musl.tar.gz
+tar -xzf starship.tar.gz
+install -m 755 starship /usr/local/bin/starship
 cat >> ~/.bashrc <<'EOF'
 # ========== starship prompt setup ==========
 eval "$(starship init bash)"

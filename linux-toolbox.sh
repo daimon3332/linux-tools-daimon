@@ -9080,12 +9080,47 @@ EOF
 
   configure_starship() {
     root_use
-    install curl
+    install curl tar gzip
     mkdir -p "$DAIMON_SCRIPT_DIR" "$HOME/.config"
-    local installer="$DAIMON_SCRIPT_DIR/starship-install.sh"
-    curl -fsSL https://starship.rs/install.sh -o "$installer" || wget -qO "$installer" https://starship.rs/install.sh
-    chmod +x "$installer"
-    sh "$installer" -y
+    local starship_arch starship_target starship_url starship_tar starship_tmp starship_bin
+
+    if daimon_is_cn; then
+      case "$(uname -m)" in
+        x86_64|amd64) starship_arch="x86_64" ;;
+        aarch64|arm64) starship_arch="aarch64" ;;
+        i686|i386) starship_arch="i686" ;;
+        *) starship_arch="" ;;
+      esac
+
+      if [ -z "$starship_arch" ]; then
+        echo "当前架构暂不支持自动安装 starship: $(uname -m)"
+        return 1
+      fi
+
+      starship_target="${starship_arch}-unknown-linux-musl"
+      starship_url="https://gh-proxy.com/https://github.com/starship/starship/releases/latest/download/starship-${starship_target}.tar.gz"
+      starship_tar="/tmp/starship.tar.gz"
+      starship_tmp="/tmp/starship-install"
+
+      rm -rf "$starship_tmp" "$starship_tar" 2>/dev/null || true
+      mkdir -p "$starship_tmp"
+
+      if curl -L --retry 5 -o "$starship_tar" "$starship_url" && tar -xzf "$starship_tar" -C "$starship_tmp"; then
+        starship_bin="$starship_tmp/starship"
+        [ -f "$starship_bin" ] || starship_bin=$(find "$starship_tmp" -type f -name starship | head -1)
+        [ -n "$starship_bin" ] && command install -m 755 "$starship_bin" /usr/local/bin/starship
+      fi
+
+      rm -rf "$starship_tmp" "$starship_tar" 2>/dev/null || true
+    else
+      curl -sS https://starship.rs/install.sh | sh -s -- -y
+    fi
+
+    if ! command -v starship >/dev/null 2>&1; then
+      remove_starship_config
+      echo "starship 安装失败，已移除 ~/.bashrc 中的 starship 初始化，避免出现 command not found"
+      return 1
+    fi
 
     touch "$HOME/.bashrc"
     remove_starship_config
