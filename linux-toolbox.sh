@@ -25,7 +25,100 @@ DAIMON_LOCAL_SCRIPT="$HOME/linux-toolbox.sh"
 DAIMON_OLD_LOCAL_SCRIPT="$HOME/daimon.sh"
 DAIMON_REPO_URL="https://github.com/daimon3332/daimon-linux-scripts"
 DAIMON_AGREEMENT_URL="https://github.com/daimon3332/daimon-linux-scripts/blob/master/USER_AGREEMENT.md"
+DAIMON_GITHUB_PROXY_PRIMARY="https://gh-proxy.com/"
 mkdir -p "$DAIMON_SCRIPT_DIR" >/dev/null 2>&1 || true
+
+daimon_country() {
+	if [ -n "${DAIMON_COUNTRY_CACHE:-}" ]; then
+		echo "$DAIMON_COUNTRY_CACHE"
+		return 0
+	fi
+	if command -v curl >/dev/null 2>&1; then
+		DAIMON_COUNTRY_CACHE=$(curl -s --max-time 5 https://ipinfo.io 2>/dev/null | grep -oE '"country"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4)
+		[ -z "$DAIMON_COUNTRY_CACHE" ] && DAIMON_COUNTRY_CACHE=$(curl -s --max-time 5 https://ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+	fi
+	echo "$DAIMON_COUNTRY_CACHE"
+}
+
+daimon_is_cn() {
+	[ "$(daimon_country)" = "CN" ]
+}
+
+daimon_strip_github_proxy() {
+	local url="$1"
+	case "$url" in
+		https://gh-proxy.com/http*) echo "${url#https://gh-proxy.com/}" ;;
+		https://ghproxy.net/http*) echo "${url#https://ghproxy.net/}" ;;
+		https://ghfast.top/http*) echo "${url#https://ghfast.top/}" ;;
+		https://gh.kejilion.pro/raw.githubusercontent.com/*) echo "https://${url#https://gh.kejilion.pro/}" ;;
+		https://gh.kejilion.pro/github.com/*) echo "https://${url#https://gh.kejilion.pro/}" ;;
+		*) echo "$url" ;;
+	esac
+}
+
+daimon_jsdelivr_url() {
+	local url="$1" path owner repo branch rest
+	case "$url" in
+		https://raw.githubusercontent.com/*)
+			path="${url#https://raw.githubusercontent.com/}"
+			owner="${path%%/*}"; path="${path#*/}"
+			repo="${path%%/*}"; path="${path#*/}"
+			branch="${path%%/*}"; rest="${path#*/}"
+			[ -n "$owner" ] && [ -n "$repo" ] && [ -n "$branch" ] && [ -n "$rest" ] && echo "https://testingcf.jsdelivr.net/gh/${owner}/${repo}@${branch}/${rest}"
+			;;
+		https://github.com/*/raw/refs/heads/*)
+			path="${url#https://github.com/}"
+			owner="${path%%/*}"; path="${path#*/}"
+			repo="${path%%/*}"; path="${path#*/raw/refs/heads/}"
+			branch="${path%%/*}"; rest="${path#*/}"
+			[ -n "$owner" ] && [ -n "$repo" ] && [ -n "$branch" ] && [ -n "$rest" ] && echo "https://testingcf.jsdelivr.net/gh/${owner}/${repo}@${branch}/${rest}"
+			;;
+	esac
+}
+
+daimon_github_url_candidates() {
+	local url jsdelivr
+	url=$(daimon_strip_github_proxy "$1")
+	if ! daimon_is_cn; then
+		echo "$url"
+		return 0
+	fi
+	case "$url" in
+		https://raw.githubusercontent.com/*|https://github.com/*)
+			echo "https://gh-proxy.com/$url"
+			echo "https://ghproxy.net/$url"
+			jsdelivr=$(daimon_jsdelivr_url "$url")
+			[ -n "$jsdelivr" ] && echo "$jsdelivr"
+			echo "https://ghfast.top/$url"
+			echo "$url"
+			;;
+		*)
+			echo "$url"
+			;;
+	esac
+}
+
+daimon_url() {
+	daimon_github_url_candidates "$1" | head -1
+}
+
+daimon_download_to() {
+	local url="$1"
+	local target="$2"
+	local real_url
+	mkdir -p "$(dirname "$target")" >/dev/null 2>&1 || true
+	while IFS= read -r real_url; do
+		[ -z "$real_url" ] && continue
+		echo -e "${gl_kjlan}尝试下载: $real_url${gl_bai}"
+		if curl -fsSL --connect-timeout 10 --retry 2 "$real_url" -o "$target"; then
+			return 0
+		fi
+		if command -v wget >/dev/null 2>&1 && wget -qO "$target" "$real_url"; then
+			return 0
+		fi
+	done < <(daimon_github_url_candidates "$url")
+	return 1
+}
 
 daimon_download() {
 	local url="$1"
@@ -38,8 +131,21 @@ daimon_download() {
 		return 0
 	fi
 	echo -e "${gl_kjlan}下载到: $target${gl_bai}"
-	curl -fsSL --connect-timeout 10 --retry 2 "$url" -o "$target" || wget -O "$target" "$url" || return 1
+	daimon_download_to "$url" "$target" || return 1
 	chmod +x "$target" >/dev/null 2>&1
+}
+
+daimon_git_clone() {
+	local repo_url="$1"
+	local target="$2"
+	shift 2
+	local clone_url
+	while IFS= read -r clone_url; do
+		[ -z "$clone_url" ] && continue
+		echo -e "${gl_kjlan}尝试克隆: $clone_url${gl_bai}"
+		git clone "$@" "$clone_url" "$target" && return 0
+	done < <(daimon_github_url_candidates "$repo_url")
+	return 1
 }
 
 daimon_run_cached_script() {
@@ -63,18 +169,18 @@ daimon_exec_cached_script() {
 
 
 quanju_canshu() {
-if [ "$canshu" = "CN" ]; then
+if [ "$canshu" = "CN" ] || daimon_is_cn; then
 	zhushi=0
-	gh_proxy="https://gh.kejilion.pro/"
+	gh_proxy="$DAIMON_GITHUB_PROXY_PRIMARY"https://
 elif [ "$canshu" = "V6" ]; then
 	zhushi=1
-	gh_proxy="https://gh.kejilion.pro/"
+	gh_proxy="$DAIMON_GITHUB_PROXY_PRIMARY"https://
 else
 	zhushi=1  # 0 表示执行，1 表示不执行
 	gh_proxy="https://"
 fi
 
-gh_https_url="https://"
+gh_https_url="$gh_proxy"
 
 }
 quanju_canshu
@@ -534,7 +640,7 @@ docker_mirror_menu() {
 	echo "输入编号，使用空格分隔；直接回车使用默认源：1 2 3 4 5"
 	echo "输入 0 返回上一级菜单"
 	read -e -p "请选择: " selected
-	[ "$selected" = "0" ] && return 0
+	[ "$selected" = "0" ] && return 90
 	selected=${selected:-"1 2 3 4 5"}
 	{
 		echo '{'
@@ -745,6 +851,9 @@ while true; do
 			break_end
 			;;
 
+		0)
+			return 90
+			;;
 		*)
 			break  # 跳出循环，退出菜单
 			;;
@@ -805,6 +914,9 @@ while true; do
 				echo "无效的选择，请输入 Y 或 N。"
 				;;
 			esac
+			;;
+		0)
+			return 90
 			;;
 		*)
 			break  # 跳出循环，退出菜单
@@ -4691,7 +4803,7 @@ yt_menu_pro() {
 				send_stats "正在安装 yt-dlp..."
 				echo "正在安装 yt-dlp..."
 				install ffmpeg
-				curl -L ${gh_https_url}github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+				daimon_download_to "https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp" "/usr/local/bin/yt-dlp"
 				chmod a+rx /usr/local/bin/yt-dlp
 
 				add_app_id
@@ -7841,15 +7953,12 @@ github_proxy_init_sources() {
 	local file
 	file=$(github_proxy_sources_file)
 	mkdir -p "$(dirname "$file")" >/dev/null 2>&1 || true
-	if [ ! -s "$file" ]; then
+	if [ ! -s "$file" ] || grep -Eq 'raw.githubusercontent.com\||ghproxy.homeboyc.cn|github.akams.cn' "$file"; then
 		cat > "$file" <<'EOF'
-raw.githubusercontent.com|https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 gh-proxy.com|https://gh-proxy.com/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 ghproxy.net|https://ghproxy.net/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 testingcf.jsdelivr.net|https://testingcf.jsdelivr.net/gh/komari-monitor/komari-agent@main/install.sh
 ghfast.top|https://ghfast.top/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
-ghproxy.homeboyc.cn|https://ghproxy.homeboyc.cn/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
-github.akams.cn|https://github.akams.cn/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 EOF
 	fi
 }
@@ -8261,7 +8370,7 @@ linux_Settings() {
 		printf "%b\033[55G%b\n" "${gl_kjlan}13.  ${gl_bai}查看ssh的ip" "${gl_kjlan}14.  ${gl_bai}网卡管理工具"
 		printf "%b\033[55G%b\n" "${gl_kjlan}15.  ${gl_bai}journalctl日志管理" "${gl_kjlan}16.  ${gl_bai}系统网络自适应优化"
 		printf "%b\033[55G%b\n" "${gl_kjlan}17.  ${gl_bai}禁用IPv6" "${gl_kjlan}18.  ${gl_bai}开启IPv6"
-		printf "%b\033[55G%b\n" "${gl_kjlan}19.  ${gl_bai}配置/删除cpcat" "${gl_kjlan}20.  ${gl_bai}卸载daimon脚本"
+		echo -e "${gl_kjlan}19.  ${gl_bai}卸载daimon脚本"
 		echo -e "${gl_kjlan}------------------------"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -8528,8 +8637,7 @@ linux_Settings() {
 			16) system_network_auto_optimize ;;
 			17) clear; system_disable_ipv6; break_end ;;
 			18) clear; system_enable_ipv6; break_end ;;
-			19) cpcat_manager ;;
-			20)
+			19)
 				clear
 				send_stats "卸载daimon脚本"
 				echo "卸载daimon脚本"
@@ -8681,7 +8789,7 @@ EOF
       git -C "$HOME/.fzf" pull --ff-only || true
     else
       rm -rf "$HOME/.fzf"
-      git clone --depth 1 https://github.com/junegunn/fzf.git "$HOME/.fzf"
+      daimon_git_clone "https://github.com/junegunn/fzf.git" "$HOME/.fzf" --depth 1
     fi
 
     if [ -x "$HOME/.fzf/install" ]; then
@@ -8759,7 +8867,7 @@ EOF
       git -C "$HOME/ble.sh" submodule update --init --recursive || true
     else
       rm -rf "$HOME/ble.sh"
-      git clone --recursive https://github.com/akinomyoga/ble.sh.git "$HOME/ble.sh"
+      daimon_git_clone "https://github.com/akinomyoga/ble.sh.git" "$HOME/ble.sh" --recursive
     fi
 
     (cd "$HOME/ble.sh" && make install)
@@ -9691,9 +9799,9 @@ linux_bbr() {
 	install wget curl
 	mkdir -p "$DAIMON_SCRIPT_DIR"
 	local tcpx="$DAIMON_SCRIPT_DIR/tcpx.sh"
-	local tcpx_url="${gh_proxy}raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh"
+	local tcpx_url="https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh"
 	if [ ! -s "$tcpx" ]; then
-		curl -fsSL "$tcpx_url" -o "$tcpx" || wget --no-check-certificate -O "$tcpx" "$tcpx_url"
+		daimon_download_to "$tcpx_url" "$tcpx" || return 1
 	fi
 	chmod +x "$tcpx"
 	bash "$tcpx"
@@ -10094,9 +10202,11 @@ linux_docker() {
 			  ;;
 		  3)
 			  docker_ps
+			  [ "$?" -eq 90 ] && continue
 			  ;;
 		  4)
 			  docker_image
+			  [ "$?" -eq 90 ] && continue
 			  ;;
 
 		  5)
@@ -10170,6 +10280,9 @@ linux_docker() {
 						  docker network rm $dockernetwork
 						  ;;
 
+					  0)
+						  continue 2
+						  ;;
 					  *)
 						  break  # 跳出循环，退出菜单
 						  ;;
@@ -10225,6 +10338,9 @@ linux_docker() {
 						  esac
 						  ;;
 
+					  0)
+						  continue 2
+						  ;;
 					  *)
 						  break  # 跳出循环，退出菜单
 						  ;;
@@ -10250,6 +10366,7 @@ linux_docker() {
 			  clear
 			  send_stats "Docker源"
 			  docker_mirror_menu
+			  [ "$?" -eq 90 ] && continue
 			  ;;
 
 		  9)
@@ -10276,6 +10393,7 @@ linux_docker() {
 
 		  19)
 			  docker_ssh_migration
+			  continue
 			  ;;
 
 
@@ -13934,7 +14052,7 @@ PY
 			else
 				OPENCLAW_MEMORY_HF_BASE="https://hf-mirror.com"
 			fi
-			OPENCLAW_MEMORY_GH_PROXY="https://gh.kejilion.pro/"
+			OPENCLAW_MEMORY_GH_PROXY="https://gh-proxy.com/https://"
 		else
 			if [ "$hf_ok" = "ok" ]; then
 				OPENCLAW_MEMORY_HF_BASE="https://huggingface.co"
@@ -16044,7 +16162,7 @@ ssh_config_manager() {
 				ufw reload >/dev/null 2>&1 || true
 				ssh_restart_safe
 				;;
-			5) ssh_key_manager ;;
+			5) ssh_key_manager; continue ;;
 			6) install vim; vim "$SSH_CONFIG"; ssh_restart_safe ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
