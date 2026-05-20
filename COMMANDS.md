@@ -136,37 +136,44 @@ rm -rf /tmp/*
 
 ## 4. 一键配置
 
-默认展示 1-8 号快捷配置项，用来把常用初始化动作集中到一个菜单。
+默认展示 1-9 号快捷配置项，用来把常用初始化动作集中到一个菜单。直接回车等同于选择 `1. 配置全部`，执行前会预填 `2 3 4 5 6 7 8 9`，用户可以自行删除不想执行的编号。
 
-### 4.1 系统更新
+### 4.1 配置全部
+
+```bash
+read -e -i "2 3 4 5 6 7 8 9" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums
+```
+解释：默认选择全部配置项，执行前允许删减编号；最终按输入的编号逐项执行。
+
+### 4.2 系统更新
 
 ```bash
 linux_update
 ```
 解释：执行脚本内系统更新流程，Ubuntu 下核心是 `apt update` 和 `apt full-upgrade -y`。
 
-### 4.2 系统清理
+### 4.3 系统清理
 
 ```bash
 linux_clean
 ```
 解释：执行脚本内系统清理流程，清理无用依赖、缓存和 journal 日志。
 
-### 4.3 设置虚拟内存 1G
+### 4.4 设置虚拟内存 1G
 
 ```bash
 add_swap 1024
 ```
 解释：创建或重建 `/swapfile`，大小为 1024MB，并写入 `/etc/fstab`。
 
-### 4.4 优化 DNS 地址
+### 4.5 优化 DNS 地址
 
 ```bash
 set_dns_ui
 ```
 解释：进入 DNS 优化菜单，可选择国外 DNS、国内 DNS、手动编辑或恢复之前备份。
 
-### 4.5 开启 BBR 加速（BBR + FQ）
+### 4.6 开启 BBR 加速（BBR + FQ）
 
 ```bash
 modprobe tcp_bbr
@@ -178,7 +185,7 @@ sysctl -p /etc/sysctl.d/99-daimon-bbr-fq.conf
 ```
 解释：使用内核自带 BBR，队列算法使用 FQ，并写入持久化配置。
 
-### 4.6 安装 Docker
+### 4.7 安装 Docker
 
 ```bash
 curl -s --max-time 8 ipinfo.io
@@ -187,7 +194,7 @@ bash /root/daimon/install-docker-auto.sh 2   # 国外和香港：Docker 官方�
 ```
 解释：根据 `ipinfo.io` 的 `country` 字段判断；`CN` 使用国内镜像源，其他地区包括香港使用 Docker 官方源。
 
-### 4.7 系统网络自适应优化
+### 4.8 系统网络自适应优化
 
 ```bash
 source /root/daimon/network-optimize.sh
@@ -195,7 +202,7 @@ auto_optimize_network
 ```
 解释：下载/加载 kejilion 的网络自适应优化脚本并执行自动优化。
 
-### 4.8 安装第三方工具
+### 4.9 安装第三方工具
 
 ```bash
 linux_tools thirdparty-install-all

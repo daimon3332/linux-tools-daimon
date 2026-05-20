@@ -7856,30 +7856,52 @@ one_click_network_auto_optimize() {
 }
 
 one_click_config_manager() {
+	one_click_config_run_item() {
+		case "$1" in
+			2) linux_update ;;
+			3) linux_clean ;;
+			4) add_swap 1024 ;;
+			5) set_dns_ui ;;
+			6) one_click_enable_bbr_fq ;;
+			7) one_click_install_docker_auto ;;
+			8) one_click_network_auto_optimize ;;
+			9) linux_tools thirdparty-install-all ;;
+			*) echo "跳过无效编号: $1" ;;
+		esac
+	}
+
+	one_click_config_run_all() {
+		local nums n
+		nums="2 3 4 5 6 7 8 9"
+		read -e -i "$nums" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums
+		if [ -z "$nums" ]; then
+			echo "未选择任何配置项"
+			return
+		fi
+		for n in $nums; do
+			one_click_config_run_item "$n"
+		done
+	}
+
 	while true; do
 		clear
 		echo "一键配置"
 		echo "------------------------"
-		echo -e "${gl_kjlan}1.   ${gl_bai}系统更新"
-		echo -e "${gl_kjlan}2.   ${gl_bai}系统清理"
-		echo -e "${gl_kjlan}3.   ${gl_bai}设置虚拟内存 1G"
-		echo -e "${gl_kjlan}4.   ${gl_bai}优化 DNS 地址"
-		echo -e "${gl_kjlan}5.   ${gl_bai}开启 BBR 加速（BBR + FQ）"
-		echo -e "${gl_kjlan}6.   ${gl_bai}安装 Docker（自动判断国内/国外源）"
-		echo -e "${gl_kjlan}7.   ${gl_bai}执行系统网络自适应优化"
-		echo -e "${gl_kjlan}8.   ${gl_bai}安装第三方工具（全部安装，可在第三方工具菜单精细调整）"
+		echo -e "${gl_kjlan}1.   ${gl_bai}配置全部（默认回车，执行前可删减编号）"
+		echo -e "${gl_kjlan}2.   ${gl_bai}系统更新"
+		echo -e "${gl_kjlan}3.   ${gl_bai}系统清理"
+		echo -e "${gl_kjlan}4.   ${gl_bai}设置虚拟内存 1G"
+		echo -e "${gl_kjlan}5.   ${gl_bai}优化 DNS 地址"
+		echo -e "${gl_kjlan}6.   ${gl_bai}开启 BBR 加速（BBR + FQ）"
+		echo -e "${gl_kjlan}7.   ${gl_bai}安装 Docker（自动判断国内/国外源）"
+		echo -e "${gl_kjlan}8.   ${gl_bai}执行系统网络自适应优化"
+		echo -e "${gl_kjlan}9.   ${gl_bai}安装第三方工具（全部安装，可在第三方工具菜单精细调整）"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo "------------------------"
-		read -e -p "请输入你的选择: " sub_choice
+		read -e -p "请输入你的选择（默认 1 配置全部）: " sub_choice
 		case "$sub_choice" in
-			1) linux_update ;;
-			2) linux_clean ;;
-			3) add_swap 1024 ;;
-			4) set_dns_ui ;;
-			5) one_click_enable_bbr_fq ;;
-			6) one_click_install_docker_auto ;;
-			7) one_click_network_auto_optimize ;;
-			8) linux_tools thirdparty-install-all ;;
+			""|1) one_click_config_run_all ;;
+			2|3|4|5|6|7|8|9) one_click_config_run_item "$sub_choice" ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
