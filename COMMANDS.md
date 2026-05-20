@@ -169,9 +169,23 @@ add_swap 1024
 ### 4.5 优化 DNS 地址
 
 ```bash
-set_dns_ui
+country=$(curl -s --max-time 5 https://ipinfo.io | grep -oE '"country"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4)
+if [ "$country" = "CN" ]; then
+  # 国内 DNS
+  dns1_ipv4="223.5.5.5"
+  dns2_ipv4="183.60.83.19"
+  dns1_ipv6="2400:3200::1"
+  dns2_ipv6="2400:da00::6666"
+else
+  # 国外和香港 DNS
+  dns1_ipv4="1.1.1.1"
+  dns2_ipv4="8.8.8.8"
+  dns1_ipv6="2606:4700:4700::1111"
+  dns2_ipv6="2001:4860:4860::8888"
+fi
+set_dns
 ```
-解释：进入 DNS 优化菜单，可选择国外 DNS、国内 DNS、手动编辑或恢复之前备份。
+解释：一键配置里不再进入 DNS 交互菜单，而是根据 `ipinfo.io` 的 `country` 字段自动判断；`CN` 使用国内 DNS，其他地区包括 `HK` 使用国外 DNS。
 
 ### 4.6 开启 BBR 加速（BBR + FQ）
 

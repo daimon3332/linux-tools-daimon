@@ -7855,13 +7855,36 @@ one_click_network_auto_optimize() {
 	daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh" "network-optimize.sh" && source "$DAIMON_SCRIPT_DIR/network-optimize.sh" && auto_optimize_network
 }
 
+one_click_auto_dns_optimize() {
+	root_use
+	local country
+	country=$(daimon_country)
+	if [ "$country" = "CN" ]; then
+		local dns1_ipv4="223.5.5.5"
+		local dns2_ipv4="183.60.83.19"
+		local dns1_ipv6="2400:3200::1"
+		local dns2_ipv6="2400:da00::6666"
+		echo "检测到国家/地区: CN，自动使用国内 DNS 优化"
+		set_dns
+		send_stats "一键国内DNS优化"
+	else
+		local dns1_ipv4="1.1.1.1"
+		local dns2_ipv4="8.8.8.8"
+		local dns1_ipv6="2606:4700:4700::1111"
+		local dns2_ipv6="2001:4860:4860::8888"
+		echo "检测到国家/地区: ${country:-未知}，自动使用国外 DNS 优化"
+		set_dns
+		send_stats "一键国外DNS优化"
+	fi
+}
+
 one_click_config_manager() {
 	one_click_config_run_item() {
 		case "$1" in
 			2) linux_update ;;
 			3) linux_clean ;;
 			4) add_swap 1024 ;;
-			5) set_dns_ui ;;
+			5) one_click_auto_dns_optimize ;;
 			6) one_click_enable_bbr_fq ;;
 			7) one_click_install_docker_auto ;;
 			8) one_click_network_auto_optimize ;;
