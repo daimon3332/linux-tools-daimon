@@ -113,8 +113,8 @@ ss -u | wc -l
 pkill -9 -f 'apt|dpkg'
 rm -f /var/lib/dpkg/lock-frontend /var/lib/dpkg/lock
 DEBIAN_FRONTEND=noninteractive dpkg --configure -a
-DEBIAN_FRONTEND=noninteractive apt update -y
-DEBIAN_FRONTEND=noninteractive apt full-upgrade -y
+DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt full-upgrade -y
 ```
 解释：修复 apt/dpkg 状态，更新软件源并升级系统软件包。
 
@@ -736,37 +736,16 @@ git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
 cat >> ~/.bashrc <<'EOF'
 # ========== fzf 核心配置 ==========
 [ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
-command -v fzf >/dev/null 2>&1 || return
-if command -v fdfind >/dev/null 2>&1; then
-  export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
-elif command -v fd >/dev/null 2>&1; then
-  export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
-fi
-if command -v batcat >/dev/null 2>&1; then
-  BAT_PREVIEW='batcat --color=always --style=numbers --line-range=:500 {}'
-elif command -v bat >/dev/null 2>&1; then
-  BAT_PREVIEW='bat --color=always --style=numbers --line-range=:500 {}'
-else
-  BAT_PREVIEW='sed -n "1,500p" {}'
-fi
-export FZF_DEFAULT_OPTS="
-  --height 50%
-  --layout=reverse
-  --border
-  --inline-info
-  --preview '$BAT_PREVIEW'
-  --preview-window=right:50%
-  --bind 'ctrl-/:toggle-preview'
-"
-export FZF_CTRL_T_OPTS="--preview '$BAT_PREVIEW'"
-if command -v tree >/dev/null 2>&1; then
-  export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
-else
-  export FZF_ALT_C_OPTS="--preview 'ls -la {} | head -200'"
+if command -v fzf >/dev/null 2>&1; then
+  if command -v fdfind >/dev/null 2>&1; then
+    export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+  elif command -v fd >/dev/null 2>&1; then
+    export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+  fi
+  # 省略：bat/batcat 预览、Ctrl+T、Alt+C 配置
 fi
 # ========== end fzf 核心配置 ==========
 EOF
-source ~/.bashrc
 git clone --recursive https://github.com/akinomyoga/ble.sh.git ~/ble.sh
 cd ~/ble.sh
 apt update -y && apt install -y make
@@ -786,10 +765,9 @@ if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
   ble-import -d integration/fzf-key-bindings
 fi
 EOF
-source ~/.bashrc
 exec bash
 ```
-解释：安装第三方常用工具；安装完成后会 source shell 配置并 `exec bash` 重新进入命令行；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ncdu 使用 apt 安装；yazi 通过 `debian.griffo.io` apt 源安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，只有检测到 fzf 时才启用 fzf 快捷键。
+解释：安装第三方常用工具；安装过程中不再直接 `source ~/.bashrc`，避免 ble.sh 重复加载导致 TTY 异常，安装完成后统一 `exec bash` 重新进入命令行；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ncdu 使用 apt 安装；yazi 通过 `debian.griffo.io` apt 源安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，并自动清理旧的重复 `source ~/.local/share/blesh/ble.sh`，保证 ble.sh 配置块位于 `.bashrc` 末尾。
 
 特殊卸载：
 

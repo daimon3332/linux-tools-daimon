@@ -454,8 +454,11 @@ install() {
 				yum install -y epel-release
 				yum install -y "$package"
 			elif command -v apt &>/dev/null; then
-				apt update -y
-				apt install -y "$package"
+				DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+				DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+					-o Dpkg::Options::="--force-confdef" \
+					-o Dpkg::Options::="--force-confold" \
+					"$package"
 			elif command -v apk &>/dev/null; then
 				apk update
 				apk add "$package"
@@ -4991,8 +4994,10 @@ linux_update() {
 		yum -y update
 	elif command -v apt &>/dev/null; then
 		fix_dpkg
-		DEBIAN_FRONTEND=noninteractive apt update -y
-		DEBIAN_FRONTEND=noninteractive apt full-upgrade -y
+		DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+		DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt full-upgrade -y \
+			-o Dpkg::Options::="--force-confdef" \
+			-o Dpkg::Options::="--force-confold"
 	elif command -v apk &>/dev/null; then
 		apk update && apk upgrade
 	elif command -v pacman &>/dev/null; then
@@ -5032,9 +5037,9 @@ linux_clean() {
 
 	elif command -v apt &>/dev/null; then
 		fix_dpkg
-		apt autoremove --purge -y
-		apt clean -y
-		apt autoclean -y
+		DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt autoremove --purge -y
+		DEBIAN_FRONTEND=noninteractive apt clean -y
+		DEBIAN_FRONTEND=noninteractive apt autoclean -y
 		journalctl --rotate
 		journalctl --vacuum-time=1s
 		journalctl --vacuum-size=500M
@@ -7805,14 +7810,20 @@ install_debian() {
     local codename=$(get_debian_codename "$DISTRO") repo_distro="$DISTRO"
     [ "$DISTRO" = "raspbian" ] && repo_distro="debian"
     echo "系统: $DISTRO $DISTRO_VERSION ($codename)"
-    $SUDO apt update || true
-    $SUDO apt install -y ca-certificates curl gnupg lsb-release
+    $SUDO env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y || true
+    $SUDO env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        ca-certificates curl gnupg lsb-release
     $SUDO install -m 0755 -d /etc/apt/keyrings
     curl -fsSL "$DOWNLOAD_URL/linux/$repo_distro/gpg" | $SUDO gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
     $SUDO chmod a+r /etc/apt/keyrings/docker.gpg
     echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $DOWNLOAD_URL/linux/$repo_distro $codename stable" | $SUDO tee /etc/apt/sources.list.d/docker.list >/dev/null
-    $SUDO apt update
-    $SUDO apt install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    $SUDO env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+    $SUDO env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 }
 install_rhel() {
     echo "系统: $DISTRO $DISTRO_VERSION"
@@ -7880,6 +7891,9 @@ one_click_auto_dns_optimize() {
 
 one_click_config_manager() {
 	one_click_config_run_item() {
+		export DEBIAN_FRONTEND=noninteractive
+		export NEEDRESTART_MODE=a
+		export APT_LISTCHANGES_FRONTEND=none
 		case "$1" in
 			2) linux_update ;;
 			3) linux_clean ;;
@@ -7895,6 +7909,9 @@ one_click_config_manager() {
 
 	one_click_config_run_all() {
 		local nums n
+		export DEBIAN_FRONTEND=noninteractive
+		export NEEDRESTART_MODE=a
+		export APT_LISTCHANGES_FRONTEND=none
 		nums="2 3 4 5 6 7 8 9"
 		read -e -i "$nums" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums
 		if [ -z "$nums" ]; then
@@ -8744,13 +8761,14 @@ linux_tools() {
   local programming_desc=("Python 运行环境" "npm 包管理器" "Node.js 运行环境" "Bun 运行环境" "Python 包管理器" "版本控制" "AI 编程助手" "AI 编程助手")
 
   reload_bashrc_safely() {
-    [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" >/dev/null 2>&1 || true
+    # 不在当前脚本进程里直接 source ~/.bashrc：
+    # ble.sh / fzf / prompt 这类交互配置重复加载时可能导致 TTY detached 或 stty 异常。
+    # 配置写入后由 restart_shell_after_tool_install 统一 exec bash 生效。
+    hash -r 2>/dev/null || true
   }
 
   reload_shell_configs_safely() {
     reload_bashrc_safely
-    [ -f "$HOME/.profile" ] && source "$HOME/.profile" >/dev/null 2>&1 || true
-    [ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" >/dev/null 2>&1 || true
     hash -r 2>/dev/null || true
   }
 
@@ -8764,6 +8782,7 @@ linux_tools() {
     touch "$HOME/.bashrc"
     grep -qxF 'export EDITOR=vim' "$HOME/.bashrc" 2>/dev/null || echo 'export EDITOR=vim' >> "$HOME/.bashrc"
     grep -qxF 'export VISUAL=vim' "$HOME/.bashrc" 2>/dev/null || echo 'export VISUAL=vim' >> "$HOME/.bashrc"
+    ensure_blesh_block_last
     reload_bashrc_safely
     echo "已设置默认编辑器: EDITOR=vim, VISUAL=vim"
   }
@@ -8800,6 +8819,7 @@ cpcat() {
 }
 # ========== end cpcat clipboard setup ==========
 EOF
+    ensure_blesh_block_last
     reload_bashrc_safely
     echo "已配置 cpcat"
   }
@@ -8822,6 +8842,7 @@ EOF
 bind '"\C-d": kill-word'
 # ==================== end Ctrl+D 改为删除下一个单词 ====================
 EOF
+    ensure_blesh_block_last
     reload_bashrc_safely
     echo "已配置 Ctrl+D 删除下一个单词"
   }
@@ -8833,6 +8854,7 @@ EOF
     if [ -L /usr/local/bin/fd ] && readlink /usr/local/bin/fd 2>/dev/null | grep -q 'fdfind'; then
       rm -f /usr/local/bin/fd 2>/dev/null || true
     fi
+    ensure_blesh_block_last
     reload_bashrc_safely
     echo "已配置 fd 别名: alias fd='fdfind'"
   }
@@ -8886,44 +8908,45 @@ EOF
 # git clone 安装的 fzf 默认在 ~/.fzf/bin，先加入 PATH，避免 command -v 找不到
 [ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
 
-# 如果没有安装 fzf，则直接跳过
-command -v fzf >/dev/null 2>&1 || return
+# 如果没有安装 fzf，只跳过 fzf 配置，不 return 整个 ~/.bashrc
+if command -v fzf >/dev/null 2>&1; then
+  # 默认使用 fd/fdfind 列文件
+  if command -v fdfind >/dev/null 2>&1; then
+    export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+  elif command -v fd >/dev/null 2>&1; then
+    export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
+  fi
 
-# 默认使用 fd/fdfind 列文件
-if command -v fdfind >/dev/null 2>&1; then
-  export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
-elif command -v fd >/dev/null 2>&1; then
-  export FZF_DEFAULT_COMMAND='fd --type f --strip-cwd-prefix --hidden --follow --exclude .git'
-fi
+  # bat/batcat 兼容
+  if command -v batcat >/dev/null 2>&1; then
+    BAT_PREVIEW='batcat --color=always --style=numbers --line-range=:500 {}'
+  elif command -v bat >/dev/null 2>&1; then
+    BAT_PREVIEW='bat --color=always --style=numbers --line-range=:500 {}'
+  else
+    BAT_PREVIEW='sed -n "1,500p" {}'
+  fi
 
-# bat/batcat 兼容
-if command -v batcat >/dev/null 2>&1; then
-  BAT_PREVIEW='batcat --color=always --style=numbers --line-range=:500 {}'
-elif command -v bat >/dev/null 2>&1; then
-  BAT_PREVIEW='bat --color=always --style=numbers --line-range=:500 {}'
-else
-  BAT_PREVIEW='sed -n "1,500p" {}'
-fi
+  export FZF_DEFAULT_OPTS="
+    --height 50%
+    --layout=reverse
+    --border
+    --inline-info
+    --preview '$BAT_PREVIEW'
+    --preview-window=right:50%
+    --bind 'ctrl-/:toggle-preview'
+  "
 
-export FZF_DEFAULT_OPTS="
-  --height 50%
-  --layout=reverse
-  --border
-  --inline-info
-  --preview '$BAT_PREVIEW'
-  --preview-window=right:50%
-  --bind 'ctrl-/:toggle-preview'
-"
+  export FZF_CTRL_T_OPTS="--preview '$BAT_PREVIEW'"
 
-export FZF_CTRL_T_OPTS="--preview '$BAT_PREVIEW'"
-
-if command -v tree >/dev/null 2>&1; then
-  export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
-else
-  export FZF_ALT_C_OPTS="--preview 'ls -la {} | head -200'"
+  if command -v tree >/dev/null 2>&1; then
+    export FZF_ALT_C_OPTS="--preview 'tree -C {} | head -200'"
+  else
+    export FZF_ALT_C_OPTS="--preview 'ls -la {} | head -200'"
+  fi
 fi
 # ========== end fzf 核心配置 ==========
 EOF
+    ensure_blesh_block_last
     reload_bashrc_safely
     "$HOME/.fzf/bin/fzf" --version 2>/dev/null || fzf --version 2>/dev/null || true
     echo "fzf 已通过 git clone 安装并写入 ~/.bashrc 配置"
@@ -8939,6 +8962,19 @@ EOF
 
   remove_blesh_config() {
     remove_shell_block "$HOME/.bashrc" '# ========== ble.sh setup ==========' '# ========== end ble.sh setup =========='
+    [ -f "$HOME/.bashrc" ] && sed -i '\#\.local/share/blesh/ble\.sh#d;\#blesh/ble\.sh#d' "$HOME/.bashrc" 2>/dev/null || true
+  }
+
+  ensure_blesh_block_last() {
+    [ -f "$HOME/.local/share/blesh/ble.sh" ] || return 0
+    touch "$HOME/.bashrc"
+    remove_blesh_config
+    cat >> "$HOME/.bashrc" <<'EOF'
+
+# ========== ble.sh setup ==========
+[ -f ~/.local/share/blesh/ble.sh ] && source ~/.local/share/blesh/ble.sh
+# ========== end ble.sh setup ==========
+EOF
   }
 
   configure_blesh() {
@@ -8953,14 +8989,7 @@ EOF
 
     (cd "$HOME/ble.sh" && make install)
 
-    touch "$HOME/.bashrc"
-    remove_blesh_config
-    cat >> "$HOME/.bashrc" <<'EOF'
-
-# ========== ble.sh setup ==========
-[ -f ~/.local/share/blesh/ble.sh ] && source ~/.local/share/blesh/ble.sh
-# ========== end ble.sh setup ==========
-EOF
+    ensure_blesh_block_last
 
     cat > "$HOME/.blerc" <<'EOF'
 # 自动补全
@@ -8972,6 +9001,7 @@ if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
   ble-import -d integration/fzf-key-bindings
 fi
 EOF
+    ensure_blesh_block_last
     reload_bashrc_safely
     echo "ble.sh 已安装并配置 ~/.bashrc 和 ~/.blerc"
   }
@@ -9361,6 +9391,7 @@ base = "#24273a"
 mantle = "#1e2030"
 crust = "#181926"
 EOF
+    ensure_blesh_block_last
     reload_bashrc_safely
     starship --version 2>/dev/null || true
     echo "starship 已安装并写入配置: $HOME/.config/starship.toml"
@@ -9520,6 +9551,7 @@ if [ -f ~/.bat.sh ]; then
     source ~/.bat.sh
 fi
 EOF
+    ensure_blesh_block_last
     reload_bashrc_safely
     echo "bat 终端高亮配置已写入: $bat_file"
   }
@@ -9539,8 +9571,11 @@ EOF
         | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/debian.griffo.io.gpg || return 1
       echo "deb https://debian.griffo.io/apt $(lsb_release -sc 2>/dev/null) main" \
         | tee /etc/apt/sources.list.d/debian.griffo.io.list >/dev/null
-      apt update -y
-      apt install -y yazi
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        yazi
     else
       install yazi
     fi
@@ -9691,11 +9726,17 @@ EOF
       fastfetch)
         root_use
         if command -v apt >/dev/null 2>&1; then
-          apt update -y
-          apt install -y software-properties-common
+          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+            -o Dpkg::Options::="--force-confdef" \
+            -o Dpkg::Options::="--force-confold" \
+            software-properties-common
           add-apt-repository -y ppa:zhangsongcui3371/fastfetch
-          apt update -y
-          apt install -y fastfetch
+          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+            -o Dpkg::Options::="--force-confdef" \
+            -o Dpkg::Options::="--force-confold" \
+            fastfetch
         else
           install fastfetch
         fi
