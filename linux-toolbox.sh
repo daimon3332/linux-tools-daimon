@@ -8996,10 +8996,10 @@ EOF
 bleopt complete_auto_complete=1
 # history 自动补全
 bleopt complete_auto_history=1
-# 如果已安装 fzf，则启用 fzf 快捷键
+# 使用fzf的快捷键
 if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
-  ble-import -d integration/fzf-key-bindings
-fi
+   ble-import -d integration/fzf-key-bindings
+ fi
 EOF
     ensure_blesh_block_last
     reload_bashrc_safely
@@ -16825,133 +16825,561 @@ fail2ban_manager() {
 }
 
 ssl_nginx_manager() {
-	local ACME="$HOME/.acme.sh/acme.sh"
+	mkdir -p "$DAIMON_SCRIPT_DIR"
+	cat > "$DAIMON_SCRIPT_DIR/cert_nginx.sh" <<'DAIMON_CERT_NGINX_SCRIPT'
+#!/bin/bash
+set -e
 
-	ssl_install_deps() {
-		install curl socat lsof dnsutils ufw openssl nginx
-	}
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
 
-	ssl_install_acme() {
-		ssl_install_deps
-		if [ ! -f "$ACME" ]; then
-			curl -fsSL https://get.acme.sh -o "$DAIMON_SCRIPT_DIR/acme-install.sh" || return 1
-			sh "$DAIMON_SCRIPT_DIR/acme-install.sh" email=asdad@163.com
-		fi
-		[ -f "$ACME" ] && "$ACME" --set-default-ca --server letsencrypt >/dev/null 2>&1 || true
-	}
+ACME="$HOME/.acme.sh/acme.sh"
+NGINX_WAS_RUNNING=false
 
-	ssl_issue_cert() {
-		local domain="$1"
-		[ -z "$domain" ] && { echo "域名不能为空"; return 1; }
-		ssl_install_acme || return 1
-		mkdir -p "/root/domain/$domain"
-		ufw allow 80/tcp >/dev/null 2>&1 || true
-		ufw allow 443/tcp >/dev/null 2>&1 || true
-		systemctl stop nginx apache2 httpd caddy 2>/dev/null || true
-		lsof -t -iTCP:80 -sTCP:LISTEN 2>/dev/null | xargs -r kill -9 2>/dev/null || true
-		"$ACME" --issue -d "$domain" --standalone --server letsencrypt --force || return 1
-		"$ACME" --install-cert -d "$domain" --fullchain-file "/root/domain/$domain/fullchain.pem" --key-file "/root/domain/$domain/privkey.pem" --force
-		(crontab -l 2>/dev/null | grep -v "$HOME/.acme.sh/acme.sh --cron"; echo "0 3 * * * $HOME/.acme.sh/acme.sh --cron --home $HOME/.acme.sh >/dev/null 2>&1") | crontab -
-	}
+install_deps() {
+    if command -v apt >/dev/null 2>&1; then
+        apt update -y
+        apt install -y curl socat lsof dnsutils ufw openssl
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y curl socat lsof bind-utils ufw openssl || true
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y curl socat lsof bind-utils ufw openssl || true
+    fi
+}
 
-	ssl_config_nginx() {
-		local domain="$1" name="$2" port="$3"
-		if [ -z "$domain" ] || [ -z "$name" ] || [ -z "$port" ]; then
-			echo "域名、配置名、端口不能为空"
-			return 1
-		fi
-		install nginx
-		mkdir -p /etc/nginx/sites-available /etc/nginx/sites-enabled
-		cat > "/etc/nginx/sites-available/$name" <<EOF
+install_acme() {
+    if [ ! -f "$ACME" ]; then
+        echo -e "${GREEN}正在安装 acme.sh...${NC}"
+        install_deps
+        curl https://get.acme.sh | sh -s email=asdad@163.com
+        [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" || true
+        [ -f "$HOME/.profile" ] && source "$HOME/.profile" || true
+        if [ ! -f "$ACME" ]; then
+            echo -e "${RED}acme.sh 安装失败${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}acme.sh 安装成功${NC}"
+    else
+        echo -e "${GREEN}acme.sh 已安装${NC}"
+    fi
+    "$ACME" --set-default-ca --server letsencrypt >/dev/null 2>&1 || true
+}
+
+install_nginx() {
+    if ! command -v nginx >/dev/null 2>&1; then
+        echo -e "${YELLOW}正在安装 nginx...${NC}"
+        apt update -y
+        apt install -y nginx
+    fi
+    systemctl start nginx 2>/dev/null || true
+    systemctl enable nginx 2>/dev/null || true
+    echo -e "${GREEN}nginx 已安装并启动${NC}"
+}
+
+ensure_ufw_80() {
+    if command -v ufw >/dev/null 2>&1; then
+        if ufw status 2>/dev/null | grep -qi "Status: active"; then
+            ufw allow 80/tcp 2>/dev/null || true
+            ufw allow 443/tcp 2>/dev/null || true
+        fi
+    fi
+}
+
+show_dns() {
+    local d="$1"
+    if command -v dig >/dev/null 2>&1; then
+        echo -e "${YELLOW}DNS A 记录: $(dig +short "$d" A | tr '\n' ' ')${NC}"
+        echo -e "${YELLOW}DNS AAAA记录: $(dig +short "$d" AAAA | tr '\n' ' ')${NC}"
+    fi
+}
+
+stop_port_80_services() {
+    if systemctl is-active nginx >/dev/null 2>&1; then
+        echo -e "${YELLOW}检测到 nginx 正在运行，正在停止...${NC}"
+        systemctl stop nginx
+        NGINX_WAS_RUNNING=true
+    fi
+    systemctl stop apache2 2>/dev/null || true
+    systemctl stop httpd 2>/dev/null || true
+    systemctl stop caddy 2>/dev/null || true
+    sleep 1
+
+    if lsof -iTCP:80 -sTCP:LISTEN >/dev/null 2>&1; then
+        local PIDS=$(lsof -t -iTCP:80 -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')
+        [ -n "$PIDS" ] && kill $PIDS 2>/dev/null || true
+        sleep 1
+        PIDS=$(lsof -t -iTCP:80 -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')
+        [ -n "$PIDS" ] && kill -9 $PIDS 2>/dev/null || true
+    fi
+
+    if lsof -iTCP:80 -sTCP:LISTEN >/dev/null 2>&1; then
+        echo -e "${RED}80端口仍被占用${NC}"
+        return 1
+    fi
+    echo -e "${GREEN}80端口已空闲${NC}"
+}
+
+restart_nginx_if_needed() {
+    if [ "$NGINX_WAS_RUNNING" = true ]; then
+        systemctl start nginx
+        echo -e "${GREEN}nginx 已重新启动${NC}"
+    fi
+}
+
+show_cert_list() {
+    echo -e "${GREEN}=========================================${NC}"
+    echo -e "${GREEN}acme.sh 已注册的证书列表：${NC}"
+    "$ACME" --list 2>/dev/null || echo -e "${YELLOW}暂无已注册的证书${NC}"
+    echo ""
+    echo -e "${GREEN}/root/domain 下的证书文件夹：${NC}"
+    [ -d "/root/domain" ] && ls -la /root/domain/ 2>/dev/null || echo -e "${YELLOW}目录为空${NC}"
+    echo -e "${GREEN}=========================================${NC}"
+}
+
+show_existing_nginx_and_certs() {
+    echo -e "${YELLOW}已存在的 nginx 配置：${NC}"
+    local found_nginx=false
+    local conf
+    for conf in /etc/nginx/sites-enabled/* /etc/nginx/sites-available/* /etc/nginx/conf.d/*.conf; do
+        [ -e "$conf" ] || continue
+        found_nginx=true
+        local server_name listen proxy_pass
+        server_name=$(grep -E '^[[:space:]]*server_name[[:space:]]+' "$conf" 2>/dev/null | head -1 | sed -E 's/^[[:space:]]*server_name[[:space:]]+//; s/;[[:space:]]*$//')
+        listen=$(grep -E '^[[:space:]]*listen[[:space:]]+' "$conf" 2>/dev/null | head -1 | sed -E 's/^[[:space:]]*listen[[:space:]]+//; s/;[[:space:]]*$//')
+        proxy_pass=$(grep -E '^[[:space:]]*proxy_pass[[:space:]]+' "$conf" 2>/dev/null | head -1 | sed -E 's/^[[:space:]]*proxy_pass[[:space:]]+//; s/;[[:space:]]*$//')
+        printf "  %-38s server_name=%s listen=%s proxy=%s\n" "$(basename "$conf")" "${server_name:-未设置}" "${listen:-未设置}" "${proxy_pass:-无}"
+    done
+    [ "$found_nginx" = true ] || echo "  暂无 nginx 配置"
+    echo "---"
+    echo -e "${YELLOW}已存在的证书：${NC}"
+    local found_cert=false
+    local cert_dir cert_file domain expire_date formatted_date
+    for cert_dir in /root/domain/* /etc/letsencrypt/live/*; do
+        [ -d "$cert_dir" ] || continue
+        cert_file="$cert_dir/fullchain.pem"
+        [ -f "$cert_file" ] || continue
+        found_cert=true
+        domain=$(basename "$cert_dir")
+        expire_date=$(openssl x509 -noout -enddate -in "$cert_file" 2>/dev/null | awk -F'=' '{print $2}')
+        formatted_date=$(date -d "$expire_date" '+%Y-%m-%d' 2>/dev/null || echo "未知")
+        printf "  %-38s 到期时间=%s 路径=%s\n" "$domain" "$formatted_date" "$cert_file"
+    done
+    [ "$found_cert" = true ] || echo "  暂无证书"
+    echo "---"
+}
+
+remove_cert() {
+    echo -e "${GREEN}当前已注册的证书：${NC}"
+    "$ACME" --list 2>/dev/null || echo -e "${YELLOW}暂无已注册的证书${NC}"
+    echo ""
+
+    read -p "请输入要移除的域名: " REMOVE_DOMAIN
+    [ -z "$REMOVE_DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && return 1
+
+    read -p "确认移除 $REMOVE_DOMAIN？[y/n]: " CONFIRM
+    [ "$CONFIRM" != "y" ] && return 0
+
+    "$ACME" --remove -d "$REMOVE_DOMAIN" 2>/dev/null || true
+
+    FOLDER=$(echo "$REMOVE_DOMAIN" | cut -d'.' -f1)
+    [ -d "/root/domain/$FOLDER" ] && rm -rf "/root/domain/$FOLDER"
+
+    echo -e "${GREEN}证书移除完成！${NC}"
+}
+
+remove_nginx_config() {
+    echo -e "${GREEN}当前 nginx 配置文件：${NC}"
+    echo ""
+
+    local configs=()
+    local i=1
+    for f in /etc/nginx/sites-available/*; do
+        [ -f "$f" ] || continue
+        local name=$(basename "$f")
+        [ "$name" = "default" ] && continue
+        configs+=("$name")
+        echo "$i) $name"
+        ((i++))
+    done
+
+    [ ${#configs[@]} -eq 0 ] && echo -e "${YELLOW}暂无自定义配置${NC}" && return 0
+
+    echo ""
+    read -p "请输入要删除的配置编号: " NUM
+
+    if ! [[ "$NUM" =~ ^[0-9]+$ ]] || [ "$NUM" -lt 1 ] || [ "$NUM" -gt ${#configs[@]} ]; then
+        echo -e "${RED}无效选择${NC}"
+        return 1
+    fi
+
+    local CONF_NAME="${configs[$((NUM-1))]}"
+    read -p "确认删除 $CONF_NAME？[y/n]: " CONFIRM
+    [ "$CONFIRM" != "y" ] && return 0
+
+    rm -f "/etc/nginx/sites-available/$CONF_NAME"
+    rm -f "/etc/nginx/sites-enabled/$CONF_NAME"
+
+    nginx -t && systemctl reload nginx
+    echo -e "${GREEN}配置 $CONF_NAME 已删除${NC}"
+}
+
+remove_nginx_and_cert() {
+    echo -e "${GREEN}当前 nginx 配置文件：${NC}"
+    echo ""
+
+    local configs=()
+    local i=1
+    for f in /etc/nginx/sites-available/*; do
+        [ -f "$f" ] || continue
+        local name=$(basename "$f")
+        [ "$name" = "default" ] && continue
+        configs+=("$name")
+        echo "$i) $name"
+        ((i++))
+    done
+
+    [ ${#configs[@]} -eq 0 ] && echo -e "${YELLOW}暂无自定义配置${NC}" && return 0
+
+    echo ""
+    read -p "请输入要删除的配置编号: " NUM
+
+    if ! [[ "$NUM" =~ ^[0-9]+$ ]] || [ "$NUM" -lt 1 ] || [ "$NUM" -gt ${#configs[@]} ]; then
+        echo -e "${RED}无效选择${NC}"
+        return 1
+    fi
+
+    local CONF_NAME="${configs[$((NUM-1))]}"
+
+    # 从配置文件中提取证书路径
+    local CONF_FILE="/etc/nginx/sites-available/$CONF_NAME"
+    local CERT_DIR=$(grep -oP 'ssl_certificate \K[^;]+' "$CONF_FILE" 2>/dev/null | head -1 | xargs dirname 2>/dev/null || true)
+    local DOMAIN=$(grep -oP 'server_name \K[^;]+' "$CONF_FILE" 2>/dev/null | head -1 | awk '{print $1}' || true)
+
+    echo ""
+    echo -e "${YELLOW}将删除以下内容：${NC}"
+    echo "- nginx 配置: $CONF_FILE"
+    [ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && echo "- 证书目录: $CERT_DIR"
+    [ -n "$DOMAIN" ] && echo "- acme.sh 证书: $DOMAIN"
+    echo ""
+
+    read -p "确认删除？[y/n]: " CONFIRM
+    [ "$CONFIRM" != "y" ] && return 0
+
+    # 删除 nginx 配置
+    rm -f "/etc/nginx/sites-available/$CONF_NAME"
+    rm -f "/etc/nginx/sites-enabled/$CONF_NAME"
+
+    # 删除证书目录
+    [ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"
+
+    # 从 acme.sh 移除证书
+    [ -n "$DOMAIN" ] && "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
+
+    nginx -t && systemctl reload nginx
+    echo -e "${GREEN}nginx 配置和证书已删除${NC}"
+}
+
+create_test_page() {
+    read -p "请输入测试文件名称: " TEST_NAME
+    [ -z "$TEST_NAME" ] && echo -e "${RED}名称不能为空${NC}" && return 1
+    read -p "请输入测试端口号: " TEST_PORT
+    [ -z "$TEST_PORT" ] && echo -e "${RED}端口号不能为空${NC}" && return 1
+
+    install_nginx
+
+    mkdir -p "/var/www/$TEST_NAME"
+    cat > "/var/www/$TEST_NAME/index.html" << EOF
+<!DOCTYPE html>
+<html>
+<head>
+    <title>$TEST_NAME 测试页面</title>
+</head>
+<body>
+    <h1>$TEST_NAME - 端口 $TEST_PORT 测试成功！</h1>
+    <p>测试名称: $TEST_NAME</p>
+    <p>监听端口: $TEST_PORT</p>
+</body>
+</html>
+EOF
+
+    cat > "/etc/nginx/sites-available/$TEST_NAME" << EOF
+server {
+    listen $TEST_PORT;
+    server_name localhost;
+    root /var/www/$TEST_NAME;
+    index index.html;
+}
+EOF
+
+    ln -sf "/etc/nginx/sites-available/$TEST_NAME" /etc/nginx/sites-enabled/
+
+    if nginx -t; then
+        nginx -s reload
+        echo -e "${GREEN}=========================================${NC}"
+        echo -e "${GREEN}测试页面创建成功！${NC}"
+        echo "网页目录: /var/www/$TEST_NAME"
+        echo "配置文件: /etc/nginx/sites-available/$TEST_NAME"
+        echo "访问地址: http://127.0.0.1:$TEST_PORT"
+        echo ""
+        echo -e "${YELLOW}测试访问:${NC}"
+        curl "http://127.0.0.1:$TEST_PORT" 2>/dev/null || echo -e "${RED}访问失败${NC}"
+        echo -e "${GREEN}=========================================${NC}"
+    else
+        echo -e "${RED}nginx 配置检测失败${NC}"
+        rm -f "/etc/nginx/sites-available/$TEST_NAME"
+        rm -rf "/var/www/$TEST_NAME"
+        return 1
+    fi
+}
+
+remove_test_page() {
+    echo -e "${GREEN}当前测试页面：${NC}"
+    echo ""
+
+    local tests=()
+    local i=1
+    for d in /var/www/*/; do
+        [ -d "$d" ] || continue
+        local name=$(basename "$d")
+        [ "$name" = "html" ] && continue
+        [ -f "/etc/nginx/sites-available/$name" ] || continue
+        tests+=("$name")
+        echo "$i) $name"
+        ((i++))
+    done
+
+    [ ${#tests[@]} -eq 0 ] && echo -e "${YELLOW}暂无测试页面${NC}" && return 0
+
+    echo ""
+    read -p "请输入要删除的测试页面编号: " NUM
+
+    if ! [[ "$NUM" =~ ^[0-9]+$ ]] || [ "$NUM" -lt 1 ] || [ "$NUM" -gt ${#tests[@]} ]; then
+        echo -e "${RED}无效选择${NC}"
+        return 1
+    fi
+
+    local TEST_NAME="${tests[$((NUM-1))]}"
+    read -p "确认删除 $TEST_NAME？[y/n]: " CONFIRM
+    [ "$CONFIRM" != "y" ] && return 0
+
+    rm -f "/etc/nginx/sites-enabled/$TEST_NAME"
+    rm -f "/etc/nginx/sites-available/$TEST_NAME"
+    rm -rf "/var/www/$TEST_NAME"
+
+    nginx -t && nginx -s reload
+    echo -e "${GREEN}测试页面 $TEST_NAME 已删除${NC}"
+}
+
+setup_cron() {
+    CRON_LINE="0 3 * * * $ACME --cron --home $HOME/.acme.sh >/dev/null 2>&1"
+    ( crontab -l 2>/dev/null | grep -v "$ACME --cron" || true; echo "$CRON_LINE" ) | crontab -
+    echo -e "${GREEN}已配置自动续期（每天凌晨3点）${NC}"
+}
+
+# 申请证书
+issue_cert() {
+    local DOMAIN="$1"
+
+    show_dns "$DOMAIN"
+
+    FOLDER=$(echo "$DOMAIN" | cut -d'.' -f1)
+    CERT_DIR="/root/domain/$FOLDER"
+    mkdir -p "$CERT_DIR"
+
+    if "$ACME" --list 2>/dev/null | grep -q "$DOMAIN"; then
+        echo -e "${YELLOW}检测到已有证书，将强制重新申请...${NC}"
+        "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
+        rm -rf "$HOME/.acme.sh/${DOMAIN}_ecc" 2>/dev/null || true
+        rm -rf "$HOME/.acme.sh/$DOMAIN" 2>/dev/null || true
+    fi
+
+    ensure_ufw_80
+    stop_port_80_services || return 1
+
+    "$ACME" --issue -d "$DOMAIN" --standalone --server letsencrypt --force
+
+    "$ACME" --install-cert -d "$DOMAIN" \
+        --fullchain-file "$CERT_DIR/fullchain.pem" \
+        --key-file "$CERT_DIR/privkey.pem" \
+        --force
+
+    if [ -s "$CERT_DIR/fullchain.pem" ] && [ -s "$CERT_DIR/privkey.pem" ]; then
+        echo -e "${GREEN}=========================================${NC}"
+        echo -e "${GREEN}证书申请成功！${NC}"
+        echo "证书路径: $CERT_DIR"
+        ls -la "$CERT_DIR"
+        echo -e "${GREEN}=========================================${NC}"
+        setup_cron
+        return 0
+    else
+        echo -e "${RED}证书安装失败${NC}"
+        return 1
+    fi
+}
+
+# 配置 nginx
+config_nginx() {
+    local DOMAIN="$1"
+    local NGINX_NAME="$2"
+    local PORT="$3"
+
+    FOLDER=$(echo "$DOMAIN" | cut -d'.' -f1)
+    CERT_DIR="/root/domain/$FOLDER"
+
+    # 检查证书是否存在
+    if [ ! -s "$CERT_DIR/fullchain.pem" ] || [ ! -s "$CERT_DIR/privkey.pem" ]; then
+        echo -e "${RED}证书文件不存在: $CERT_DIR${NC}"
+        echo -e "${RED}请先申请证书${NC}"
+        return 1
+    fi
+
+    install_nginx
+
+    NGINX_CONF="/etc/nginx/sites-available/$NGINX_NAME"
+
+    cat > "$NGINX_CONF" << EOF
 server {
     listen 80;
-    server_name $domain;
-    return 301 https://\$host\$request_uri;
+    server_name $DOMAIN;
+    return 301 https://\$server_name\$request_uri;
 }
 
 server {
     listen 443 ssl http2;
-    server_name $domain;
-    ssl_certificate /root/domain/$domain/fullchain.pem;
-    ssl_certificate_key /root/domain/$domain/privkey.pem;
+    server_name $DOMAIN;
+
+    ssl_certificate $CERT_DIR/fullchain.pem;
+    ssl_certificate_key $CERT_DIR/privkey.pem;
+
     location / {
-        proxy_pass http://127.0.0.1:$port;
+        proxy_pass http://127.0.0.1:$PORT;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "Upgrade";
+
+        proxy_buffering off;
+        client_max_body_size 50M;
     }
 }
 EOF
-		ln -sf "/etc/nginx/sites-available/$name" "/etc/nginx/sites-enabled/$name"
-		nginx -t && systemctl reload nginx || systemctl restart nginx
-	}
 
-	ssl_remove_cert() {
-		read -e -p "请输入域名: " domain
-		[ -z "$domain" ] && return
-		[ -f "$ACME" ] && "$ACME" --remove -d "$domain" 2>/dev/null || true
-		rm -rf "/root/domain/$domain"
-	}
+    ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/
 
-	ssl_remove_nginx_config() {
-		read -e -p "请输入 nginx 配置文件名称: " name
-		[ -z "$name" ] && return
-		rm -f "/etc/nginx/sites-available/$name" "/etc/nginx/sites-enabled/$name"
-		nginx -t && systemctl reload nginx
-	}
-
-	ssl_create_test_page() {
-		read -e -p "请输入测试站点名称: " name
-		read -e -p "请输入监听端口（默认 8080）: " port
-		port=${port:-8080}
-		[ -z "$name" ] && return
-		mkdir -p "/var/www/$name"
-		echo "linux-tools-daimon nginx test page" > "/var/www/$name/index.html"
-		cat > "/etc/nginx/sites-available/$name" <<EOF
-server {
-    listen $port;
-    root /var/www/$name;
-    index index.html;
-}
-EOF
-		ln -sf "/etc/nginx/sites-available/$name" "/etc/nginx/sites-enabled/$name"
-		nginx -t && systemctl reload nginx
-		echo "测试地址: http://服务器IP:$port"
-	}
-
-	while true; do
-		clear
-		echo "SSL 证书申请+自动续期 & Nginx 管理"
-		echo "------------------------"
-		echo -e "${gl_kjlan}1.   ${gl_bai}申请证书 + 配置 nginx"
-		echo -e "${gl_kjlan}2.   ${gl_bai}删除 nginx 配置 + 证书"
-		echo -e "${gl_kjlan}3.   ${gl_bai}申请证书"
-		echo -e "${gl_kjlan}4.   ${gl_bai}移除证书"
-		echo -e "${gl_kjlan}5.   ${gl_bai}查看证书列表"
-		echo -e "${gl_kjlan}6.   ${gl_bai}配置 nginx"
-		echo -e "${gl_kjlan}7.   ${gl_bai}删除 nginx 配置"
-		echo -e "${gl_kjlan}8.   ${gl_bai}创建测试页面"
-		echo -e "${gl_kjlan}9.   ${gl_bai}删除测试页面"
-		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
-		read -e -p "请输入你的选择: " sub_choice
-		case "$sub_choice" in
-			1) read -e -p "请输入域名: " domain; read -e -p "请输入 nginx 配置文件名称: " name; read -e -p "请输入代理端口号: " port; ssl_issue_cert "$domain" && ssl_config_nginx "$domain" "$name" "$port" ;;
-			2) ssl_remove_nginx_config; ssl_remove_cert ;;
-			3) read -e -p "请输入域名: " domain; ssl_issue_cert "$domain" ;;
-			4) ssl_remove_cert ;;
-			5) [ -f "$ACME" ] && "$ACME" --list || echo "acme.sh 未安装"; ls -la /root/domain 2>/dev/null || true ;;
-			6) read -e -p "请输入域名: " domain; read -e -p "请输入 nginx 配置文件名称: " name; read -e -p "请输入代理端口号: " port; ssl_config_nginx "$domain" "$name" "$port" ;;
-			7) ssl_remove_nginx_config ;;
-			8) ssl_create_test_page ;;
-			9) ssl_remove_nginx_config ;;
-			0) return ;;
-			*) echo "无效的输入!" ;;
-		esac
-		break_end
-	done
+    if nginx -t; then
+        systemctl reload nginx
+        echo -e "${GREEN}=========================================${NC}"
+        echo -e "${GREEN}nginx 配置成功！${NC}"
+        echo "配置文件: $NGINX_CONF"
+        echo "域名: $DOMAIN"
+        echo "代理端口: $PORT"
+        echo -e "${GREEN}=========================================${NC}"
+        systemctl status nginx --no-pager
+    else
+        echo -e "${RED}nginx 配置检测失败${NC}"
+        rm -f "$NGINX_CONF"
+        return 1
+    fi
 }
 
+# -------------------- 主流程 --------------------
+
+install_acme
+
+show_menu() {
+    echo ""
+    echo -e "${GREEN}=========================================${NC}"
+    echo -e "${GREEN}       SSL 证书 & Nginx 管理工具${NC}"
+    echo -e "${GREEN}=========================================${NC}"
+    show_existing_nginx_and_certs
+    echo "1) 申请证书 + 配置 nginx"
+    echo "2) 删除 nginx 配置 + 证书"
+    echo "3) 申请证书 (standalone 模式)"
+    echo "4) 移除证书"
+    echo "5) 查看证书列表"
+    echo "6) 配置 nginx"
+    echo "7) 删除 nginx 配置"
+    echo "8) 创建测试页面"
+    echo "9) 删除测试页面"
+    echo "0) 返回上一级菜单"
+    echo -e "${GREEN}=========================================${NC}"
+}
+
+while true; do
+    show_menu
+    read -p "请选择操作 [0-9]: " ACTION
+
+    case $ACTION in
+        1)
+            read -p "请输入域名: " DOMAIN
+            [ -z "$DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && continue
+            read -p "请输入 nginx 配置文件名称: " NGINX_NAME
+            [ -z "$NGINX_NAME" ] && echo -e "${RED}名称不能为空${NC}" && continue
+            read -p "请输入代理端口号: " PORT
+            [ -z "$PORT" ] && echo -e "${RED}端口号不能为空${NC}" && continue
+
+            if issue_cert "$DOMAIN"; then
+                restart_nginx_if_needed
+                config_nginx "$DOMAIN" "$NGINX_NAME" "$PORT"
+            else
+                restart_nginx_if_needed
+            fi
+            ;;
+        2)
+            remove_nginx_and_cert
+            ;;
+        3)
+            read -p "请输入域名: " DOMAIN
+            [ -z "$DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && continue
+            issue_cert "$DOMAIN"
+            restart_nginx_if_needed
+            ;;
+        4)
+            remove_cert
+            ;;
+        5)
+            show_cert_list
+            ;;
+        6)
+            read -p "请输入域名: " DOMAIN
+            [ -z "$DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && continue
+            read -p "请输入 nginx 配置文件名称: " NGINX_NAME
+            [ -z "$NGINX_NAME" ] && echo -e "${RED}名称不能为空${NC}" && continue
+            read -p "请输入代理端口号: " PORT
+            [ -z "$PORT" ] && echo -e "${RED}端口号不能为空${NC}" && continue
+            config_nginx "$DOMAIN" "$NGINX_NAME" "$PORT"
+            ;;
+        7)
+            remove_nginx_config
+            ;;
+        8)
+            create_test_page
+            ;;
+        9)
+            remove_test_page
+            ;;
+        0)
+            echo -e "${GREEN}返回上一级菜单${NC}"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}无效选择${NC}"
+            ;;
+    esac
+
+    echo ""
+    read -p "按回车键返回主菜单..."
+done
+DAIMON_CERT_NGINX_SCRIPT
+	chmod +x "$DAIMON_SCRIPT_DIR/cert_nginx.sh"
+	bash "$DAIMON_SCRIPT_DIR/cert_nginx.sh"
+}
 common_one_click_scripts() {
 	while true; do
 		clear

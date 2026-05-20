@@ -760,10 +760,10 @@ cat > ~/.blerc <<'EOF'
 bleopt complete_auto_complete=1
 # history 自动补全
 bleopt complete_auto_history=1
-# 如果已安装 fzf，则启用 fzf 快捷键
+# 使用fzf的快捷键
 if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
-  ble-import -d integration/fzf-key-bindings
-fi
+   ble-import -d integration/fzf-key-bindings
+ fi
 EOF
 exec bash
 ```
