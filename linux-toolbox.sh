@@ -10205,6 +10205,274 @@ docker_ssh_migration() {
 
 
 
+docker_compose_update_script_dir() {
+	echo "/root/docker-compose-update"
+}
+
+docker_compose_update_log_dir() {
+	echo "/var/log/docker-compose-update"
+}
+
+docker_compose_update_sanitize_name() {
+	echo "$1" | sed 's/[[:space:]\/\\:]/_/g; s/[^A-Za-z0-9_.-]/_/g'
+}
+
+docker_compose_update_discover_projects() {
+	command -v docker >/dev/null 2>&1 || return 0
+	local containers name label_line project workdir config_files first_config key
+	local -A project_path_map project_containers_map
+	containers=$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)
+	for name in $containers; do
+		label_line=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}|{{ index .Config.Labels "com.docker.compose.project.working_dir" }}|{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$name" 2>/dev/null || true)
+		IFS='|' read -r project workdir config_files <<< "$label_line"
+		[ "$project" = "<no value>" ] && project=""
+		[ "$workdir" = "<no value>" ] && workdir=""
+		[ "$config_files" = "<no value>" ] && config_files=""
+		if [ -z "$workdir" ] && [ -n "$config_files" ]; then
+			first_config="${config_files%%,*}"
+			workdir=$(dirname "$first_config" 2>/dev/null || true)
+		fi
+		if [ -z "$project" ] || [ -z "$workdir" ]; then
+			continue
+		fi
+		key="${project}|${workdir}"
+		project_path_map["$key"]="$project|$workdir"
+		if [ -n "${project_containers_map[$key]}" ]; then
+			project_containers_map["$key"]="${project_containers_map[$key]},$name"
+		else
+			project_containers_map["$key"]="$name"
+		fi
+	done
+	for key in "${!project_path_map[@]}"; do
+		echo "${project_path_map[$key]}|${project_containers_map[$key]}"
+	done | sort
+}
+
+docker_compose_update_script_file() {
+	local project="$1"
+	local workdir="$2"
+	local safe_project safe_path
+	safe_project=$(docker_compose_update_sanitize_name "$project")
+	safe_path=$(docker_compose_update_sanitize_name "$workdir")
+	echo "$(docker_compose_update_script_dir)/compose_update_${safe_project}_${safe_path}.sh"
+}
+
+docker_compose_update_cron_line() {
+	local script_file="$1"
+	local idx="${2:-1}"
+	local minute hour
+	minute=$(( (idx * 7) % 60 ))
+	hour=$(( 3 + ((idx - 1) / 8) ))
+	[ "$hour" -gt 6 ] && hour=6
+	printf "%d %d * * * /bin/bash %s >> %s/cron_%s.log 2>&1" \
+		"$minute" "$hour" "$script_file" "$(docker_compose_update_log_dir)" "$(basename "$script_file" .sh)"
+}
+
+docker_compose_update_status_text() {
+	local script_file="$1"
+	local cron_output=""
+	cron_output=$(crontab -l 2>/dev/null || true)
+	if [ -f "$script_file" ] && echo "$cron_output" | grep -Fq "$script_file"; then
+		echo -e "${gl_lv}已配置${gl_bai}"
+	elif [ -f "$script_file" ]; then
+		echo -e "${gl_huang}脚本已存在，未加入定时${gl_bai}"
+	elif echo "$cron_output" | grep -Fq "$script_file"; then
+		echo -e "${gl_huang}定时任务存在，脚本不存在${gl_bai}"
+	else
+		echo -e "${gl_hong}未配置${gl_bai}"
+	fi
+}
+
+docker_compose_update_show_status() {
+	local idx=0 project workdir containers script_file
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+	echo "Docker Compose 项目列表"
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+	while IFS='|' read -r project workdir containers; do
+		[ -z "$project" ] && continue
+		idx=$((idx + 1))
+		script_file=$(docker_compose_update_script_file "$project" "$workdir")
+		printf "%2d. %-24s %-42s %b\n" "$idx" "$project" "$(docker_compose_update_status_text "$script_file")" ""
+		echo "    路径: $workdir"
+		echo "    容器: $containers"
+	done < <(docker_compose_update_discover_projects)
+	if [ "$idx" -eq 0 ]; then
+		echo -e "${gl_huang}未检测到带 com.docker.compose.* 标签的 Docker Compose 项目。${gl_bai}"
+	fi
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+	echo "所有 Docker 容器"
+	docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+}
+
+docker_compose_update_get_item_by_number() {
+	local target="$1"
+	local idx=0 project workdir containers
+	while IFS='|' read -r project workdir containers; do
+		[ -z "$project" ] && continue
+		idx=$((idx + 1))
+		if [ "$idx" -eq "$target" ]; then
+			echo "$idx|$project|$workdir|$containers"
+			return 0
+		fi
+	done < <(docker_compose_update_discover_projects)
+	return 1
+}
+
+docker_compose_update_all_numbers() {
+	local idx=0 project workdir containers
+	while IFS='|' read -r project workdir containers; do
+		[ -z "$project" ] && continue
+		idx=$((idx + 1))
+		printf "%s " "$idx"
+	done < <(docker_compose_update_discover_projects)
+}
+
+docker_compose_update_write_script() {
+	local project="$1"
+	local workdir="$2"
+	local containers="$3"
+	local script_file="$4"
+	mkdir -p "$(dirname "$script_file")" "$(docker_compose_update_log_dir)"
+	cat > "$script_file" <<EOF
+#!/bin/bash
+
+# Docker Compose 项目名称
+COMPOSE_PROJECT="$project"
+
+# Docker Compose 项目路径
+COMPOSE_PATH="$workdir"
+
+# 关联容器
+COMPOSE_CONTAINERS="$containers"
+
+echo "========================================"
+echo "开始执行 Docker Compose 更新: \$(date '+%Y-%m-%d %H:%M:%S')"
+echo "项目: \$COMPOSE_PROJECT"
+echo "路径: \$COMPOSE_PATH"
+echo "容器: \$COMPOSE_CONTAINERS"
+echo "========================================"
+
+cd "\$COMPOSE_PATH" || exit 1
+
+echo "正在停止容器..."
+docker compose down
+
+echo "正在拉取最新镜像..."
+docker compose pull
+
+echo "正在启动容器..."
+docker compose up -d
+
+echo "========================================"
+echo "更新完成: \$(date '+%Y-%m-%d %H:%M:%S')"
+echo "========================================"
+EOF
+	chmod +x "$script_file"
+}
+
+docker_compose_update_install_one() {
+	local idx="$1"
+	local project="$2"
+	local workdir="$3"
+	local containers="$4"
+	local script_file cron_line
+	root_use
+	check_crontab_installed
+	script_file=$(docker_compose_update_script_file "$project" "$workdir")
+	cron_line=$(docker_compose_update_cron_line "$script_file" "$idx")
+	docker_compose_update_write_script "$project" "$workdir" "$containers" "$script_file"
+	(crontab -l 2>/dev/null | grep -vF "$script_file"; echo "$cron_line") | crontab -
+	echo -e "${gl_lv}已配置 Docker Compose 自动更新: $project${gl_bai}"
+	echo "脚本: $script_file"
+	echo "定时: $cron_line"
+}
+
+docker_compose_update_remove_one() {
+	local project="$1"
+	local workdir="$2"
+	local script_file
+	root_use
+	script_file=$(docker_compose_update_script_file "$project" "$workdir")
+	rm -f "$script_file"
+	crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+	echo -e "${gl_lv}已卸载 Docker Compose 自动更新: $project${gl_bai}"
+}
+
+docker_compose_update_handle_numbers() {
+	local action="$1"
+	local nums="$2"
+	local n item idx project workdir containers
+	for n in $nums; do
+		if ! [[ "$n" =~ ^[0-9]+$ ]]; then
+			echo "跳过无效编号: $n"
+			continue
+		fi
+		if ! item=$(docker_compose_update_get_item_by_number "$n"); then
+			echo "跳过无效编号: $n"
+			continue
+		fi
+		IFS='|' read -r idx project workdir containers <<< "$item"
+		if [ "$action" = "install" ]; then
+			docker_compose_update_install_one "$idx" "$project" "$workdir" "$containers"
+		else
+			docker_compose_update_remove_one "$project" "$workdir"
+		fi
+	done
+}
+
+docker_compose_auto_update_manager() {
+	if ! command -v docker >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 Docker，请先安装 Docker。${gl_bai}"
+		return 1
+	fi
+	while true; do
+		clear
+		echo -e "Docker Compose 自动更新"
+		echo -e "脚本目录: ${gl_kjlan}$(docker_compose_update_script_dir)${gl_bai}"
+		echo -e "日志目录: ${gl_kjlan}$(docker_compose_update_log_dir)${gl_bai}"
+		docker_compose_update_show_status
+		echo -e "${gl_kjlan}1.   ${gl_bai}安装自动更新（支持多选，输入编号，如: 1 2）"
+		echo -e "${gl_kjlan}2.   ${gl_bai}卸载自动更新（支持多选，输入编号，如: 2 4）"
+		echo -e "${gl_kjlan}3.   ${gl_bai}一键安装（默认全选，可自行删除编号）"
+		echo -e "${gl_kjlan}4.   ${gl_bai}一键卸载（默认全选，可自行删除编号）"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回上一级菜单"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1)
+				read -e -p "请输入要安装自动更新的项目编号（支持多选，空格分隔）: " nums
+				docker_compose_update_handle_numbers install "$nums"
+				;;
+			2)
+				read -e -p "请输入要卸载自动更新的项目编号（支持多选，空格分隔）: " nums
+				docker_compose_update_handle_numbers remove "$nums"
+				;;
+			3)
+				local nums
+				nums="$(docker_compose_update_all_numbers)"
+				read -e -i "$nums" -p "请确认/修改要安装的项目编号（默认全选，空格分隔）: " nums
+				docker_compose_update_handle_numbers install "$nums"
+				;;
+			4)
+				local nums
+				nums="$(docker_compose_update_all_numbers)"
+				read -e -i "$nums" -p "请确认/修改要卸载的项目编号（默认全选，空格分隔）: " nums
+				read -e -p "确认卸载以上编号对应自动更新？(y/N): " confirm
+				if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+					docker_compose_update_handle_numbers remove "$nums"
+				else
+					echo "已取消"
+				fi
+				;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+
 linux_docker() {
 
 	while true; do
@@ -10226,6 +10494,8 @@ linux_docker() {
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}8.   ${gl_bai}更换Docker源"
 	  echo -e "${gl_kjlan}9.   ${gl_bai}编辑daemon.json文件"
+	  echo -e "${gl_kjlan}------------------------"
+	  echo -e "${gl_kjlan}10.  ${gl_bai}Docker Compose 自动更新"
 	  echo -e "${gl_kjlan}------------------------"
 	  echo -e "${gl_kjlan}11.  ${gl_bai}开启Docker-ipv6访问"
 	  echo -e "${gl_kjlan}12.  ${gl_bai}关闭Docker-ipv6访问"
@@ -10447,6 +10717,11 @@ linux_docker() {
 			  restart docker
 			  ;;
 
+
+		  10)
+			  docker_compose_auto_update_manager
+			  continue
+			  ;;
 
 
 
@@ -16714,6 +16989,684 @@ rclone_manager() {
 }
 
 
+bitwarden_rclone_conf_file() {
+	echo "/var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf"
+}
+
+bitwarden_sync_script_file() {
+	echo "/root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh"
+}
+
+bitwarden_sync_cron_line() {
+	echo "0 6 * * * /bin/bash $(bitwarden_sync_script_file) >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1"
+}
+
+bitwarden_rclone_config_status() {
+	local conf_file
+	conf_file=$(bitwarden_rclone_conf_file)
+	if [ -f "$conf_file" ] && grep -q '^\[BitwardenBackup\]' "$conf_file" 2>/dev/null; then
+		echo -e "${gl_lv}已配置${gl_bai}"
+	else
+		echo -e "${gl_hong}未配置${gl_bai}"
+	fi
+}
+
+bitwarden_sync_script_status() {
+	local script_file cron_line
+	script_file=$(bitwarden_sync_script_file)
+	cron_line=$(bitwarden_sync_cron_line)
+	if [ -f "$script_file" ] && crontab -l 2>/dev/null | grep -Fxq "$cron_line"; then
+		echo -e "${gl_lv}已配置${gl_bai}"
+	elif [ -f "$script_file" ]; then
+		echo -e "${gl_huang}脚本已存在，定时任务未配置${gl_bai}"
+	elif crontab -l 2>/dev/null | grep -Fq "$script_file"; then
+		echo -e "${gl_huang}定时任务已存在，脚本不存在${gl_bai}"
+	else
+		echo -e "${gl_hong}未配置${gl_bai}"
+	fi
+}
+
+bitwarden_check_requirements() {
+	local missing=0
+	if ! command -v docker >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 docker，请先安装并启动 Docker。${gl_bai}"
+		missing=1
+	fi
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 rclone，请先到 rclone管理 中安装 rclone。${gl_bai}"
+		missing=1
+	fi
+	return "$missing"
+}
+
+bitwarden_configure_rclone_conf() {
+	root_use
+	bitwarden_check_requirements || return
+
+	local target_dir="/var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone"
+	local verify_output
+	mkdir -p "$target_dir"
+
+	echo "正在复制 rclone.conf..."
+	echo "命令: rclone copy qq3303338052@outlook:/rclone.conf $target_dir/"
+	if ! rclone copy "qq3303338052@outlook:/rclone.conf" "$target_dir/"; then
+		echo -e "${gl_hong}rclone.conf 复制失败，请检查 rclone 远程配置 qq3303338052@outlook 是否可用。${gl_bai}"
+		return 1
+	fi
+
+	chmod 600 "$target_dir/rclone.conf" 2>/dev/null || true
+
+	echo ""
+	echo "正在通过 vaultwarden-backup 容器验证配置..."
+	verify_output=$(docker run --rm \
+		--mount type=volume,source=vaultwarden-rclone-data,target=/config/ \
+		ttionya/vaultwarden-backup:latest \
+		rclone config show 2>&1)
+	echo "$verify_output"
+
+	if echo "$verify_output" | grep -q '^\[BitwardenBackup\]' \
+		&& echo "$verify_output" | grep -q '^type = onedrive' \
+		&& echo "$verify_output" | grep -Fq 'token = {"access_token":"EwB4BMl6'; then
+		echo -e "${gl_lv}验证成功：已检测到 BitwardenBackup / onedrive / 指定 token。${gl_bai}"
+	else
+		echo -e "${gl_hong}验证失败：没有检测到完整的 BitwardenBackup 配置。${gl_bai}"
+		echo -e "${gl_huang}需要至少包含：${gl_bai}"
+		echo '[BitwardenBackup]'
+		echo 'type = onedrive'
+		echo 'token = {"access_token":"EwB4BMl6...'
+		return 1
+	fi
+}
+
+bitwarden_backup_data() {
+	root_use
+	if ! command -v docker >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 docker，请先安装 Docker。${gl_bai}"
+		return 1
+	fi
+	if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -qx 'vaultwarden-backup'; then
+		echo -e "${gl_hong}vaultwarden-backup 容器未运行，无法执行备份。${gl_bai}"
+		echo "请先启动 vaultwarden-backup 容器后再重试。"
+		return 1
+	fi
+
+	local backup_output
+	echo "正在执行备份..."
+	backup_output=$(docker exec -i vaultwarden-backup bash /app/backup.sh 2>&1)
+	echo "$backup_output"
+
+	if echo "$backup_output" | grep -q 'upload backup file to storage system'; then
+		echo -e "${gl_lv}备份成功：已检测到 upload backup file to storage system。${gl_bai}"
+	else
+		echo -e "${gl_hong}备份可能失败：没有检测到 upload backup file to storage system 字段。${gl_bai}"
+		return 1
+	fi
+}
+
+bitwarden_restore_data() {
+	root_use
+	bitwarden_check_requirements || return
+
+	local remote="qq3303338052@outlook:/BitwardenBackup"
+	local list_output files selected_idx selected_file restore_dir confirm
+
+	echo "正在读取 Bitwarden 备份列表..."
+	if ! list_output=$(rclone ls "$remote" 2>&1); then
+		echo "$list_output"
+		echo -e "${gl_hong}读取备份列表失败，请检查 rclone 远程存储。${gl_bai}"
+		return 1
+	fi
+
+	mapfile -t files < <(echo "$list_output" | awk '{print $2}' | grep -E '^backup\.[0-9]{8}\.zip$' | sort -r)
+	if [ "${#files[@]}" -eq 0 ]; then
+		echo -e "${gl_hong}没有找到 backup.YYYYMMDD.zip 格式的备份文件。${gl_bai}"
+		return 1
+	fi
+
+	echo "可还原备份（按日期倒序，最新在最前面）："
+	echo "------------------------"
+	local i size
+	for ((i=0; i<${#files[@]}; i++)); do
+		size=$(echo "$list_output" | awk -v f="${files[i]}" '$2 == f {print $1; exit}')
+		printf "%2d. %-28s %s bytes\n" "$((i+1))" "${files[i]}" "$size"
+	done
+	echo "------------------------"
+	read -e -i "1" -p "请选择要还原的备份编号（默认 1 最新）: " selected_idx
+	selected_idx="${selected_idx:-1}"
+	if ! [[ "$selected_idx" =~ ^[0-9]+$ ]] || [ "$selected_idx" -lt 1 ] || [ "$selected_idx" -gt "${#files[@]}" ]; then
+		echo "无效编号"
+		return 1
+	fi
+
+	selected_file="${files[$((selected_idx-1))]}"
+	echo -e "${gl_huang}即将还原: $selected_file${gl_bai}"
+	read -e -p "还原会覆盖 vaultwarden-data 数据，确认继续？(y/N): " confirm
+	[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return; }
+
+	restore_dir="$(pwd)"
+	if [ ! -f "$restore_dir/$selected_file" ]; then
+		echo "当前目录未找到 $selected_file，正在从远程下载到: $restore_dir"
+		if ! rclone copy "$remote/$selected_file" "$restore_dir/"; then
+			echo -e "${gl_hong}下载备份文件失败，已停止还原。${gl_bai}"
+			return 1
+		fi
+	fi
+	echo "执行还原命令，当前目录将挂载到 /bitwarden/restore/: $restore_dir"
+	docker run --rm -it \
+		--mount type=volume,source=vaultwarden-data,target=/bitwarden/data/ \
+		--mount type=bind,source="$restore_dir",target=/bitwarden/restore/ \
+		ttionya/vaultwarden-backup:latest restore \
+		--zip-file "$selected_file"
+}
+
+bitwarden_configure_sync_script() {
+	root_use
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 rclone，请先到 rclone管理 中安装 rclone。${gl_bai}"
+		return 1
+	fi
+	check_crontab_installed
+
+	local script_dir="/root/backup-sh"
+	local script_file cron_line
+	script_file=$(bitwarden_sync_script_file)
+	cron_line=$(bitwarden_sync_cron_line)
+
+	mkdir -p "$script_dir" /var/log/rclone
+	cat > "$script_file" <<'EOF'
+#!/bin/bash
+
+# ========= 源与目标 =========
+SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"
+DEST_REMOTE="Infini-cloud:/BitwardenBackup"
+
+# ========= 日志 =========
+LOG_DIR="/var/log/rclone"
+LOG_FILE="$LOG_DIR/vaultwarden_backup_sync_$(date +%F).log"
+
+mkdir -p "$LOG_DIR"
+
+echo "===== $(date) 开始同步 Vaultwarden 备份（sync） =====" >> "$LOG_FILE"
+
+# ========= rclone sync =========
+rclone sync \
+  "$SRC_REMOTE" "$DEST_REMOTE" \
+  --transfers=4 \
+  --checkers=8 \
+  --fast-list \
+  --progress \
+  --log-file="$LOG_FILE" \
+  --log-level INFO
+
+echo "===== $(date) Vaultwarden 备份同步完成（sync） =====" >> "$LOG_FILE"
+EOF
+	chmod +x "$script_file"
+
+	(crontab -l 2>/dev/null | grep -vF "$script_file"; echo "$cron_line") | crontab -
+
+	echo -e "${gl_lv}Bitwarden 同步脚本已配置${gl_bai}"
+	echo "脚本路径: $script_file"
+	echo "定时任务: $cron_line"
+	echo "同步日志: /var/log/rclone/vaultwarden_backup_sync_日期.log"
+	echo "cron 日志: /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log"
+}
+
+bitwarden_manager() {
+	while true; do
+		clear
+		echo -e "Bitwarden管理"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo -e "rclone.conf 状态: $(bitwarden_rclone_config_status)"
+		echo -e "同步脚本状态: $(bitwarden_sync_script_status)"
+		echo -e "配置文件位置: ${gl_kjlan}$(bitwarden_rclone_conf_file)${gl_bai}"
+		echo -e "同步脚本位置: ${gl_kjlan}$(bitwarden_sync_script_file)${gl_bai}"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo -e "${gl_kjlan}1.   ${gl_bai}配置 rclone.conf 文件"
+		echo -e "${gl_kjlan}2.   ${gl_bai}数据备份"
+		echo -e "${gl_kjlan}3.   ${gl_bai}数据还原"
+		echo -e "${gl_kjlan}4.   ${gl_bai}配置 Bitwarden 同步脚本（OneDrive -> Infini-cloud）"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		read -e -p "请输入你的选择: " sub_choice
+		case $sub_choice in
+			1) bitwarden_configure_rclone_conf ;;
+			2) bitwarden_backup_data ;;
+			3) bitwarden_restore_data ;;
+			4) bitwarden_configure_sync_script ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+
+crontab_sync_backup_dir() {
+	echo "/root/backup-sh"
+}
+
+crontab_sync_log_dir() {
+	echo "/var/log/rclone"
+}
+
+crontab_sync_script_file_by_id() {
+	case "$1" in
+		bitwarden) echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Infini.sh" ;;
+		imagebed) echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh" ;;
+		via) echo "$(crontab_sync_backup_dir)/Via_Infini_to_OneDrive.sh" ;;
+		custom) echo "$(crontab_sync_backup_dir)/$2" ;;
+	esac
+}
+
+crontab_sync_cron_line_by_id() {
+	local id="$1"
+	local script_file="$2"
+	case "$id" in
+		bitwarden) echo "0 6 * * * /bin/bash $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1" ;;
+		imagebed) echo "0 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1" ;;
+		via) echo "30 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1" ;;
+		custom)
+			local script_base
+			script_base=$(basename "$script_file" .sh)
+			echo "45 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_${script_base}.log 2>&1"
+			;;
+	esac
+}
+
+crontab_sync_script_content_ok() {
+	local id="$1"
+	local script_file="$2"
+	[ -f "$script_file" ] || return 1
+	case "$id" in
+		bitwarden)
+			grep -q 'SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"' "$script_file" 2>/dev/null \
+				&& grep -q 'DEST_REMOTE="Infini-cloud:/BitwardenBackup"' "$script_file" 2>/dev/null \
+				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
+			;;
+		imagebed)
+			grep -q 'qq3303338052@cloudflare:image-bed-daimon' "$script_file" 2>/dev/null \
+				&& grep -q 'qq3303338052@outlook:image-bed-daimon' "$script_file" 2>/dev/null \
+				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
+			;;
+		via)
+			grep -q '"Infini-cloud:Via"' "$script_file" 2>/dev/null \
+				&& grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \
+				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
+			;;
+		custom)
+			grep -q 'SRC1="/root"' "$script_file" 2>/dev/null \
+				&& grep -q 'DEST1="Infini-cloud:$SCRIPT_NAME"' "$script_file" 2>/dev/null \
+				&& grep -q 'DEST2="qq3303338052@outlook:$SCRIPT_NAME"' "$script_file" 2>/dev/null \
+				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
+			;;
+	esac
+}
+
+crontab_sync_status_text() {
+	local id="$1"
+	local script_file="$2"
+	local cron_line="$3"
+	local has_file=false
+	local content_ok=false
+	local has_cron=false
+	local cron_output=""
+
+	[ -f "$script_file" ] && has_file=true
+	cron_output=$(crontab -l 2>/dev/null || true)
+	if echo "$cron_output" | grep -Fxq "$cron_line" || echo "$cron_output" | grep -Fq "$script_file"; then
+		has_cron=true
+	fi
+	crontab_sync_script_content_ok "$id" "$script_file" && content_ok=true
+
+	if $has_file && $content_ok && $has_cron; then
+		echo -e "${gl_lv}已安装${gl_bai}"
+	elif $has_file && ! $content_ok && $has_cron; then
+		echo -e "${gl_huang}已加入定时，脚本内容异常${gl_bai}"
+	elif $has_file && $content_ok && ! $has_cron; then
+		echo -e "${gl_huang}脚本已存在，未加入定时${gl_bai}"
+	elif ! $has_file && $has_cron; then
+		echo -e "${gl_huang}定时任务存在，脚本不存在${gl_bai}"
+	else
+		echo -e "${gl_hong}未安装${gl_bai}"
+	fi
+}
+
+crontab_sync_builtin_name_by_id() {
+	case "$1" in
+		bitwarden) echo "bitwarden同步脚本" ;;
+		imagebed) echo "图床同步脚本" ;;
+		via) echo "via同步脚本" ;;
+	esac
+}
+
+crontab_sync_builtin_id_by_number() {
+	case "$1" in
+		1) echo "bitwarden" ;;
+		2) echo "imagebed" ;;
+		3) echo "via" ;;
+	esac
+}
+
+crontab_sync_custom_files() {
+	local dir
+	dir=$(crontab_sync_backup_dir)
+	[ -d "$dir" ] || return 0
+	find "$dir" -maxdepth 1 -type f -name '*.sh' \
+		! -name 'Vaultwarden_OneDrive_to_Infini.sh' \
+		! -name 'ImageBed_CloudFlare-R2_to_OneDrive.sh' \
+		! -name 'Via_Infini_to_OneDrive.sh' \
+		-printf '%f\n' 2>/dev/null | sort
+}
+
+crontab_sync_write_script() {
+	local id="$1"
+	local script_file="$2"
+	mkdir -p "$(dirname "$script_file")" "$(crontab_sync_log_dir)"
+	case "$id" in
+		bitwarden)
+			cat > "$script_file" <<'EOF'
+#!/bin/bash
+
+# ========= 源与目标 =========
+SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"
+DEST_REMOTE="Infini-cloud:/BitwardenBackup"
+
+# ========= 日志 =========
+LOG_DIR="/var/log/rclone"
+LOG_FILE="$LOG_DIR/vaultwarden_backup_sync_$(date +%F).log"
+
+mkdir -p "$LOG_DIR"
+
+echo "===== $(date) 开始同步 Vaultwarden 备份（sync） =====" >> "$LOG_FILE"
+
+# ========= rclone sync =========
+rclone sync \
+  "$SRC_REMOTE" "$DEST_REMOTE" \
+  --transfers=4 \
+  --checkers=8 \
+  --fast-list \
+  --progress \
+  --log-file="$LOG_FILE" \
+  --log-level INFO
+
+echo "===== $(date) Vaultwarden 备份同步完成（sync） =====" >> "$LOG_FILE"
+EOF
+			;;
+		imagebed)
+			cat > "$script_file" <<'EOF'
+#!/bin/bash
+
+LOG_DIR="/var/log/rclone"
+LOG_FILE="$LOG_DIR/r2_to_onedrive_imagebed.log"
+
+mkdir -p "$LOG_DIR"
+
+rclone sync \
+  qq3303338052@cloudflare:image-bed-daimon \
+  qq3303338052@outlook:image-bed-daimon \
+  --transfers=8 \
+  --checkers=16 \
+  --onedrive-chunk-size=100M \
+  --progress \
+  --log-file="$LOG_FILE" \
+  --log-level INFO
+EOF
+			;;
+		via)
+			cat > "$script_file" <<'EOF'
+#!/bin/bash
+
+LOG_DIR="/var/log/rclone"
+LOG_FILE="$LOG_DIR/infini_to_gdrive_via.log"
+
+mkdir -p "$LOG_DIR"
+
+rclone sync \
+  "Infini-cloud:Via" \
+  "qq3303338052@outlook:Via" \
+  --transfers=8 \
+  --checkers=16 \
+  --progress \
+  --log-file="$LOG_FILE" \
+  --log-level INFO
+EOF
+			;;
+		custom)
+			cat > "$script_file" <<'EOF'
+#!/bin/bash
+SRC1="/root"
+# 自动获取脚本文件名（不含.sh后缀）作为目标文件夹名
+
+SCRIPT_NAME=$(basename "$0" .sh)
+
+DEST1="Infini-cloud:$SCRIPT_NAME"
+DEST2="qq3303338052@outlook:$SCRIPT_NAME"
+
+LOG_DIR="/var/log/rclone"
+LOG_FILE="$LOG_DIR/${SCRIPT_NAME}_$(date +%F).log"
+mkdir -p "$LOG_DIR"
+
+echo "===== $(date) 开始备份 =====" >> "$LOG_FILE"
+
+# Outlook
+rclone sync \
+  "$SRC1" "$DEST2" \
+  --exclude "snap/**" \
+  --exclude ".*" \
+  --exclude ".*/**" \
+  --transfers=4 \
+  --checkers=8 \
+  --fast-list \
+  --progress \
+  --log-file="$LOG_FILE" \
+  --log-level INFO
+
+# Infini-cloud
+rclone sync \
+  "$SRC1" "$DEST1" \
+  --exclude "snap/**" \
+  --exclude ".*" \
+  --exclude ".*/**" \
+  --transfers=4 \
+  --checkers=8 \
+  --fast-list \
+  --progress \
+  --log-file="$LOG_FILE" \
+  --log-level INFO
+
+echo "===== $(date) 备份完成 =====" >> "$LOG_FILE"
+EOF
+			;;
+	esac
+	chmod +x "$script_file"
+}
+
+crontab_sync_install_one() {
+	local id="$1"
+	local script_file="$2"
+	local cron_line="$3"
+	root_use
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
+		return 1
+	fi
+	check_crontab_installed
+	crontab_sync_write_script "$id" "$script_file"
+	(crontab -l 2>/dev/null | grep -vF "$script_file"; echo "$cron_line") | crontab -
+	echo -e "${gl_lv}已安装: $(basename "$script_file")${gl_bai}"
+	echo "定时任务: $cron_line"
+}
+
+crontab_sync_remove_one() {
+	local script_file="$1"
+	root_use
+	rm -f "$script_file"
+	crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+	echo -e "${gl_lv}已卸载: $(basename "$script_file")${gl_bai}"
+}
+
+crontab_sync_show_status() {
+	local custom_files=()
+	local custom_count=0
+	local file cron_line id name
+
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+	for n in 1 2 3; do
+		id=$(crontab_sync_builtin_id_by_number "$n")
+		name=$(crontab_sync_builtin_name_by_id "$id")
+		file=$(crontab_sync_script_file_by_id "$id")
+		cron_line=$(crontab_sync_cron_line_by_id "$id" "$file")
+		printf "%2d. %-20s %-58s %b\n" "$n" "$name" "$file" "$(crontab_sync_status_text "$id" "$file" "$cron_line")"
+	done
+
+	mapfile -t custom_files < <(crontab_sync_custom_files)
+	if [ "${#custom_files[@]}" -eq 0 ]; then
+		echo -e "自定义脚本: ${gl_hui}无${gl_bai}"
+	else
+		echo "自定义脚本:"
+		for file_name in "${custom_files[@]}"; do
+			custom_count=$((custom_count + 1))
+			file="$(crontab_sync_script_file_by_id custom "$file_name")"
+			cron_line=$(crontab_sync_cron_line_by_id custom "$file")
+			printf "%2d. %-20s %-58s %b\n" "$((3 + custom_count))" "${file_name%.sh}" "$file" "$(crontab_sync_status_text custom "$file" "$cron_line")"
+		done
+	fi
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+}
+
+crontab_sync_get_item_by_number() {
+	local num="$1"
+	local id file cron_line
+	case "$num" in
+		1|2|3)
+			id=$(crontab_sync_builtin_id_by_number "$num")
+			file=$(crontab_sync_script_file_by_id "$id")
+			cron_line=$(crontab_sync_cron_line_by_id "$id" "$file")
+			echo "$id|$file|$cron_line"
+			return 0
+			;;
+	esac
+
+	local custom_index=$((num - 4))
+	if [ "$custom_index" -ge 0 ]; then
+		local custom_files=()
+		mapfile -t custom_files < <(crontab_sync_custom_files)
+		if [ "$custom_index" -lt "${#custom_files[@]}" ]; then
+			file=$(crontab_sync_script_file_by_id custom "${custom_files[$custom_index]}")
+			cron_line=$(crontab_sync_cron_line_by_id custom "$file")
+			echo "custom|$file|$cron_line"
+			return 0
+		fi
+	fi
+	return 1
+}
+
+crontab_sync_handle_numbers() {
+	local action="$1"
+	local nums="$2"
+	local n item id file cron_line
+	for n in $nums; do
+		if ! [[ "$n" =~ ^[0-9]+$ ]]; then
+			echo "跳过无效编号: $n"
+			continue
+		fi
+		if ! item=$(crontab_sync_get_item_by_number "$n"); then
+			echo "跳过无效编号: $n"
+			continue
+		fi
+		IFS='|' read -r id file cron_line <<< "$item"
+		if [ "$action" = "install" ]; then
+			crontab_sync_install_one "$id" "$file" "$cron_line"
+		else
+			crontab_sync_remove_one "$file"
+		fi
+	done
+}
+
+crontab_sync_all_numbers() {
+	local count=3
+	local custom_files=()
+	mapfile -t custom_files < <(crontab_sync_custom_files)
+	count=$((count + ${#custom_files[@]}))
+	seq 1 "$count" | tr '\n' ' '
+}
+
+crontab_sync_create_custom() {
+	root_use
+	local name file cron_expr cron_line
+	read -e -p "请输入自定义脚本名称（自动补全 .sh 后缀）: " name
+	[ -z "$name" ] && { echo "名称不能为空"; return 1; }
+	name=$(basename "$name")
+	name=$(echo "$name" | sed 's/[[:space:]]/_/g; s/[^A-Za-z0-9_.-]/_/g')
+	[ -z "${name//_/}" ] && { echo "名称无效"; return 1; }
+	[[ "$name" == *.sh ]] || name="${name}.sh"
+	file=$(crontab_sync_script_file_by_id custom "$name")
+	read -e -i "45 4 * * *" -p "请输入定时规则（默认 45 4 * * *）: " cron_expr
+	cron_expr="${cron_expr:-45 4 * * *}"
+	cron_line="$cron_expr /bin/bash $file >> /var/log/rclone/cron_${name%.sh}.log 2>&1"
+
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
+		return 1
+	fi
+	check_crontab_installed
+	crontab_sync_write_script custom "$file"
+	(crontab -l 2>/dev/null | grep -vF "$file"; echo "$cron_line") | crontab -
+	echo -e "${gl_lv}自定义同步脚本已创建${gl_bai}"
+	echo "脚本路径: $file"
+	echo "定时任务: $cron_line"
+}
+
+crontab_sync_manager() {
+	while true; do
+		clear
+		echo -e "crontab同步脚本管理"
+		echo -e "脚本目录: ${gl_kjlan}$(crontab_sync_backup_dir)${gl_bai}"
+		echo -e "日志目录: ${gl_kjlan}$(crontab_sync_log_dir)${gl_bai}"
+		crontab_sync_show_status
+		echo -e "${gl_kjlan}1.   ${gl_bai}安装脚本（支持多选，输入编号，如: 1 2）"
+		echo -e "${gl_kjlan}2.   ${gl_bai}卸载脚本（支持多选，输入编号，如: 2 4）"
+		echo -e "${gl_kjlan}3.   ${gl_bai}一键安装（默认全选，可自行删除编号）"
+		echo -e "${gl_kjlan}4.   ${gl_bai}一键卸载（默认全选，可自行删除编号）"
+		echo -e "${gl_kjlan}5.   ${gl_bai}自定义脚本"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		read -e -p "请输入你的选择: " sub_choice
+		case "$sub_choice" in
+			1)
+				read -e -p "请输入要安装的脚本编号（支持多选，空格分隔）: " nums
+				crontab_sync_handle_numbers install "$nums"
+				;;
+			2)
+				read -e -p "请输入要卸载的脚本编号（支持多选，空格分隔）: " nums
+				crontab_sync_handle_numbers remove "$nums"
+				;;
+			3)
+				local nums
+				nums="$(crontab_sync_all_numbers)"
+				read -e -i "$nums" -p "请确认/修改要安装的脚本编号（默认全选，空格分隔）: " nums
+				crontab_sync_handle_numbers install "$nums"
+				;;
+			4)
+				local nums
+				nums="$(crontab_sync_all_numbers)"
+				read -e -i "$nums" -p "请确认/修改要卸载的脚本编号（默认全选，空格分隔）: " nums
+				read -e -p "确认卸载以上编号对应脚本和定时任务？(y/N): " confirm
+				if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
+					crontab_sync_handle_numbers remove "$nums"
+				else
+					echo "已取消"
+				fi
+				;;
+			5) crontab_sync_create_custom ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
+
+
 warp_manager() {
 	while true; do
 		clear
@@ -16864,7 +17817,10 @@ echo -e "${gl_kjlan}13.  ${gl_bai}fail2ban管理"
 echo -e "${gl_kjlan}14.  ${gl_bai}BBR管理"
 echo -e "${gl_kjlan}15.  ${gl_bai}WARP管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}16.  ${gl_bai}常用的一键脚本"
+echo -e "${gl_kjlan}16.  ${gl_bai}Bitwarden管理"
+echo -e "${gl_kjlan}17.  ${gl_bai}crontab同步脚本管理"
+echo -e "${gl_kjlan}------------------------${gl_bai}"
+echo -e "${gl_kjlan}18.  ${gl_bai}常用的一键脚本"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -16888,7 +17844,9 @@ case $choice in
   13) fail2ban_manager; pause_after=false ;;
   14) linux_bbr; pause_after=false ;;
   15) warp_manager; pause_after=false ;;
-  16) common_one_click_scripts; pause_after=false ;;
+  16) bitwarden_manager; pause_after=false ;;
+  17) crontab_sync_manager; pause_after=false ;;
+  18) common_one_click_scripts; pause_after=false ;;
   00) kejilion_update; pause_after=false ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
@@ -16915,6 +17873,8 @@ echo "设置虚拟时区        d time Asia/Shanghai | d 时区 Asia/Shanghai"
 echo "Docker管理面板      d docker"
 echo "fail2ban管理        d fail2ban | d f2b"
 echo "rclone管理          d rclone | d rc"
+echo "Bitwarden管理       d bitwarden | d bw"
+echo "crontab同步脚本管理 d cronsync | d syncscripts"
 echo "显示系统信息        d info"
 echo "ROOT密钥管理        d sshkey"
 }
@@ -17129,6 +18089,14 @@ else
 
 		rclone|rc)
 			rclone_manager
+			;;
+
+		bitwarden|bw)
+			bitwarden_manager
+			;;
+
+		cronsync|syncscripts|cron-sync)
+			crontab_sync_manager
 			;;
 
 

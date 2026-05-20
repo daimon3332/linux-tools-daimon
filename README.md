@@ -2,7 +2,7 @@
 
 `linux-tools-daimon` 是个人自用的 Linux 服务器脚本工具箱，中文交互，快捷命令为 `d`。
 
-本项目基于 `kejilion/sh` 二开定制，保留常用服务器管理能力，并增加 SSH、UFW、rclone、SSL/Nginx、fail2ban、WARP、GitHub 镜像源测速、journalctl 日志管理、第三方工具和编程工具管理等功能。
+本项目基于 `kejilion/sh` 二开定制，保留常用服务器管理能力，并增加 SSH、UFW、rclone、Bitwarden、crontab 同步脚本、SSL/Nginx、fail2ban、WARP、GitHub 镜像源测速、journalctl 日志管理、第三方工具和编程工具管理等功能。
 
 ## 一键运行
 
@@ -39,7 +39,9 @@ d
 | 13 | fail2ban管理 | 安装/卸载 fail2ban，并自动配置 sshd 防护 |
 | 14 | BBR管理 | 进入 BBR / 网络加速管理脚本 |
 | 15 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
-| 16 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
+| 16 | Bitwarden管理 | 配置 vaultwarden-backup 的 rclone.conf、执行备份和还原 |
+| 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via 和自定义 rclone 同步脚本 |
+| 18 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
 
 ## 主要内容
 
@@ -142,18 +144,12 @@ d
 | 5 | Docker 网络管理 | 管理 Docker 网络 |
 | 6 | Docker 卷管理 | 管理 Docker volume |
 | 7 | Docker 清理 | 清理无用 Docker 资源 |
-| 8 | Docker Compose 项目管理 | 管理 compose 项目 |
-| 9 | Docker 镜像源管理 | 配置 Docker 镜像源 |
-| 10 | Docker daemon.json 管理 | 编辑或管理 daemon 配置 |
-| 11 | Docker IPv6 配置 | 配置 Docker IPv6 |
-| 12 | Docker 容器端口访问控制 | 管理容器端口访问规则 |
-| 13 | Docker 容器日志查看 | 查看容器日志 |
-| 14 | Docker 容器资源占用查看 | 查看容器资源占用 |
-| 15 | Docker 容器网络信息查看 | 查看容器网络信息 |
-| 16 | Docker Compose 备份 | 备份 compose 项目 |
-| 17 | Docker Compose 迁移 | 迁移 compose 项目 |
-| 18 | Docker 容器备份 | 备份容器 |
-| 19 | Docker 备份还原 | 还原 Docker 备份 |
+| 8 | 更换 Docker 源 | 配置 Docker 镜像源 |
+| 9 | 编辑 daemon.json 文件 | 编辑 Docker daemon 配置 |
+| 10 | Docker Compose 自动更新 | 自动检测 Compose 项目，配置定时 `docker compose pull/up -d` |
+| 11 | 开启 Docker IPv6 访问 | 写入 Docker IPv6 配置 |
+| 12 | 关闭 Docker IPv6 访问 | 关闭 Docker IPv6 配置 |
+| 19 | 备份/迁移/还原 Docker 环境 | 备份、迁移和还原 Docker 项目 |
 | 20 | 卸载 Docker 环境 | 卸载 Docker |
 
 ### SSH管理
@@ -218,6 +214,27 @@ d
 |---:|---|---|
 | 1 | 进入 WARP 官方管理脚本 | 运行 WARP 管理脚本 |
 | 2 | 彻底删除 WARP | 删除 WARP 网络接口、Linux Client 和 WireProxy |
+### Bitwarden管理
+
+| 序号 | 选项 | 作用 |
+|---:|---|---|
+| 1 | 配置 rclone.conf 文件 | 从 `qq3303338052@outlook:/rclone.conf` 复制配置到 `vaultwarden-rclone-data` 卷，并验证 `[BitwardenBackup]` |
+| 2 | 数据备份 | 对运行中的 `vaultwarden-backup` 容器执行 `/app/backup.sh`，并检测上传成功字段 |
+| 3 | 数据还原 | 展示 `qq3303338052@outlook:/BitwardenBackup` 下的备份文件，按日期倒序选择后执行 restore |
+| 4 | 配置 Bitwarden 同步脚本 | 写入 `/root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh`，并添加每天 06:00 同步到 `Infini-cloud` 的 crontab |
+| 0 | 返回主菜单 | 返回上一级菜单 |
+
+### crontab同步脚本管理
+
+| 序号 | 选项 | 作用 |
+|---:|---|---|
+| 1 | 安装脚本 | 支持多选安装 Bitwarden、图床、Via 或已有自定义脚本 |
+| 2 | 卸载脚本 | 支持多选删除脚本文件和对应 crontab |
+| 3 | 一键安装 | 默认预填所有脚本编号，用户可自行删除编号 |
+| 4 | 一键卸载 | 默认预填所有脚本编号，用户可自行删除编号 |
+| 5 | 自定义脚本 | 输入脚本名称，自动补全 `.sh`，写入通用 `/root` 备份模板 |
+| 0 | 返回主菜单 | 返回上一级菜单 |
+
 
 ### 常用的一键脚本
 

@@ -41,7 +41,10 @@ mkdir -p /root/daimon
 14. BBR管理
 15. WARP管理
 ---
-16. 常用的一键脚本
+16. Bitwarden管理
+17. crontab同步脚本管理
+---
+18. 常用的一键脚本
 00. 脚本更新
 0. 退出脚本
 
@@ -999,6 +1002,48 @@ systemctl restart docker
 ```
 解释：手动编辑 Docker daemon 配置并重启。
 
+### 8.10 Docker Compose 自动更新
+
+默认展示：
+
+```bash
+docker ps -a --format '{{.Names}}'
+docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}|{{ index .Config.Labels "com.docker.compose.project.working_dir" }}|{{ index .Config.Labels "com.docker.compose.project.config_files" }}' 容器名
+crontab -l
+```
+解释：自动扫描所有 Docker 容器，读取 Docker Compose 标签，按 Compose 项目去重展示；同时检查自动更新脚本和 crontab 是否已配置。
+
+安装自动更新：
+
+```bash
+mkdir -p /root/docker-compose-update /var/log/docker-compose-update
+cat > /root/docker-compose-update/compose_update_项目名_路径.sh <<'EOF'
+#!/bin/bash
+COMPOSE_PATH="/root/CLIProxyAPI"
+echo "========================================"
+echo "开始执行 Docker Compose 更新: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "========================================"
+cd "$COMPOSE_PATH" || exit 1
+docker compose down
+docker compose pull
+docker compose up -d
+echo "========================================"
+echo "更新完成: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "========================================"
+EOF
+chmod +x /root/docker-compose-update/compose_update_项目名_路径.sh
+(crontab -l 2>/dev/null | grep -vF "/root/docker-compose-update/compose_update_项目名_路径.sh"; echo "错开的时间 /bin/bash /root/docker-compose-update/compose_update_项目名_路径.sh >> /var/log/docker-compose-update/cron_compose_update_项目名_路径.log 2>&1") | crontab -
+```
+解释：每个 Compose 项目生成一个独立更新脚本；脚本进入项目目录执行 `docker compose down && docker compose pull && docker compose up -d`，定时任务会按项目编号错开分钟，避免所有项目同一时间更新。
+
+卸载自动更新：
+
+```bash
+rm -f /root/docker-compose-update/compose_update_项目名_路径.sh
+crontab -l 2>/dev/null | grep -vF "/root/docker-compose-update/compose_update_项目名_路径.sh" | crontab -
+```
+解释：删除对应项目的自动更新脚本和 crontab 任务。
+
 ### 8.11 开启 Docker IPv6 访问
 
 ```bash
@@ -1437,7 +1482,142 @@ bash /root/daimon/warp-menu.sh u
 ```
 解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
 
-## 16. 常用的一键脚本
+## 16. Bitwarden 管理
+
+进入 Bitwarden 管理默认展示：
+
+```bash
+grep '^\[BitwardenBackup\]' /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf
+```
+解释：检测 vaultwarden-backup 使用的 rclone 配置里是否存在 `[BitwardenBackup]`。
+
+配置 rclone.conf 文件：
+
+```bash
+mkdir -p /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone
+rclone copy qq3303338052@outlook:/rclone.conf /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/
+chmod 600 /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf
+docker run --rm \
+  --mount type=volume,source=vaultwarden-rclone-data,target=/config/ \
+  ttionya/vaultwarden-backup:latest \
+  rclone config show
+```
+解释：复制 rclone.conf 到 Docker volume，并验证输出里包含 `[BitwardenBackup]`、`type = onedrive` 和指定 token 前缀。
+
+数据备份：
+
+```bash
+docker ps --format '{{.Names}}' | grep -qx vaultwarden-backup
+docker exec -i vaultwarden-backup bash /app/backup.sh
+```
+解释：要求 `vaultwarden-backup` 容器已启动；脚本会检测输出中是否出现 `upload backup file to storage system`。
+
+数据还原：
+
+```bash
+rclone ls qq3303338052@outlook:/BitwardenBackup
+rclone copy qq3303338052@outlook:/BitwardenBackup/backup.20251231.zip $(pwd)/
+docker run --rm -it \
+  --mount type=volume,source=vaultwarden-data,target=/bitwarden/data/ \
+  --mount type=bind,source=$(pwd),target=/bitwarden/restore/ \
+  ttionya/vaultwarden-backup:latest restore \
+  --zip-file backup.20251231.zip
+```
+解释：先列出远程备份并按日期倒序显示，用户选择后把 `backup.20251231.zip` 替换为实际备份文件名；如果当前目录没有该 zip，会先下载再执行还原。
+
+配置 Bitwarden 同步脚本：
+
+```bash
+mkdir -p /root/backup-sh /var/log/rclone
+cat > /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh <<'EOF'
+#!/bin/bash
+
+# ========= 源与目标 =========
+SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"
+DEST_REMOTE="Infini-cloud:/BitwardenBackup"
+
+# ========= 日志 =========
+LOG_DIR="/var/log/rclone"
+LOG_FILE="$LOG_DIR/vaultwarden_backup_sync_$(date +%F).log"
+
+mkdir -p "$LOG_DIR"
+
+echo "===== $(date) 开始同步 Vaultwarden 备份（sync） =====" >> "$LOG_FILE"
+
+# ========= rclone sync =========
+rclone sync \
+  "$SRC_REMOTE" "$DEST_REMOTE" \
+  --transfers=4 \
+  --checkers=8 \
+  --fast-list \
+  --progress \
+  --log-file="$LOG_FILE" \
+  --log-level INFO
+
+echo "===== $(date) Vaultwarden 备份同步完成（sync） =====" >> "$LOG_FILE"
+EOF
+chmod +x /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh
+(crontab -l 2>/dev/null | grep -vF "/root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh"; echo "0 6 * * * /bin/bash /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1") | crontab -
+```
+解释：脚本会自动检测同步脚本和 crontab 是否已配置；配置后每天 06:00 使用 `rclone sync` 从 `qq3303338052@outlook:/BitwardenBackup` 同步到 `Infini-cloud:/BitwardenBackup`。
+
+## 17. crontab 同步脚本管理
+
+默认展示：
+
+```bash
+ls -1 /root/backup-sh/*.sh 2>/dev/null
+crontab -l
+```
+解释：显示内置脚本和自定义脚本的安装状态；状态会同时检查脚本文件、脚本内容关键字段和 crontab 里的精确任务行。
+
+内置脚本目录：
+
+```bash
+mkdir -p /root/backup-sh /var/log/rclone
+```
+解释：所有同步脚本都放在 `/root/backup-sh`，日志默认放在 `/var/log/rclone`。
+
+安装/卸载脚本：
+
+```bash
+crontab -l 2>/dev/null | grep -vF "/root/backup-sh/脚本名.sh" | crontab -
+cat > /root/backup-sh/脚本名.sh
+chmod +x /root/backup-sh/脚本名.sh
+(crontab -l 2>/dev/null | grep -vF "/root/backup-sh/脚本名.sh"; echo "错开的时间 /bin/bash /root/backup-sh/脚本名.sh >> /var/log/rclone/cron_脚本名.log 2>&1") | crontab -
+```
+解释：安装时写入脚本并添加定时任务；卸载时删除脚本文件，并删除 crontab 中包含该脚本路径的任务行。
+
+Bitwarden 同步脚本：
+
+```bash
+0 6 * * * /bin/bash /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1
+```
+解释：每天 06:00 同步 `qq3303338052@outlook:/BitwardenBackup` 到 `Infini-cloud:/BitwardenBackup`。
+
+图床同步脚本：
+
+```bash
+0 4 * * * /bin/bash /root/backup-sh/ImageBed_CloudFlare-R2_to_OneDrive.sh >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1
+```
+解释：每天 04:00 同步 `qq3303338052@cloudflare:image-bed-daimon` 到 `qq3303338052@outlook:image-bed-daimon`。
+
+Via 同步脚本：
+
+```bash
+30 4 * * * /bin/bash /root/backup-sh/Via_Infini_to_OneDrive.sh >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1
+```
+解释：每天 04:30 同步 `Infini-cloud:Via` 到 `qq3303338052@outlook:Via`。
+
+自定义脚本：
+
+```bash
+cat > /root/backup-sh/自定义名称.sh
+45 4 * * * /bin/bash /root/backup-sh/自定义名称.sh >> /var/log/rclone/cron_自定义名称.log 2>&1
+```
+解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 同步到 `Infini-cloud:脚本名` 和 `qq3303338052@outlook:脚本名`，并排除隐藏文件/目录和 `snap/**`。
+
+## 18. 常用的一键脚本
 
 这些脚本会先退出当前脚本，再运行目标脚本，避免输出被主菜单覆盖。
 
