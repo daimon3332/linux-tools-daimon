@@ -34,11 +34,11 @@ d
 | 8 | Docker管理 | 安装、卸载、状态查看、镜像源、容器、镜像、网络、卷、Compose、备份迁移等 |
 | 9 | SSH管理 | 修改 SSH 端口、密码登录、密钥登录、公钥私钥和 sshd_config |
 | 10 | UFW管理 | 安装/卸载 UFW、开放端口、删除端口规则 |
-| 11 | rclone管理 | 安装 rclone、修改配置文件、卸载 rclone |
-| 12 | SSL证书申请+自动续期 & Nginx管理 | 申请证书、删除证书、配置 Nginx、测试页面管理 |
-| 13 | fail2ban管理 | 安装/卸载 fail2ban，并自动配置 sshd 防护 |
-| 14 | BBR管理 | 进入 BBR / 网络加速管理脚本 |
-| 15 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
+| 11 | SSL证书申请+自动续期 & Nginx管理 | 申请证书、删除证书、配置 Nginx、测试页面管理 |
+| 12 | fail2ban管理 | 安装/卸载 fail2ban，并自动配置 sshd 防护 |
+| 13 | BBR管理 | 进入 BBR / 网络加速管理脚本 |
+| 14 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
+| 15 | rclone管理 | 安装 rclone、修改配置文件、卸载 rclone |
 | 16 | Bitwarden管理 | 配置 vaultwarden-backup 的 rclone.conf、执行备份和还原 |
 | 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via 和自定义 rclone 同步脚本 |
 | 18 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
@@ -173,14 +173,6 @@ d
 | 4 | 删除端口规则 | 用户输入 `80` 执行 `ufw delete allow 80`，输入 `80/tcp` 执行 `ufw delete allow 80/tcp` |
 | 0 | 返回主菜单 | 返回上一级菜单 |
 
-### rclone管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 安装 rclone | 安装 rclone |
-| 2 | 修改配置文件 | 打开 rclone 配置 |
-| 3 | 卸载 rclone | 卸载 rclone |
-
 ### SSL证书申请+自动续期 & Nginx管理
 
 | 序号 | 选项 | 作用 |
@@ -214,6 +206,15 @@ d
 |---:|---|---|
 | 1 | 进入 WARP 官方管理脚本 | 运行 WARP 管理脚本 |
 | 2 | 彻底删除 WARP | 删除 WARP 网络接口、Linux Client 和 WireProxy |
+
+### rclone管理
+
+| 序号 | 选项 | 作用 |
+|---:|---|---|
+| 1 | 安装 rclone | 安装 rclone |
+| 2 | 修改配置文件 | 打开 rclone 配置 |
+| 3 | 卸载 rclone | 卸载 rclone |
+
 ### Bitwarden管理
 
 | 序号 | 选项 | 作用 |

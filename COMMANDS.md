@@ -35,12 +35,12 @@ mkdir -p /root/daimon
 8. Docker管理
 9. SSH管理
 10. UFW管理
-11. rclone管理
-12. SSL证书申请+自动续期 & Nginx管理
-13. fail2ban管理
-14. BBR管理
-15. WARP管理
+11. SSL证书申请+自动续期 & Nginx管理
+12. fail2ban管理
+13. BBR管理
+14. WARP管理
 ---
+15. rclone管理
 16. Bitwarden管理
 17. crontab同步脚本管理
 ---
@@ -1257,54 +1257,7 @@ ufw status numbered
 ```
 解释：删除端口 allow 规则。
 
-## 11. rclone 管理
-
-进入 rclone 管理默认展示：
-
-```bash
-rclone --version
-ls -l /root/.config/rclone/rclone.conf
-```
-解释：显示 rclone 版本和配置文件路径；未安装时显示未安装。
-
-安装 rclone：
-
-```bash
-curl https://rclone.org/install.sh | bash
-mkdir -p /root/.config/rclone
-touch /root/.config/rclone/rclone.conf
-chmod 600 /root/.config/rclone/rclone.conf
-rclone --version
-```
-解释：安装 rclone，创建空配置文件并设置权限。
-
-修改配置文件：
-
-```bash
-mkdir -p /root/.config/rclone
-touch /root/.config/rclone/rclone.conf
-chmod 600 /root/.config/rclone/rclone.conf
-vim /root/.config/rclone/rclone.conf
-```
-解释：用 vim 编辑 rclone 配置。
-
-卸载 rclone：
-
-```bash
-apt purge -y rclone
-rm -f /usr/bin/rclone /usr/local/bin/rclone
-```
-解释：删除 rclone 可执行文件；脚本会询问是否同时删除 `/root/.config/rclone` 配置目录。
-
-命令行入口：
-
-```bash
-d rclone
-d rc
-```
-解释：直接进入 rclone 管理菜单。
-
-## 12. SSL 证书申请+自动续期 & Nginx 管理
+## 11. SSL 证书申请+自动续期 & Nginx 管理
 
 进入菜单前会确保 acme.sh：
 
@@ -1389,7 +1342,7 @@ nginx -t && nginx -s reload
 ```
 解释：创建或删除 Nginx 测试页面。
 
-## 13. fail2ban 管理
+## 12. fail2ban 管理
 
 进入 fail2ban 管理默认展示：当前 SSH 实际端口、`fail2ban-client status sshd` 或服务状态。
 
@@ -1451,7 +1404,7 @@ systemctl restart fail2ban
 ```
 解释：对比当前 SSH 实际端口和 Fail2ban `[sshd]` 的 `port`；如果不一致，自动把 Fail2ban sshd 端口修正为当前 SSH 端口。
 
-## 14. BBR 管理
+## 13. BBR 管理
 
 ```bash
 apt install -y wget curl
@@ -1462,7 +1415,7 @@ bash /root/daimon/tcpx.sh
 ```
 解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
 
-## 15. WARP 管理
+## 14. WARP 管理
 
 进入 WARP 管理默认展示：是否存在 `warp` 快捷命令、是否存在 `warp` 网络接口。
 
@@ -1481,6 +1434,53 @@ apt install -y wget curl
 bash /root/daimon/warp-menu.sh u
 ```
 解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
+
+## 15. rclone 管理
+
+进入 rclone 管理默认展示：
+
+```bash
+rclone --version
+ls -l /root/.config/rclone/rclone.conf
+```
+解释：显示 rclone 版本和配置文件路径；未安装时显示未安装。
+
+安装 rclone：
+
+```bash
+curl https://rclone.org/install.sh | bash
+mkdir -p /root/.config/rclone
+touch /root/.config/rclone/rclone.conf
+chmod 600 /root/.config/rclone/rclone.conf
+rclone --version
+```
+解释：安装 rclone，创建空配置文件并设置权限。
+
+修改配置文件：
+
+```bash
+mkdir -p /root/.config/rclone
+touch /root/.config/rclone/rclone.conf
+chmod 600 /root/.config/rclone/rclone.conf
+vim /root/.config/rclone/rclone.conf
+```
+解释：用 vim 编辑 rclone 配置。
+
+卸载 rclone：
+
+```bash
+apt purge -y rclone
+rm -f /usr/bin/rclone /usr/local/bin/rclone
+```
+解释：删除 rclone 可执行文件；脚本会询问是否同时删除 `/root/.config/rclone` 配置目录。
+
+命令行入口：
+
+```bash
+d rclone
+d rc
+```
+解释：直接进入 rclone 管理菜单。
 
 ## 16. Bitwarden 管理
 

@@ -17811,12 +17811,12 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}8.   ${gl_bai}Docker管理"
 echo -e "${gl_kjlan}9.   ${gl_bai}SSH管理"
 echo -e "${gl_kjlan}10.  ${gl_bai}UFW管理"
-echo -e "${gl_kjlan}11.  ${gl_bai}rclone管理"
-echo -e "${gl_kjlan}12.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
-echo -e "${gl_kjlan}13.  ${gl_bai}fail2ban管理"
-echo -e "${gl_kjlan}14.  ${gl_bai}BBR管理"
-echo -e "${gl_kjlan}15.  ${gl_bai}WARP管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}12.  ${gl_bai}fail2ban管理"
+echo -e "${gl_kjlan}13.  ${gl_bai}BBR管理"
+echo -e "${gl_kjlan}14.  ${gl_bai}WARP管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
+echo -e "${gl_kjlan}15.  ${gl_bai}rclone管理"
 echo -e "${gl_kjlan}16.  ${gl_bai}Bitwarden管理"
 echo -e "${gl_kjlan}17.  ${gl_bai}crontab同步脚本管理"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -17839,11 +17839,11 @@ case $choice in
   8) linux_docker; pause_after=false ;;
   9) ssh_config_manager; pause_after=false ;;
   10) ufw_manager; pause_after=false ;;
-  11) rclone_manager; pause_after=false ;;
-  12) ssl_nginx_manager; pause_after=false ;;
-  13) fail2ban_manager; pause_after=false ;;
-  14) linux_bbr; pause_after=false ;;
-  15) warp_manager; pause_after=false ;;
+  11) ssl_nginx_manager; pause_after=false ;;
+  12) fail2ban_manager; pause_after=false ;;
+  13) linux_bbr; pause_after=false ;;
+  14) warp_manager; pause_after=false ;;
+  15) rclone_manager; pause_after=false ;;
   16) bitwarden_manager; pause_after=false ;;
   17) crontab_sync_manager; pause_after=false ;;
   18) common_one_click_scripts; pause_after=false ;;
