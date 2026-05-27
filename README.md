@@ -4,6 +4,10 @@
 
 本项目基于 `kejilion/sh` 二开定制，保留常用服务器管理能力，并增加 SSH、UFW、rclone、Bitwarden、crontab 同步脚本、SSL/Nginx、fail2ban、WARP、GitHub 镜像源测速、journalctl 日志管理、第三方工具和编程工具管理等功能。
 
+## 编码规范
+
+后续修改脚本前，请先阅读 [CODING_GUIDELINES.md](./CODING_GUIDELINES.md)。该文件记录本脚本维护过程中已经确定的菜单规则、国内/国外分流、GitHub 代理、`.bashrc` 写入、安装校验、卸载清理、文档同步和常见踩坑处理方式。
+
 ## 一键运行
 
 ```bash
