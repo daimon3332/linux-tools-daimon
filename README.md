@@ -253,6 +253,44 @@ d
 | 9 | 勇哥脚本 | 进入脚本后运行 |
 | 10 | kejilion.sh | `bash <(curl -sL kejilion.sh)` |
 
+## 第三方脚本引用
+
+以下只列本脚本会下载后执行、`source`、`exec bash` 或通过管道执行的第三方脚本/安装器；普通 API、软件源、配置文件、Docker 镜像源和二进制文件不列入此表。
+
+| 分类 | 名称 | 来源 | 用途 |
+|---|---|---|---|
+| 系统工具 | linuxmirrors 软件源脚本 | `https://linuxmirrors.cn/main.sh` | 更换系统软件包镜像源 |
+| 系统工具 | cmdbox 命令收藏夹脚本 | `https://raw.githubusercontent.com/byJoey/cmdbox/refs/heads/main/install.sh` | 安装命令收藏夹 |
+| Docker | linuxmirrors Docker 安装脚本 | `https://linuxmirrors.cn/docker.sh` | 安装 Docker、配置 Docker CE 源和镜像源 |
+| 系统工具 | jhb IPv6 修复脚本 | `https://jhb.ovh/jb/v6.sh` | IPv6 修复 |
+| 系统工具 | kejilion 网络自适应优化脚本 | `https://raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh` | 系统网络自适应优化、查看状态、回滚 |
+| BBR 管理 | Linux-NetSpeed | `https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh` | BBR / 网络加速管理 |
+| BBR 管理 | jhb BBRv3 ARM 脚本 | `https://jhb.ovh/jb/bbrv3arm.sh` | ARM 环境 BBRv3 相关处理 |
+| WARP 管理 | fscarmen WARP 菜单脚本 | `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh` | WARP 安装、管理和彻底删除 |
+| rclone 管理 | rclone 官方安装脚本 | `https://rclone.org/install.sh` | 安装 rclone |
+| SSL/Nginx | acme.sh 官方安装脚本 | `https://get.acme.sh` | 安装 acme.sh，用于申请和续期证书 |
+| LDNMP/网站管理 | kejilion 证书自动续期脚本 | `https://raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh` | 配置证书自动续期 |
+| Cloudflare | kejilion CF Under Attack 脚本 | `https://raw.githubusercontent.com/kejilion/sh/main/CF-Under-Attack.sh` | Cloudflare 防护模式相关操作 |
+| 第三方工具 | starship 官方安装脚本 | `https://starship.rs/install.sh` | 国外机器安装 starship |
+| 第三方工具 | fzf 源码仓库 | `https://github.com/junegunn/fzf.git` | git clone 安装 fzf |
+| 第三方工具 | ble.sh 源码仓库 | `https://github.com/akinomyoga/ble.sh.git` | git clone 安装 ble.sh |
+| 编程工具 | Bun 官方安装脚本 | `https://bun.sh/install` | 安装 Bun |
+| 编程工具 | uv 官方安装脚本 | `https://astral.sh/uv/install.sh` | 安装 uv |
+| 编程工具 | NodeSource Debian/Ubuntu 安装脚本 | `https://deb.nodesource.com/setup_24.x` | 配置 Node.js apt 源 |
+| 编程工具 | NodeSource RHEL/Fedora 安装脚本 | `https://rpm.nodesource.com/setup_24.x` | 配置 Node.js rpm 源 |
+| 常用一键脚本 | NodeQuality | `https://run.NodeQuality.com` | 网络质量测试 |
+| 常用一键脚本 | IPQuality | `https://IP.Check.Place` | IP 质量、纯净度和流媒体检测 |
+| 常用一键脚本 | 融合怪 | `https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh` | 综合性能测评 |
+| 常用一键脚本 | NetQuality | `https://Net.Check.Place` | 网络质量、回程和延迟检测 |
+| 常用一键脚本 | RegionRestrictionCheck | `https://check.unlock.media` | 流媒体解锁检测 |
+| 常用一键脚本 | bench.sh | `https://bench.sh` | 基础性能、I/O、网络测速 |
+| 常用一键脚本 | YABS | `https://yabs.sh` | 综合性能测试 |
+| 常用一键脚本 | HardwareQuality | `https://Check.Place` | 硬件质量检测 |
+| 常用一键脚本 | 勇哥 x-ui-yg | `https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh` | x-ui-yg 管理脚本 |
+| 常用一键脚本 | kejilion.sh | `https://kejilion.sh` | kejilion 一键脚本 |
+
+国内机器访问 `raw.githubusercontent.com` / `github.com` 相关脚本时，脚本会优先尝试 GitHub 代理地址，例如 `https://gh-proxy.com/`、`https://ghproxy.net/`、`https://testingcf.jsdelivr.net/gh/`、`https://ghfast.top/`。
+
 ## 目录约定
 
 脚本运行过程中需要额外下载的第三方脚本，默认缓存到：
