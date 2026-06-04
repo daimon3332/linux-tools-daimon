@@ -1681,7 +1681,7 @@ auto_optimize_dns() {
 	# 根据国家设置 DNS
 	if [ "$country" = "CN" ]; then
 		local dns1_ipv4="223.5.5.5"
-		local dns2_ipv4="183.60.83.19"
+		local dns2_ipv4="119.29.29.29"
 		local dns1_ipv6="2400:3200::1"
 		local dns2_ipv6="2400:da00::6666"
 	else
@@ -5180,7 +5180,7 @@ while true; do
 	echo " v4: 1.1.1.1 8.8.8.8"
 	echo " v6: 2606:4700:4700::1111 2001:4860:4860::8888"
 	echo "2. 国内DNS优化: "
-	echo " v4: 223.5.5.5 183.60.83.19"
+	echo " v4: 223.5.5.5 119.29.29.29"
 	echo " v6: 2400:3200::1 2400:da00::6666"
 	echo "3. 手动编辑DNS配置"
 	echo "4. 恢复之前的DNS配置（没有备份则恢复为 127.0.0.53）"
@@ -5199,7 +5199,7 @@ while true; do
 		;;
 	  2)
 		local dns1_ipv4="223.5.5.5"
-		local dns2_ipv4="183.60.83.19"
+		local dns2_ipv4="119.29.29.29"
 		local dns1_ipv6="2400:3200::1"
 		local dns2_ipv6="2400:da00::6666"
 		set_dns
@@ -6490,19 +6490,25 @@ Kernel_optimize() {
 update_locale() {
 	local lang=$1
 	local locale_file=$2
+	local pause_after="${3:-true}"
+	local locale_pattern="${locale_file//./\\.}"
 
 	if [ -f /etc/os-release ]; then
 		. /etc/os-release
 		case $ID in
 			debian|ubuntu|kali)
 				install locales
-				sed -i "s/^\s*#\?\s*${locale_file}/${locale_file}/" /etc/locale.gen
+				if grep -Eq "^[[:space:]]*#?[[:space:]]*${locale_pattern}([[:space:]]|$)" /etc/locale.gen; then
+					sed -i "s/^\s*#\?\s*${locale_file}/${locale_file}/" /etc/locale.gen
+				else
+					echo "${locale_file} UTF-8" >> /etc/locale.gen
+				fi
 				locale-gen
 				echo "LANG=${lang}" > /etc/default/locale
 				export LANG=${lang}
 				echo -e "${gl_lv}系统语言已经修改为: $lang 重新连接SSH生效。${gl_bai}"
 				hash -r
-				break_end
+				[ "$pause_after" = "false" ] || break_end
 
 				;;
 			centos|rhel|almalinux|rocky|fedora)
@@ -6511,16 +6517,16 @@ update_locale() {
 				echo "LANG=${lang}" | tee /etc/locale.conf
 				echo -e "${gl_lv}系统语言已经修改为: $lang 重新连接SSH生效。${gl_bai}"
 				hash -r
-				break_end
+				[ "$pause_after" = "false" ] || break_end
 				;;
 			*)
 				echo "不支持的系统: $ID"
-				break_end
+				[ "$pause_after" = "false" ] || break_end
 				;;
 		esac
 	else
 		echo "不支持的系统，无法识别系统类型。"
-		break_end
+		[ "$pause_after" = "false" ] || break_end
 	fi
 }
 
@@ -6534,7 +6540,11 @@ while true; do
   clear
   echo "当前系统语言: $LANG"
   echo "------------------------"
-  echo "1. 英文          2. 简体中文          3. 繁体中文"
+  echo "1. en_US.UTF-8（英文）          2. zh_CN.UTF-8（中文简体）"
+  echo "3. zh_TW.UTF-8（中文繁体）      4. ja_JP.UTF-8（日文）"
+  echo "5. ko_KR.UTF-8（韩文）          6. de_DE.UTF-8（德文）"
+  echo "7. fr_FR.UTF-8（法文）          8. es_ES.UTF-8（西班牙文）"
+  echo "9. ru_RU.UTF-8（俄文）"
   echo "------------------------"
   echo "0. 返回上一级选单"
   echo "------------------------"
@@ -6552,6 +6562,30 @@ while true; do
 	  3)
 		  update_locale "zh_TW.UTF-8" "zh_TW.UTF-8"
 		  send_stats "切换到繁体中文"
+		  ;;
+	  4)
+		  update_locale "ja_JP.UTF-8" "ja_JP.UTF-8"
+		  send_stats "切换到日文"
+		  ;;
+	  5)
+		  update_locale "ko_KR.UTF-8" "ko_KR.UTF-8"
+		  send_stats "切换到韩文"
+		  ;;
+	  6)
+		  update_locale "de_DE.UTF-8" "de_DE.UTF-8"
+		  send_stats "切换到德文"
+		  ;;
+	  7)
+		  update_locale "fr_FR.UTF-8" "fr_FR.UTF-8"
+		  send_stats "切换到法文"
+		  ;;
+	  8)
+		  update_locale "es_ES.UTF-8" "es_ES.UTF-8"
+		  send_stats "切换到西班牙文"
+		  ;;
+	  9)
+		  update_locale "ru_RU.UTF-8" "ru_RU.UTF-8"
+		  send_stats "切换到俄文"
 		  ;;
 	  *)
 		  break
@@ -7889,6 +7923,14 @@ one_click_auto_dns_optimize() {
 	fi
 }
 
+one_click_set_timezone_locale() {
+	root_use
+	set_timedate Asia/Shanghai
+	update_locale "en_US.UTF-8" "en_US.UTF-8" false
+	echo "已设置时区为 Asia/Shanghai，本地语言为 en_US.UTF-8"
+	send_stats "一键配置时区和本地语言"
+}
+
 one_click_config_manager() {
 	one_click_config_run_item() {
 		export DEBIAN_FRONTEND=noninteractive
@@ -7903,6 +7945,7 @@ one_click_config_manager() {
 			7) one_click_install_docker_auto ;;
 			8) one_click_network_auto_optimize ;;
 			9) linux_tools thirdparty-install-all ;;
+			10) one_click_set_timezone_locale ;;
 			*) echo "跳过无效编号: $1" ;;
 		esac
 	}
@@ -7912,7 +7955,7 @@ one_click_config_manager() {
 		export DEBIAN_FRONTEND=noninteractive
 		export NEEDRESTART_MODE=a
 		export APT_LISTCHANGES_FRONTEND=none
-		nums="2 3 4 5 6 7 8 9"
+		nums="2 3 4 5 6 7 8 9 10"
 		read -e -i "$nums" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums
 		if [ -z "$nums" ]; then
 			echo "未选择任何配置项"
@@ -7936,12 +7979,13 @@ one_click_config_manager() {
 		echo -e "${gl_kjlan}7.   ${gl_bai}安装 Docker（自动判断国内/国外源）"
 		echo -e "${gl_kjlan}8.   ${gl_bai}执行系统网络自适应优化"
 		echo -e "${gl_kjlan}9.   ${gl_bai}安装第三方工具（全部安装，可在第三方工具菜单精细调整）"
+		echo -e "${gl_kjlan}10.  ${gl_bai}修改时区和本地语言（Asia/Shanghai + en_US.UTF-8）"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo "------------------------"
 		read -e -p "请输入你的选择（默认 1 配置全部）: " sub_choice
 		case "$sub_choice" in
 			""|1) one_click_config_run_all ;;
-			2|3|4|5|6|7|8|9) one_click_config_run_item "$sub_choice" ;;
+			2|3|4|5|6|7|8|9|10) one_click_config_run_item "$sub_choice" ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
@@ -8456,7 +8500,8 @@ linux_Settings() {
 		printf "%b\033[55G%b\n" "${gl_kjlan}11.  ${gl_bai}github镜像源" "${gl_kjlan}12.  ${gl_bai}查看ssh的ip"
 		printf "%b\033[55G%b\n" "${gl_kjlan}13.  ${gl_bai}网卡管理工具" "${gl_kjlan}14.  ${gl_bai}journalctl日志管理"
 		printf "%b\033[55G%b\n" "${gl_kjlan}15.  ${gl_bai}系统网络自适应优化" "${gl_kjlan}16.  ${gl_bai}禁用IPv6"
-		printf "%b\033[55G%b\n" "${gl_kjlan}17.  ${gl_bai}开启IPv6" "${gl_kjlan}18.  ${gl_bai}卸载daimon脚本"
+		printf "%b\033[55G%b\n" "${gl_kjlan}17.  ${gl_bai}开启IPv6" "${gl_kjlan}18.  ${gl_bai}设置本地语言"
+		echo -e "${gl_kjlan}19.  ${gl_bai}卸载daimon脚本"
 		echo -e "${gl_kjlan}------------------------"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -8722,7 +8767,8 @@ linux_Settings() {
 			15) system_network_auto_optimize ;;
 			16) clear; system_disable_ipv6; break_end ;;
 			17) clear; system_enable_ipv6; break_end ;;
-			18)
+			18) clear; linux_language ;;
+			19)
 				clear
 				send_stats "卸载daimon脚本"
 				echo "卸载daimon脚本"

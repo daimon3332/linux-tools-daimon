@@ -136,12 +136,12 @@ rm -rf /tmp/*
 
 ## 4. 一键配置
 
-默认展示 1-9 号快捷配置项，用来把常用初始化动作集中到一个菜单。直接回车等同于选择 `1. 配置全部`，执行前会预填 `2 3 4 5 6 7 8 9`，用户可以自行删除不想执行的编号。
+默认展示 1-10 号快捷配置项，用来把常用初始化动作集中到一个菜单。直接回车等同于选择 `1. 配置全部`，执行前会预填 `2 3 4 5 6 7 8 9 10`，用户可以自行删除不想执行的编号。
 
 ### 4.1 配置全部
 
 ```bash
-read -e -i "2 3 4 5 6 7 8 9" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums
+read -e -i "2 3 4 5 6 7 8 9 10" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums
 ```
 解释：默认选择全部配置项，执行前允许删减编号；最终按输入的编号逐项执行。
 
@@ -173,7 +173,7 @@ country=$(curl -s --max-time 5 https://ipinfo.io | grep -oE '"country"[[:space:]
 if [ "$country" = "CN" ]; then
   # 国内 DNS
   dns1_ipv4="223.5.5.5"
-  dns2_ipv4="183.60.83.19"
+  dns2_ipv4="119.29.29.29"
   dns1_ipv6="2400:3200::1"
   dns2_ipv6="2400:da00::6666"
 else
@@ -223,9 +223,18 @@ linux_tools thirdparty-install-all
 ```
 解释：调用第三方工具分类的全部安装逻辑，安装 vim、cpcat、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、yazi、fastfetch 等工具。
 
+### 4.10 修改时区和本地语言
+
+```bash
+timedatectl set-timezone Asia/Shanghai
+locale-gen
+echo "LANG=en_US.UTF-8" > /etc/default/locale
+```
+解释：一键设置系统时区为中国/上海时区，本地语言为 `en_US.UTF-8`。
+
 ## 5. 系统工具
 
-进入“系统工具”默认展示 1-18 号子选项，本身不修改系统。
+进入“系统工具”默认展示 1-19 号子选项，本身不修改系统。
 
 ### 5.1 设置脚本启动快捷键
 
@@ -274,7 +283,7 @@ cp -L /etc/resolv.conf /etc/resolv.conf.daimon.bak
 chattr -i /etc/resolv.conf
 cat > /etc/resolv.conf <<EOF
 nameserver 223.5.5.5
-nameserver 183.60.83.19
+nameserver 119.29.29.29
 nameserver 2400:3200::1
 nameserver 2400:da00::6666
 EOF
@@ -617,7 +626,17 @@ ip -6 addr show scope global
 ```
 解释：通过 sysctl 配置开启 IPv6，并同步当前所有网卡的 IPv6 状态。
 
-### 5.18 卸载 daimon 脚本
+### 5.18 设置本地语言
+
+```bash
+apt install -y locales
+sed -i 's/^[[:space:]]*#\?[[:space:]]*en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
+locale-gen
+echo "LANG=en_US.UTF-8" > /etc/default/locale
+```
+解释：设置本地语言。菜单中 `1` 是 `en_US.UTF-8`，`2` 是 `zh_CN.UTF-8`，并包含中文繁体、日文、韩文、德文、法文、西班牙文、俄文等常用 UTF-8 locale。
+
+### 5.19 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
