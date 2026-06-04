@@ -1683,7 +1683,7 @@ auto_optimize_dns() {
 		local dns1_ipv4="223.5.5.5"
 		local dns2_ipv4="119.29.29.29"
 		local dns1_ipv6="2400:3200::1"
-		local dns2_ipv6="2400:da00::6666"
+		local dns2_ipv6="2402:4e00::"
 	else
 		local dns1_ipv4="1.1.1.1"
 		local dns2_ipv4="8.8.8.8"
@@ -5181,7 +5181,7 @@ while true; do
 	echo " v6: 2606:4700:4700::1111 2001:4860:4860::8888"
 	echo "2. 国内DNS优化: "
 	echo " v4: 223.5.5.5 119.29.29.29"
-	echo " v6: 2400:3200::1 2400:da00::6666"
+	echo " v6: 2400:3200::1 2402:4e00::"
 	echo "3. 手动编辑DNS配置"
 	echo "4. 恢复之前的DNS配置（没有备份则恢复为 127.0.0.53）"
 	echo "------------------------"
@@ -5201,7 +5201,7 @@ while true; do
 		local dns1_ipv4="223.5.5.5"
 		local dns2_ipv4="119.29.29.29"
 		local dns1_ipv6="2400:3200::1"
-		local dns2_ipv6="2400:da00::6666"
+		local dns2_ipv6="2402:4e00::"
 		set_dns
 		send_stats "国内DNS优化"
 		;;
@@ -7908,7 +7908,7 @@ one_click_auto_dns_optimize() {
 		local dns1_ipv4="223.5.5.5"
 		local dns2_ipv4="183.60.83.19"
 		local dns1_ipv6="2400:3200::1"
-		local dns2_ipv6="2400:da00::6666"
+		local dns2_ipv6="2402:4e00::"
 		echo "检测到国家/地区: CN，自动使用国内 DNS 优化"
 		set_dns
 		send_stats "一键国内DNS优化"

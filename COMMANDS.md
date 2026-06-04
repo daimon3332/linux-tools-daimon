@@ -175,7 +175,7 @@ if [ "$country" = "CN" ]; then
   dns1_ipv4="223.5.5.5"
   dns2_ipv4="119.29.29.29"
   dns1_ipv6="2400:3200::1"
-  dns2_ipv6="2400:da00::6666"
+  dns2_ipv6="2402:4e00::"
 else
   # 国外和香港 DNS
   dns1_ipv4="1.1.1.1"
@@ -285,7 +285,7 @@ cat > /etc/resolv.conf <<EOF
 nameserver 223.5.5.5
 nameserver 119.29.29.29
 nameserver 2400:3200::1
-nameserver 2400:da00::6666
+nameserver 2402:4e00::
 EOF
 chattr +i /etc/resolv.conf
 ```
