@@ -64,7 +64,7 @@ ln -sf /usr/local/bin/d /usr/bin/d
 
 ## 1. 系统信息查询
 
-默认展示：主机名、系统版本、内核、CPU、内存、Swap、硬盘、流量、网络算法、运营商、IPv4、IPv6、DNS、位置、时间、运行时长。
+默认展示：主机名、系统版本、内核、CPU、内存、Swap、硬盘、流量、网络算法、运营商、IPv4、IPv6、DNS、位置、时间、时区、本地语言、运行时长，以及 SSH、UFW、Docker、Nginx、Fail2ban、rclone、Bitwarden 状态。
 
 ```bash
 curl -s https://ipinfo.io/ip
@@ -106,6 +106,18 @@ ss -t | wc -l
 ss -u | wc -l
 ```
 解释：查看 TCP 算法、队列算法、时间、运行时长、TCP/UDP 连接数。
+
+```bash
+sshd -T
+ufw status
+docker --version
+docker ps
+nginx -v
+fail2ban-client status
+rclone version
+grep '^\[BitwardenBackup\]' /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf
+```
+解释：系统信息查询会额外检测 SSH 端口、密码/密钥登录状态、UFW 是否安装和是否开启、时区和语言、Docker、Nginx、Fail2ban、rclone 版本，以及 Bitwarden/vaultwarden 相关容器和备份 rclone 配置状态。
 
 ## 2. 系统更新
 
@@ -362,6 +374,16 @@ sed -i '/\/swapfile/d' /etc/fstab
 echo "/swapfile swap swap defaults 0 0" >> /etc/fstab
 ```
 解释：设置 1024M/2048M/4096M/自定义大小 Swap，数值按用户选择替换。
+
+删除虚拟内存：
+
+```bash
+swapoff /swapfile
+rm -f /swapfile
+sed -i '/\/swapfile/d' /etc/fstab
+rm -f /etc/local.d/swap.start
+```
+解释：删除脚本创建的 `/swapfile` 虚拟内存，并清理持久化配置；不会主动删除或擦除物理 swap 分区。
 
 ### 5.6 用户管理
 

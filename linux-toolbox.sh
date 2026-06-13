@@ -1578,6 +1578,15 @@ add_swap() {
 	echo -e "虚拟内存大小已调整为${gl_huang}${new_swap}${gl_bai}M"
 }
 
+delete_swap() {
+	root_use
+	swapoff /swapfile >/dev/null 2>&1 || true
+	rm -f /swapfile
+	sed -i '/\/swapfile/d' /etc/fstab 2>/dev/null || true
+	rm -f /etc/local.d/swap.start 2>/dev/null || true
+	echo -e "${gl_lv}已删除脚本创建的 /swapfile 虚拟内存，并清理 /etc/fstab 持久化配置。${gl_bai}"
+}
+
 
 
 
@@ -7653,6 +7662,144 @@ rsync_manager() {
 
 
 
+service_status_text() {
+	local service_name="$1"
+	if command -v systemctl >/dev/null 2>&1; then
+		if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+			echo "运行中"
+		elif systemctl list-unit-files "$service_name.service" >/dev/null 2>&1 || systemctl status "$service_name" >/dev/null 2>&1; then
+			echo "未运行"
+		else
+			echo "未检测到服务"
+		fi
+	else
+		echo "无法检测"
+	fi
+}
+
+sshd_effective_value() {
+	local key="$1"
+	local value=""
+	if command -v sshd >/dev/null 2>&1; then
+		value=$(sshd -T 2>/dev/null | awk -v k="$key" '$1==k {print $2; exit}')
+	fi
+	if [ -z "$value" ] && [ -f /etc/ssh/sshd_config ]; then
+		value=$(awk -v k="$key" 'BEGIN{IGNORECASE=1} $1==k {v=$2} END{print v}' /etc/ssh/sshd_config 2>/dev/null)
+	fi
+	echo "$value"
+}
+
+system_info_ssh() {
+	local service ports password_auth pubkey_auth
+	service=$(service_status_text ssh)
+	[ "$service" = "未检测到服务" ] && service=$(service_status_text sshd)
+	ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null)
+	if [ -z "$ports" ]; then
+		ports=$(awk 'BEGIN{IGNORECASE=1} $1=="Port"{print $2}' /etc/ssh/sshd_config 2>/dev/null | xargs)
+	fi
+	[ -z "$ports" ] && ports="22"
+	password_auth=$(sshd_effective_value passwordauthentication)
+	pubkey_auth=$(sshd_effective_value pubkeyauthentication)
+	[ -z "$password_auth" ] && password_auth="未知"
+	[ -z "$pubkey_auth" ] && pubkey_auth="未知"
+	echo "服务: $service | 端口: $ports | 密码登录: $password_auth | 密钥登录: $pubkey_auth"
+}
+
+system_info_ufw() {
+	local status
+	if ! command -v ufw >/dev/null 2>&1; then
+		echo "未安装"
+		return
+	fi
+	status=$(ufw status 2>/dev/null | head -n 1 | sed 's/^Status: /状态: /')
+	[ -z "$status" ] && status="已安装，状态无法读取"
+	echo "$status"
+}
+
+system_info_docker() {
+	local version service containers images
+	if ! command -v docker >/dev/null 2>&1; then
+		echo "未安装"
+		return
+	fi
+	version=$(docker --version 2>/dev/null | sed 's/,.*//')
+	service=$(service_status_text docker)
+	if docker info >/dev/null 2>&1; then
+		containers=$(docker ps -q 2>/dev/null | wc -l | tr -d ' ')
+		images=$(docker images -q 2>/dev/null | wc -l | tr -d ' ')
+		echo "${version:-Docker 已安装} | 服务: $service | 运行容器: ${containers:-0} | 镜像: ${images:-0}"
+	else
+		echo "${version:-Docker 已安装} | 服务: $service | daemon 不可用"
+	fi
+}
+
+system_info_nginx() {
+	local info service docker_nginx
+	info=""
+	if command -v nginx >/dev/null 2>&1; then
+		info=$(nginx -v 2>&1 | sed 's#nginx version: ##')
+		service=$(service_status_text nginx)
+		info="${info:-Nginx 已安装} | 服务: $service"
+	fi
+	if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx nginx; then
+		docker_nginx="Docker容器: nginx 运行中"
+	fi
+	if [ -n "$info" ] && [ -n "$docker_nginx" ]; then
+		echo "$info | $docker_nginx"
+	elif [ -n "$info" ]; then
+		echo "$info"
+	elif [ -n "$docker_nginx" ]; then
+		echo "$docker_nginx"
+	else
+		echo "未安装/未检测到 nginx 容器"
+	fi
+}
+
+system_info_fail2ban() {
+	local service status
+	if ! command -v fail2ban-client >/dev/null 2>&1 && [ ! -d /etc/fail2ban ]; then
+		echo "未安装"
+		return
+	fi
+	service=$(service_status_text fail2ban)
+	status=$(fail2ban-client status 2>/dev/null | awk -F: '/Jail list/{gsub(/^[ \t]+/,"",$2); print $2}')
+	[ -z "$status" ] && status="无 jail 或无法读取"
+	echo "服务: $service | Jail: $status"
+}
+
+system_info_rclone() {
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo "未安装"
+		return
+	fi
+	rclone version 2>/dev/null | head -n 1
+}
+
+system_info_bitwarden() {
+	local result="" names config_status
+	if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+		names=$(docker ps -a --format '{{.Names}}:{{.Status}}' 2>/dev/null | grep -E '^(vaultwarden|vaultwarden-backup):' | xargs)
+		[ -n "$names" ] && result="$names"
+	fi
+	if grep -q '^\[BitwardenBackup\]' /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf 2>/dev/null; then
+		config_status="rclone配置: 已配置"
+	else
+		config_status="rclone配置: 未配置"
+	fi
+	if [ -n "$result" ]; then
+		echo "$result | $config_status"
+	else
+		echo "未检测到 vaultwarden/vaultwarden-backup 容器 | $config_status"
+	fi
+}
+
+system_info_language() {
+	local lang
+	lang=$(locale 2>/dev/null | awk -F= '$1=="LANG"{print $2; exit}' | tr -d '"')
+	[ -z "$lang" ] && lang="${LANG:-未知}"
+	echo "$lang"
+}
+
 linux_info() {
 
 
@@ -7706,6 +7853,14 @@ linux_info() {
 	local runtime=$(cat /proc/uptime | awk -F. '{run_days=int($1 / 86400);run_hours=int(($1 % 86400) / 3600);run_minutes=int(($1 % 3600) / 60); if (run_days > 0) printf("%d天 ", run_days); if (run_hours > 0) printf("%d时 ", run_hours); printf("%d分\n", run_minutes)}')
 
 	local timezone=$(current_timezone)
+	local language_info=$(system_info_language)
+	local ssh_info=$(system_info_ssh)
+	local ufw_info=$(system_info_ufw)
+	local docker_info=$(system_info_docker)
+	local nginx_info=$(system_info_nginx)
+	local fail2ban_info=$(system_info_fail2ban)
+	local rclone_info=$(system_info_rclone)
+	local bitwarden_info=$(system_info_bitwarden)
 
 	local tcp_count=$(ss -t | wc -l)
 	local udp_count=$(ss -u | wc -l)
@@ -7747,6 +7902,15 @@ linux_info() {
 	echo -e "${gl_kjlan}DNS地址:        ${gl_bai}$dns_addresses"
 	echo -e "${gl_kjlan}地理位置:       ${gl_bai}$country $city"
 	echo -e "${gl_kjlan}系统时间:       ${gl_bai}$timezone $current_time"
+	echo -e "${gl_kjlan}本地语言:       ${gl_bai}$language_info"
+	echo -e "${gl_kjlan}-------------"
+	echo -e "${gl_kjlan}SSH信息:        ${gl_bai}$ssh_info"
+	echo -e "${gl_kjlan}UFW状态:        ${gl_bai}$ufw_info"
+	echo -e "${gl_kjlan}Docker:         ${gl_bai}$docker_info"
+	echo -e "${gl_kjlan}Nginx:          ${gl_bai}$nginx_info"
+	echo -e "${gl_kjlan}Fail2ban:       ${gl_bai}$fail2ban_info"
+	echo -e "${gl_kjlan}rclone:         ${gl_bai}$rclone_info"
+	echo -e "${gl_kjlan}Bitwarden:      ${gl_bai}$bitwarden_info"
 	echo -e "${gl_kjlan}-------------"
 	echo -e "${gl_kjlan}运行时长:       ${gl_bai}$runtime"
 	echo
@@ -8574,6 +8738,7 @@ linux_Settings() {
 					echo -e "当前虚拟内存: ${gl_huang}$swap_info${gl_bai}"
 					echo "------------------------"
 					echo "1. 分配1024M         2. 分配2048M         3. 分配4096M         4. 自定义大小"
+					echo "5. 删除虚拟内存（删除 /swapfile）"
 					echo "------------------------"
 					echo "0. 返回上一级选单"
 					echo "------------------------"
@@ -8583,6 +8748,7 @@ linux_Settings() {
 						2) send_stats "已设置2G虚拟内存"; add_swap 2048 ;;
 						3) send_stats "已设置4G虚拟内存"; add_swap 4096 ;;
 						4) read -e -p "请输入虚拟内存大小（单位M）: " new_swap; [ -n "$new_swap" ] && add_swap "$new_swap"; send_stats "已设置自定义虚拟内存" ;;
+						5) send_stats "删除虚拟内存"; delete_swap ;;
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
