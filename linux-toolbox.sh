@@ -7664,17 +7664,32 @@ rsync_manager() {
 
 service_status_text() {
 	local service_name="$1"
+	shift || true
+	local unit state found=false
 	if command -v systemctl >/dev/null 2>&1; then
-		if systemctl is-active --quiet "$service_name" 2>/dev/null; then
-			echo "运行中"
-		elif systemctl list-unit-files "$service_name.service" >/dev/null 2>&1 || systemctl status "$service_name" >/dev/null 2>&1; then
+		for unit in "$service_name" "$service_name.service" "$@"; do
+			[ -z "$unit" ] && continue
+			state=$(command systemctl is-active "$unit" 2>/dev/null | head -n 1)
+			if [ "$state" = "active" ]; then
+				echo "运行中"
+				return
+			fi
+			if command systemctl status "$unit" 2>/dev/null | grep -q 'Active: active'; then
+				echo "运行中"
+				return
+			fi
+			if command systemctl list-unit-files "$unit" --no-legend 2>/dev/null | grep -q . || command systemctl status "$unit" >/dev/null 2>&1; then
+				found=true
+			fi
+		done
+		if [ "$found" = "true" ]; then
 			echo "未运行"
 		else
 			echo "未检测到服务"
 		fi
-	else
-		echo "无法检测"
+		return
 	fi
+	echo "无法检测"
 }
 
 sshd_effective_value() {
@@ -7690,10 +7705,14 @@ sshd_effective_value() {
 }
 
 system_info_ssh() {
-	local service ports password_auth pubkey_auth
-	service=$(service_status_text ssh)
-	[ "$service" = "未检测到服务" ] && service=$(service_status_text sshd)
-	ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null)
+	local service ports listening_ports password_auth pubkey_auth
+	service=$(service_status_text ssh sshd ssh.service sshd.service)
+	listening_ports=$(ss -ltnp 2>/dev/null | awk '/sshd/ {p=$4; sub(/.*:/,"",p); if (p ~ /^[0-9]+$/) print p}' | sort -nu | xargs 2>/dev/null)
+	if [ -n "$listening_ports" ]; then
+		service="运行中"
+		ports="$listening_ports"
+	fi
+	[ -z "$ports" ] && ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null)
 	if [ -z "$ports" ]; then
 		ports=$(awk 'BEGIN{IGNORECASE=1} $1=="Port"{print $2}' /etc/ssh/sshd_config 2>/dev/null | xargs)
 	fi
@@ -7717,19 +7736,20 @@ system_info_ufw() {
 }
 
 system_info_docker() {
-	local version service containers images
+	local version daemon_status containers images service
 	if ! command -v docker >/dev/null 2>&1; then
 		echo "未安装"
 		return
 	fi
 	version=$(docker --version 2>/dev/null | sed 's/,.*//')
-	service=$(service_status_text docker)
 	if docker info >/dev/null 2>&1; then
+		daemon_status="运行中"
 		containers=$(docker ps -q 2>/dev/null | wc -l | tr -d ' ')
 		images=$(docker images -q 2>/dev/null | wc -l | tr -d ' ')
-		echo "${version:-Docker 已安装} | 服务: $service | 运行容器: ${containers:-0} | 镜像: ${images:-0}"
+		echo "${version:-Docker 已安装} | Daemon: $daemon_status | 运行容器: ${containers:-0} | 镜像: ${images:-0}"
 	else
-		echo "${version:-Docker 已安装} | 服务: $service | daemon 不可用"
+		service=$(service_status_text docker)
+		echo "${version:-Docker 已安装} | Daemon: 不可用 | systemd: $service"
 	fi
 }
 
@@ -7761,7 +7781,11 @@ system_info_fail2ban() {
 		echo "未安装"
 		return
 	fi
-	service=$(service_status_text fail2ban)
+	if fail2ban-client status >/dev/null 2>&1; then
+		service="运行中"
+	else
+		service=$(service_status_text fail2ban)
+	fi
 	status=$(fail2ban-client status 2>/dev/null | awk -F: '/Jail list/{gsub(/^[ \t]+/,"",$2); print $2}')
 	[ -z "$status" ] && status="无 jail 或无法读取"
 	echo "服务: $service | Jail: $status"
@@ -7776,20 +7800,23 @@ system_info_rclone() {
 }
 
 system_info_bitwarden() {
-	local result="" names config_status
+	local result="" names config_status config_path
 	if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-		names=$(docker ps -a --format '{{.Names}}:{{.Status}}' 2>/dev/null | grep -E '^(vaultwarden|vaultwarden-backup):' | xargs)
+		names=$(docker ps -a --format '{{.Names}}:{{.Status}}' 2>/dev/null | grep -Ei '(vaultwarden|bitwarden)' | xargs)
 		[ -n "$names" ] && result="$names"
 	fi
-	if grep -q '^\[BitwardenBackup\]' /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf 2>/dev/null; then
-		config_status="rclone配置: 已配置"
+	config_path="/var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf"
+	if grep -q '^\[BitwardenBackup\]' "$config_path" 2>/dev/null; then
+		config_status="备份rclone配置: 已配置"
+	elif [ -f "$config_path" ]; then
+		config_status="备份rclone配置: 文件存在但缺少 [BitwardenBackup]"
 	else
-		config_status="rclone配置: 未配置"
+		config_status="备份rclone配置: 未配置"
 	fi
 	if [ -n "$result" ]; then
 		echo "$result | $config_status"
 	else
-		echo "未检测到 vaultwarden/vaultwarden-backup 容器 | $config_status"
+		echo "未检测到 vaultwarden/bitwarden 相关容器 | $config_status"
 	fi
 }
 

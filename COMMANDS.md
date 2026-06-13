@@ -117,7 +117,7 @@ fail2ban-client status
 rclone version
 grep '^\[BitwardenBackup\]' /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf
 ```
-解释：系统信息查询会额外检测 SSH 端口、密码/密钥登录状态、UFW 是否安装和是否开启、时区和语言、Docker、Nginx、Fail2ban、rclone 版本，以及 Bitwarden/vaultwarden 相关容器和备份 rclone 配置状态。
+解释：系统信息查询会额外检测 SSH 端口、密码/密钥登录状态、UFW 是否安装和是否开启、时区和语言、Docker daemon 可用性、Nginx、Fail2ban、rclone 版本，以及 Bitwarden/vaultwarden 相关容器和 vaultwarden-backup 使用的 rclone 配置状态。
 
 ## 2. 系统更新
 
