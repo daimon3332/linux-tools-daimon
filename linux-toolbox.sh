@@ -7694,34 +7694,104 @@ service_status_text() {
 
 sshd_effective_value() {
 	local key="$1"
-	local value=""
-	if command -v sshd >/dev/null 2>&1; then
-		value=$(sshd -T 2>/dev/null | awk -v k="$key" '$1==k {print $2; exit}')
+	local value="" sshd_bin
+	value=$(sshd_config_value "$key")
+	if [ -n "$value" ]; then
+		normalize_ssh_bool "$value"
+		return
 	fi
-	if [ -z "$value" ] && [ -f /etc/ssh/sshd_config ]; then
-		value=$(awk -v k="$key" 'BEGIN{IGNORECASE=1} $1==k {v=$2} END{print v}' /etc/ssh/sshd_config 2>/dev/null)
+	sshd_bin=$(sshd_bin_path)
+	if [ -n "$sshd_bin" ]; then
+		value=$("$sshd_bin" -T 2>/dev/null | awk -v k="$key" '$1==k {print $2; exit}')
+	fi
+	normalize_ssh_bool "$value"
+}
+
+sshd_bin_path() {
+	local bin
+	bin=$(command -v sshd 2>/dev/null || true)
+	if [ -n "$bin" ]; then
+		echo "$bin"
+	elif [ -x /usr/sbin/sshd ]; then
+		echo "/usr/sbin/sshd"
+	fi
+}
+
+normalize_ssh_bool() {
+	local value
+	value=$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')
+	case "$value" in
+		yes|true|on) echo "yes" ;;
+		no|false|off) echo "no" ;;
+		*) echo "$1" ;;
+	esac
+}
+
+sshd_config_value() {
+	local key="$1" value="" locale_key
+	locale_key=$(printf "%s" "$key" | tr '[:upper:]' '[:lower:]')
+
+	_parse_sshd_config_file() {
+		local file="$1" raw line first pattern inc_file
+		[ -f "$file" ] || return 0
+		while IFS= read -r raw || [ -n "$raw" ]; do
+			line="${raw%%#*}"
+			set -- $line
+			[ "$#" -eq 0 ] && continue
+			first=$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')
+			[ "$first" = "match" ] && return 0
+			if [ "$first" = "include" ]; then
+				shift
+				for pattern in "$@"; do
+					for inc_file in $pattern; do
+						[ -f "$inc_file" ] && _parse_sshd_config_file "$inc_file"
+					done
+				done
+				continue
+			fi
+			if [ "$first" = "$locale_key" ] && [ "$#" -ge 2 ]; then
+				value="$2"
+			fi
+		done < "$file"
+	}
+
+	_parse_sshd_config_file /etc/ssh/sshd_config
+	if [ -z "$value" ]; then
+		local inc_file
+		for inc_file in /etc/ssh/sshd_config.d/*.conf; do
+			[ -f "$inc_file" ] && _parse_sshd_config_file "$inc_file"
+		done
 	fi
 	echo "$value"
 }
 
 system_info_ssh() {
-	local service ports listening_ports password_auth pubkey_auth
+	local service ports listening_ports password_auth kbd_auth pubkey_auth password_login sshd_bin
 	service=$(service_status_text ssh sshd ssh.service sshd.service)
 	listening_ports=$(ss -ltnp 2>/dev/null | awk '/sshd/ {p=$4; sub(/.*:/,"",p); if (p ~ /^[0-9]+$/) print p}' | sort -nu | xargs 2>/dev/null)
 	if [ -n "$listening_ports" ]; then
 		service="运行中"
 		ports="$listening_ports"
 	fi
-	[ -z "$ports" ] && ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null)
+	sshd_bin=$(sshd_bin_path)
+	[ -z "$ports" ] && [ -n "$sshd_bin" ] && ports=$("$sshd_bin" -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null)
 	if [ -z "$ports" ]; then
-		ports=$(awk 'BEGIN{IGNORECASE=1} $1=="Port"{print $2}' /etc/ssh/sshd_config 2>/dev/null | xargs)
+		ports=$(awk 'tolower($1)=="port"{print $2}' /etc/ssh/sshd_config 2>/dev/null | xargs)
 	fi
 	[ -z "$ports" ] && ports="22"
 	password_auth=$(sshd_effective_value passwordauthentication)
+	kbd_auth=$(sshd_effective_value kbdinteractiveauthentication)
+	[ -z "$kbd_auth" ] && kbd_auth=$(sshd_effective_value challengeresponseauthentication)
 	pubkey_auth=$(sshd_effective_value pubkeyauthentication)
-	[ -z "$password_auth" ] && password_auth="未知"
+	if [ "$password_auth" = "yes" ] || [ "$kbd_auth" = "yes" ]; then
+		password_login="yes"
+	elif [ "$password_auth" = "no" ] || [ "$kbd_auth" = "no" ]; then
+		password_login="no"
+	else
+		password_login="未知"
+	fi
 	[ -z "$pubkey_auth" ] && pubkey_auth="未知"
-	echo "服务: $service | 端口: $ports | 密码登录: $password_auth | 密钥登录: $pubkey_auth"
+	echo "服务: $service | 端口: $ports | 密码登录: $password_login | 密钥登录: $pubkey_auth"
 }
 
 system_info_ufw() {
