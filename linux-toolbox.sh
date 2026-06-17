@@ -9936,6 +9936,195 @@ EOF
     fi
   }
 
+
+  load_nvm_env() {
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+    [ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh"
+    [ -s "$NVM_DIR/bash_completion" ] && . "$NVM_DIR/bash_completion" 2>/dev/null || true
+  }
+
+  install_nvm_lts_auto() {
+    install curl ca-certificates
+    export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+
+    if [ ! -s "$NVM_DIR/nvm.sh" ]; then
+      if daimon_is_cn; then
+        bash -c "$(curl -fsSL https://gitee.com/RubyMetric/nvm-cn/raw/main/install.sh)" || return 1
+      else
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash || return 1
+      fi
+    fi
+
+    load_nvm_env
+    if ! command -v nvm >/dev/null 2>&1; then
+      echo "nvm 安装失败或未能加载"
+      return 1
+    fi
+
+    nvm install --lts || return 1
+    nvm alias default 'lts/*' || return 1
+    nvm use default >/dev/null 2>&1 || true
+    hash -r 2>/dev/null || true
+    node -v
+    npm -v
+  }
+
+  remove_nvm_all() {
+    remove nodejs npm 2>/dev/null || true
+    rm -rf "$HOME/.nvm" "$HOME/.npm" "$HOME/.node-gyp"
+    [ -f "$HOME/.bashrc" ] && sed -i '/NVM_DIR/d;/nvm\.sh/d;/bash_completion.*nvm/d;/nvm-cn/d' "$HOME/.bashrc" 2>/dev/null || true
+    [ -f "$HOME/.profile" ] && sed -i '/NVM_DIR/d;/nvm\.sh/d;/bash_completion.*nvm/d;/nvm-cn/d' "$HOME/.profile" 2>/dev/null || true
+    [ -f "$HOME/.bash_profile" ] && sed -i '/NVM_DIR/d;/nvm\.sh/d;/bash_completion.*nvm/d;/nvm-cn/d' "$HOME/.bash_profile" 2>/dev/null || true
+    reload_shell_configs_safely
+    echo "已删除 nvm、Node.js、npm 及相关用户缓存"
+  }
+
+  configure_claude_code_settings() {
+    mkdir -p "$HOME/.claude"
+    cat > "$HOME/.claude/settings.json" <<'EOF'
+{
+  "env": {
+    "DISABLE_INSTALLATION_CHECKS": "1",
+    "ENABLE_TOOL_SEARCH": "true",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-opus-4-8",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME": "claude-opus-4-8",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-8[1M]",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL_NAME": "claude-opus-4-8",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-opus-4-8[1M]",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL_NAME": "claude-opus-4-8",
+    "ANTHROPIC_MODEL": "claude-opus-4-8[1m]",
+    "ANTHROPIC_REASONING_MODEL": "claude-opus-4-8[1m]",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "DISABLE_AUTOUPDATER": "1",
+    "ANTHROPIC_BASE_URL": "https://api.deepseek.com/anthropic",
+    "ANTHROPIC_API_KEY": "12346"
+  },
+  "includeCoAuthoredBy": false,
+  "model": "opus[1m]",
+  "skipDangerousModePermissionPrompt": true,
+  "hasCompletedOnboarding": true
+}
+EOF
+
+    if command -v python3 >/dev/null 2>&1; then
+      [ -f "$HOME/.claude.json" ] || printf '{}\n' > "$HOME/.claude.json"
+      python3 - "$HOME/.claude.json" <<'PY'
+import json
+import sys
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+except Exception:
+    data = {}
+if not isinstance(data, dict):
+    data = {}
+data["hasCompletedOnboarding"] = True
+with open(path, "w", encoding="utf-8") as f:
+    json.dump(data, f, ensure_ascii=False, indent=2)
+    f.write("\n")
+PY
+    else
+      printf '{\n  "hasCompletedOnboarding": true\n}\n' > "$HOME/.claude.json"
+    fi
+  }
+
+  install_claude_code_auto() {
+    export PATH="$HOME/.local/bin:$PATH"
+    if command -v claude >/dev/null 2>&1; then
+      claude update 2>/dev/null || true
+    elif daimon_is_cn; then
+      install_nvm_lts_auto || return 1
+      load_nvm_env
+      npm install -g @anthropic-ai/claude-code --registry=https://registry.npmmirror.com || return 1
+    else
+      install curl
+      curl -fsSL https://claude.ai/install.sh | bash || return 1
+      export PATH="$HOME/.local/bin:$PATH"
+    fi
+
+    configure_claude_code_settings
+    if ! command -v claude >/dev/null 2>&1; then
+      echo "ClaudeCode 安装失败或 claude 命令不在 PATH"
+      return 1
+    fi
+    claude --version
+  }
+
+  remove_claude_code_all() {
+    load_nvm_env
+    npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true
+    rm -rf "$HOME/.claude"
+    rm -f "$HOME/.claude.json"
+    reload_shell_configs_safely
+    echo "已删除 ClaudeCode 和 ~/.claude 配置"
+  }
+
+  configure_codex_settings() {
+    mkdir -p "$HOME/.codex"
+    cat > "$HOME/.codex/config.toml" <<'EOF'
+model = "gpt-5.5"
+model_reasoning_effort = "high"
+disable_response_storage = true
+fast_mode = true
+service_tier = "fast"
+personality = "pragmatic"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+web_search = "cached"
+approvals_reviewer = "user"
+model_provider = "default"
+
+[notice]
+hide_full_access_warning = true
+
+[sandbox_workspace_write]
+network_access = true
+
+[features]
+multi_agent = false
+unified_exec = false
+collaboration_modes = false
+steer = false
+memories = false
+apps = false
+js_repl = false
+
+[model_providers]
+
+[model_providers.default]
+name = "default"
+base_url = "https://api.deepseek.com"
+wire_api = "responses"
+requires_openai_auth = false
+experimental_bearer_token = "default"
+EOF
+  }
+
+  install_codex_cli() {
+    if ! command -v npm >/dev/null 2>&1; then
+      install_nvm_lts_auto || return 1
+    else
+      load_nvm_env
+    fi
+    npm install -g @openai/codex@latest || return 1
+    configure_codex_settings
+    if ! command -v codex >/dev/null 2>&1; then
+      echo "Codex 安装失败或 codex 命令不在 PATH"
+      return 1
+    fi
+    codex --version
+  }
+
+  remove_codex_all() {
+    load_nvm_env
+    npm uninstall -g @openai/codex 2>/dev/null || true
+    rm -f "$HOME/.codex/config.toml"
+    rmdir "$HOME/.codex" 2>/dev/null || true
+    reload_shell_configs_safely
+    echo "已删除 Codex 和 ~/.codex/config.toml"
+  }
+
   tool_installed() {
     local id="$1"
     case "$id" in
@@ -9949,11 +10138,12 @@ EOF
       fzf) [ -x "$HOME/.fzf/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       blesh) [ -f "$HOME/.local/share/blesh/ble.sh" ] && grep -q '^# ========== ble.sh setup ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       python) command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 ;;
+      npm) command -v npm >/dev/null 2>&1 ;;
       nodejs) command -v node >/dev/null 2>&1 ;;
       iptables-persistent) command -v netfilter-persistent >/dev/null 2>&1 || dpkg -s iptables-persistent >/dev/null 2>&1 ;;
       firewalld) command -v firewall-cmd >/dev/null 2>&1 ;;
-      claude) command -v claude >/dev/null 2>&1 ;;
-      codex) command -v codex >/dev/null 2>&1 ;;
+      claude) command -v claude >/dev/null 2>&1 && [ -f "$HOME/.claude/settings.json" ] ;;
+      codex) command -v codex >/dev/null 2>&1 && [ -f "$HOME/.codex/config.toml" ] ;;
       *) command -v "$id" >/dev/null 2>&1 ;;
     esac
   }
@@ -10015,13 +10205,8 @@ EOF
         install python3 python3-pip python3-venv python-is-python3
         python3 --version 2>/dev/null || python --version 2>/dev/null
         ;;
-      npm)
-        install npm
-        npm -v 2>/dev/null || true
-        ;;
-      nodejs)
-        install nodejs
-        node -v 2>/dev/null || true
+      npm|nodejs)
+        install_nvm_lts_auto
         ;;
       bun)
         if tool_installed bun; then
@@ -10100,22 +10285,10 @@ EOF
         fail2ban-client status 2>/dev/null || true
         ;;
       claude)
-        if tool_installed claude; then
-          claude --version 2>/dev/null || claude --help 2>/dev/null | head -n 3 || true
-        else
-          install nodejs npm
-          npm install -g @anthropic-ai/claude-code
-          claude --version 2>/dev/null || claude --help 2>/dev/null | head -n 3 || true
-        fi
+        install_claude_code_auto
         ;;
       codex)
-        if tool_installed codex; then
-          codex --version 2>/dev/null || codex --help 2>/dev/null | head -n 3 || true
-        else
-          install nodejs npm
-          npm install -g @openai/codex
-          codex --version 2>/dev/null || codex --help 2>/dev/null | head -n 3 || true
-        fi
+        install_codex_cli
         ;;
       *) echo "未知工具: $id" ;;
     esac
@@ -10145,13 +10318,13 @@ EOF
       fzf) remove_fzf_all ;;
       blesh) remove_blesh_all ;;
       python) remove python3 python3-pip python3-venv python-is-python3 ;;
-      nodejs) remove nodejs ;;
+      npm|nodejs) remove_nvm_all ;;
       iptables-persistent) remove_iptables_persistent_all ;;
       ufw) remove_ufw_all ;;
       firewalld) remove_firewalld_all ;;
       fail2ban) remove_fail2ban_all ;;
-      claude) npm uninstall -g @anthropic-ai/claude-code 2>/dev/null || true ;;
-      codex) npm uninstall -g @openai/codex 2>/dev/null || true ;;
+      claude) remove_claude_code_all ;;
+      codex) remove_codex_all ;;
       bun) rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true; reload_shell_configs_safely ;;
       uv) rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"; reload_shell_configs_safely ;;
       *) remove "$id" ;;
@@ -17285,33 +17458,63 @@ show_cert_list() {
 show_existing_nginx_and_certs() {
     echo -e "${YELLOW}已存在的 nginx 配置：${NC}"
     local found_nginx=false
-    local conf
+    local conf key real_path name server_name listen proxy_pass
+    declare -A seen_nginx=()
     for conf in /etc/nginx/sites-enabled/* /etc/nginx/sites-available/* /etc/nginx/conf.d/*.conf; do
         [ -e "$conf" ] || continue
+        real_path=$(readlink -f "$conf" 2>/dev/null || echo "$conf")
+        name=$(basename "$conf")
+        key="$name|$real_path"
+        if [ -n "${seen_nginx[$key]:-}" ]; then
+            continue
+        fi
+        seen_nginx[$key]=1
         found_nginx=true
-        local server_name listen proxy_pass
         server_name=$(grep -E '^[[:space:]]*server_name[[:space:]]+' "$conf" 2>/dev/null | head -1 | sed -E 's/^[[:space:]]*server_name[[:space:]]+//; s/;[[:space:]]*$//')
         listen=$(grep -E '^[[:space:]]*listen[[:space:]]+' "$conf" 2>/dev/null | head -1 | sed -E 's/^[[:space:]]*listen[[:space:]]+//; s/;[[:space:]]*$//')
         proxy_pass=$(grep -E '^[[:space:]]*proxy_pass[[:space:]]+' "$conf" 2>/dev/null | head -1 | sed -E 's/^[[:space:]]*proxy_pass[[:space:]]+//; s/;[[:space:]]*$//')
-        printf "  %-38s server_name=%s listen=%s proxy=%s\n" "$(basename "$conf")" "${server_name:-未设置}" "${listen:-未设置}" "${proxy_pass:-无}"
+        printf "  %-38s server_name=%s listen=%s proxy=%s\n" "$name" "${server_name:-未设置}" "${listen:-未设置}" "${proxy_pass:-无}"
     done
     [ "$found_nginx" = true ] || echo "  暂无 nginx 配置"
     echo "---"
     echo -e "${YELLOW}已存在的证书：${NC}"
     local found_cert=false
     local cert_dir cert_file domain expire_date formatted_date
+    declare -A seen_cert=()
     for cert_dir in /root/domain/* /etc/letsencrypt/live/*; do
         [ -d "$cert_dir" ] || continue
         cert_file="$cert_dir/fullchain.pem"
         [ -f "$cert_file" ] || continue
-        found_cert=true
         domain=$(basename "$cert_dir")
+        if [ -n "${seen_cert[$domain]:-}" ]; then
+            continue
+        fi
+        seen_cert[$domain]=1
+        found_cert=true
         expire_date=$(openssl x509 -noout -enddate -in "$cert_file" 2>/dev/null | awk -F'=' '{print $2}')
         formatted_date=$(date -d "$expire_date" '+%Y-%m-%d' 2>/dev/null || echo "未知")
         printf "  %-38s 到期时间=%s 路径=%s\n" "$domain" "$formatted_date" "$cert_file"
     done
     [ "$found_cert" = true ] || echo "  暂无证书"
     echo "---"
+}
+
+cleanup_nginx_and_cert() {
+    local DOMAIN="$1"
+    local NGINX_NAME="$2"
+    local FOLDER CERT_DIR
+    FOLDER=$(echo "$DOMAIN" | cut -d'.' -f1)
+    CERT_DIR="/root/domain/$FOLDER"
+
+    [ -n "$NGINX_NAME" ] && rm -f "/etc/nginx/sites-available/$NGINX_NAME" "/etc/nginx/sites-enabled/$NGINX_NAME"
+    [ -n "$DOMAIN" ] && "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
+    [ -n "$DOMAIN" ] && rm -rf "$HOME/.acme.sh/${DOMAIN}_ecc" "$HOME/.acme.sh/$DOMAIN" 2>/dev/null || true
+    [ -n "$CERT_DIR" ] && rm -rf "$CERT_DIR" 2>/dev/null || true
+
+    if command -v nginx >/dev/null 2>&1; then
+        nginx -t >/dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
+    fi
+    echo -e "${YELLOW}已清理失败残留：nginx 配置和证书${NC}"
 }
 
 remove_cert() {
@@ -17627,7 +17830,7 @@ EOF
         systemctl status nginx --no-pager
     else
         echo -e "${RED}nginx 配置检测失败${NC}"
-        rm -f "$NGINX_CONF"
+        rm -f "$NGINX_CONF" "/etc/nginx/sites-enabled/$NGINX_NAME"
         return 1
     fi
 }
@@ -17639,7 +17842,7 @@ install_acme
 show_menu() {
     echo ""
     echo -e "${GREEN}=========================================${NC}"
-    echo -e "${GREEN}       SSL 证书 & Nginx 管理工具${NC}"
+    echo -e "${GREEN}       Nginx + 域名管理${NC}"
     echo -e "${GREEN}=========================================${NC}"
     show_existing_nginx_and_certs
     echo "1) 申请证书 + 配置 nginx"
@@ -17651,13 +17854,14 @@ show_menu() {
     echo "7) 删除 nginx 配置"
     echo "8) 创建测试页面"
     echo "9) 删除测试页面"
+    echo "10) 安装 nginx"
     echo "0) 返回上一级菜单"
     echo -e "${GREEN}=========================================${NC}"
 }
 
 while true; do
     show_menu
-    read -p "请选择操作 [0-9]: " ACTION
+    read -p "请选择操作 [0-10]: " ACTION
 
     case $ACTION in
         1)
@@ -17670,9 +17874,12 @@ while true; do
 
             if issue_cert "$DOMAIN"; then
                 restart_nginx_if_needed
-                config_nginx "$DOMAIN" "$NGINX_NAME" "$PORT"
+                if ! config_nginx "$DOMAIN" "$NGINX_NAME" "$PORT"; then
+                    cleanup_nginx_and_cert "$DOMAIN" "$NGINX_NAME"
+                fi
             else
                 restart_nginx_if_needed
+                cleanup_nginx_and_cert "$DOMAIN" "$NGINX_NAME"
             fi
             ;;
         2)
@@ -17707,6 +17914,11 @@ while true; do
             ;;
         9)
             remove_test_page
+            ;;
+        10)
+            install_nginx
+            nginx -v 2>&1 || true
+            systemctl status nginx --no-pager 2>/dev/null || true
             ;;
         0)
             echo -e "${GREEN}返回上一级菜单${NC}"
@@ -18669,7 +18881,7 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}8.   ${gl_bai}Docker管理"
 echo -e "${gl_kjlan}9.   ${gl_bai}SSH管理"
 echo -e "${gl_kjlan}10.  ${gl_bai}UFW管理"
-echo -e "${gl_kjlan}11.  ${gl_bai}SSL证书申请+自动续期 & Nginx管理"
+echo -e "${gl_kjlan}11.  ${gl_bai}Nginx + 域名管理"
 echo -e "${gl_kjlan}12.  ${gl_bai}fail2ban管理"
 echo -e "${gl_kjlan}13.  ${gl_bai}BBR管理"
 echo -e "${gl_kjlan}14.  ${gl_bai}WARP管理"

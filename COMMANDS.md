@@ -35,7 +35,7 @@ mkdir -p /root/daimon
 8. Docker管理
 9. SSH管理
 10. UFW管理
-11. SSL证书申请+自动续期 & Nginx管理
+11. Nginx + 域名管理
 12. fail2ban管理
 13. BBR管理
 14. WARP管理
@@ -874,15 +874,29 @@ read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工
 
 ```bash
 apt install -y python3 python3-pip python3-venv python-is-python3
-apt install -y npm
-apt install -y nodejs
+
+# npm / nodejs：国外使用官方 nvm，国内使用 nvm-cn，然后安装 LTS
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+bash -c "$(curl -fsSL https://gitee.com/RubyMetric/nvm-cn/raw/main/install.sh)"
+. ~/.nvm/nvm.sh
+nvm install --lts
+nvm alias default lts/*
+
 apt install -y git
 bash /root/daimon/bun-install.sh
 bash /root/daimon/uv-install.sh
-npm install -g @anthropic-ai/claude-code
-npm install -g @openai/codex
+
+# ClaudeCode：国外官方脚本，国内 npm 镜像源
+curl -fsSL https://claude.ai/install.sh | bash
+npm install -g @anthropic-ai/claude-code --registry=https://registry.npmmirror.com
+claude update
+claude --version
+
+# Codex：不区分国内国外
+npm install -g @openai/codex@latest
+codex --version
 ```
-解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Bun 和 uv 安装时会内部安装/使用 curl，但 curl 不再作为第三方工具列表项显示。
+解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。npm/nodejs 统一通过 nvm 安装 LTS；ClaudeCode 按 CN/非 CN 分流；Codex 不分流；ClaudeCode 写入 `~/.claude/settings.json`，Codex 写入 `~/.codex/config.toml`。
 
 ## 8. Docker 管理
 
@@ -1302,7 +1316,7 @@ ufw status numbered
 ```
 解释：删除端口 allow 规则。
 
-## 11. SSL 证书申请+自动续期 & Nginx 管理
+## 11. Nginx + 域名管理
 
 进入菜单前会确保 acme.sh：
 
@@ -1314,7 +1328,7 @@ sh /root/daimon/acme-install.sh email=asdad@163.com
 ```
 解释：安装依赖、安装 acme.sh，并设置默认 CA。
 
-默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面。
+默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx。
 
 申请证书：
 
@@ -1350,7 +1364,7 @@ cat > /etc/nginx/sites-available/配置名
 ln -sf /etc/nginx/sites-available/配置名 /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 ```
-解释：生成 Nginx 配置并重载。配置核心包括 `listen 80` 跳转 HTTPS、`listen 443 ssl http2`、`ssl_certificate`、`proxy_pass http://127.0.0.1:端口`。
+解释：生成 Nginx 配置并重载。配置核心包括 `listen 80` 跳转 HTTPS、`listen 443 ssl http2`、`ssl_certificate`、`proxy_pass http://127.0.0.1:端口`。申请证书 + 配置 nginx 如果失败，会自动删除本次生成的证书目录、acme 记录和 nginx 配置。
 
 删除 nginx 配置 + 证书：
 

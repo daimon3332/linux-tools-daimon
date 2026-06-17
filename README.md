@@ -38,7 +38,7 @@ d
 | 8 | Docker管理 | 安装、卸载、状态查看、镜像源、容器、镜像、网络、卷、Compose、备份迁移等 |
 | 9 | SSH管理 | 修改 SSH 端口、密码登录、密钥登录、公钥私钥和 sshd_config |
 | 10 | UFW管理 | 安装/卸载 UFW、开放端口、删除端口规则 |
-| 11 | SSL证书申请+自动续期 & Nginx管理 | 申请证书、删除证书、配置 Nginx、测试页面管理 |
+| 11 | Nginx + 域名管理 | 安装 Nginx、申请证书、删除证书、配置 Nginx、测试页面管理 |
 | 12 | fail2ban管理 | 安装/卸载 fail2ban，并自动配置 sshd 防护 |
 | 13 | BBR管理 | 进入 BBR / 网络加速管理脚本 |
 | 14 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
@@ -132,13 +132,13 @@ d
 | 序号 | 名称 | 工具的作用 |
 |---:|---|---|
 | 1 | python | 安装 Python3、pip、venv 和 `python-is-python3` |
-| 2 | npm | Node.js 包管理器 |
-| 3 | nodejs | Node.js 运行环境 |
+| 2 | npm | 通过 nvm 安装 Node.js LTS 后提供 npm；CN 使用 nvm-cn，非 CN 使用官方 nvm |
+| 3 | nodejs | 通过 nvm 安装最新 LTS 版本 Node.js |
 | 4 | bun | Bun JavaScript 运行时和包管理器 |
 | 5 | uv | Python 包管理和项目管理工具 |
 | 6 | git | 版本控制工具 |
-| 7 | ClaudeCode | Anthropic Claude Code 命令行工具 |
-| 8 | Codex | OpenAI Codex 命令行工具 |
+| 7 | ClaudeCode | Claude Code 命令行工具；CN 使用 npm 镜像源，非 CN 使用官方安装脚本，并写入 `~/.claude/settings.json` |
+| 8 | Codex | Codex 命令行工具；统一通过 `npm install -g @openai/codex@latest` 安装，并写入 `~/.codex/config.toml` |
 
 ### Docker管理
 
@@ -180,11 +180,11 @@ d
 | 4 | 删除端口规则 | 用户输入 `80` 执行 `ufw delete allow 80`，输入 `80/tcp` 执行 `ufw delete allow 80/tcp` |
 | 0 | 返回主菜单 | 返回上一级菜单 |
 
-### SSL证书申请+自动续期 & Nginx管理
+### Nginx + 域名管理
 
 | 序号 | 选项 | 作用 |
 |---:|---|---|
-| 1 | 申请证书 + 配置 nginx | 申请证书并生成 Nginx 配置 |
+| 1 | 申请证书 + 配置 nginx | 申请证书并生成 Nginx 配置；失败时自动清理证书和 Nginx 配置 |
 | 2 | 删除 nginx 配置 + 证书 | 删除站点配置和证书 |
 | 3 | 申请证书 | 只申请证书 |
 | 4 | 移除证书 | 删除证书 |
@@ -193,6 +193,7 @@ d
 | 7 | 删除 nginx 配置 | 删除 Nginx 配置 |
 | 8 | 创建测试页面 | 创建测试页面 |
 | 9 | 删除测试页面 | 删除测试页面 |
+| 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
 
 ### fail2ban管理
 
