@@ -32,7 +32,7 @@ d
 | 2 | 系统更新 | 更新软件源并升级系统软件包 |
 | 3 | 系统清理 | 清理缓存、无用依赖、日志和临时文件 |
 | 4 | 一键配置 | 快速执行系统更新、清理、Swap、DNS、BBR、Docker、网络优化、第三方工具安装、时区和本地语言配置 |
-| 5 | 系统工具 | 管理快捷键、软件源、DNS、Swap、用户、时区、本地语言、主机名、hosts、网卡、日志、IPv6 等 |
+| 5 | 系统工具 | 管理快捷键、软件源、DNS、Swap、用户、时区、本地语言、主机名、hosts、网卡、日志、IPv6、Docker 镜像源测速等 |
 | 6 | 第三方工具 | 安装/卸载 vim、cpcat、starship、bat、btop、yazi 等常用工具 |
 | 7 | 编程工具 | 安装/卸载 Python、Node.js、Bun、uv、git、ClaudeCode、Codex 等开发工具 |
 | 8 | Docker管理 | 安装、卸载、状态查看、镜像源、容器、镜像、网络、卷、Compose、备份迁移等 |
@@ -99,7 +99,8 @@ d
 | 16 | 禁用IPv6 | 写入 sysctl 配置禁用 IPv6 |
 | 17 | 开启IPv6 | 写入 sysctl 配置开启 IPv6 |
 | 18 | 设置本地语言 | 支持 `en_US.UTF-8`、中文简体和其他常用 UTF-8 locale |
-| 19 | 卸载daimon脚本 | 删除 daimon 本地脚本和快捷命令 |
+| 19 | Docker镜像源测速 | 测速默认镜像源、第三方镜像源或两者组合，可选择加入官方镜像源 |
+| 20 | 卸载daimon脚本 | 删除 daimon 本地脚本和快捷命令 |
 
 ### 第三方工具
 
@@ -151,7 +152,7 @@ d
 | 5 | Docker 网络管理 | 管理 Docker 网络 |
 | 6 | Docker 卷管理 | 管理 Docker volume |
 | 7 | Docker 清理 | 清理无用 Docker 资源 |
-| 8 | 更换 Docker 源 | 配置 Docker 镜像源 |
+| 8 | 更换 Docker 源 | 配置默认 Docker 镜像源：`hub.333186.xyz`、`docker.m.daocloud.io`、`docker.1ms.run`、`docker.registry.cyou` |
 | 9 | 编辑 daemon.json 文件 | 编辑 Docker daemon 配置 |
 | 10 | Docker Compose 自动更新 | 自动检测 Compose 项目，配置定时 `docker compose pull/up -d` |
 | 11 | 开启 Docker IPv6 访问 | 写入 Docker IPv6 配置 |

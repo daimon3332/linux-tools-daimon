@@ -656,11 +656,10 @@ install_add_docker_cn() {
 	cat > /etc/docker/daemon.json << EOF
 {
   "registry-mirrors": [
+    "https://hub.333186.xyz",
+    "https://docker.m.daocloud.io",
     "https://docker.1ms.run",
-    "https://docker.1panel.live",
-    "https://hub.rat.dev",
-    "https://dockerproxy.net",
-    "https://docker-registry.nmqu.com"
+    "https://docker.registry.cyou"
   ]
 }
 EOF
@@ -673,30 +672,16 @@ docker_mirror_menu() {
 	install vim
 	mkdir -p /etc/docker
 	local mirrors=(
-		"https://docker.1ms.run"
-		"https://docker.1panel.live"
-		"https://hub.rat.dev"
-		"https://dockerproxy.net"
-		"https://docker-registry.nmqu.com"
-		"https://docker.m.ixdev.cn"
+		"https://hub.333186.xyz"
 		"https://docker.m.daocloud.io"
-		"https://docker.kejilion.pro"
-		"https://hub.1panel.dev"
-		"https://dockerproxy.cool"
-		"https://registry-1.docker.io"
+		"https://docker.1ms.run"
+		"https://docker.registry.cyou"
 	)
 	local mirror_names=(
-		"docker.1ms.run"
-		"docker.1panel.live"
-		"hub.rat.dev"
-		"dockerproxy.net"
-		"docker-registry.nmqu.com"
-		"docker.m.ixdev.cn"
+		"hub.333186.xyz"
 		"docker.m.daocloud.io"
-		"docker.kejilion.pro"
-		"hub.1panel.dev"
-		"dockerproxy.cool"
-		"官方 Docker Hub"
+		"docker.1ms.run"
+		"docker.registry.cyou"
 	)
 	clear
 	echo "Docker 镜像源多选"
@@ -705,11 +690,11 @@ docker_mirror_menu() {
 		printf "%2d. %-24s %s\n" "$((i+1))" "${mirror_names[$i]}" "${mirrors[$i]}"
 	done
 	echo "------------------------"
-	echo "输入编号，使用空格分隔；直接回车使用默认源：1 2 3 4 5"
+	echo "输入编号，使用空格分隔；直接回车使用默认源：1 2 3 4"
 	echo "输入 0 返回上一级菜单"
 	read -e -p "请选择: " selected
 	[ "$selected" = "0" ] && return 90
-	selected=${selected:-"1 2 3 4 5"}
+	selected=${selected:-"1 2 3 4"}
 	{
 		echo '{'
 		echo '  "registry-mirrors": ['
@@ -733,9 +718,186 @@ docker_mirror_menu() {
 	restart docker
 }
 
+docker_mirror_default_urls() {
+	printf '%s\n' \
+		"https://hub.333186.xyz" \
+		"https://docker.m.daocloud.io" \
+		"https://docker.1ms.run" \
+		"https://docker.registry.cyou"
+}
 
+docker_mirror_normalize_host() {
+	local s="$1"
+	s="${s#http://}"
+	s="${s#https://}"
+	s="${s%%/*}"
+	echo "$s"
+}
 
+docker_mirror_scheme_url() {
+	local s="$1"
+	if [[ "$s" =~ ^https?:// ]]; then
+		echo "${s%/}"
+	else
+		echo "https://${s%/}"
+	fi
+}
 
+docker_mirror_size_mb() {
+	awk -v b="$1" 'BEGIN { printf "%.2f", b / 1024 / 1024 }'
+}
+
+docker_mirror_rate_mb_s() {
+	awk -v mb="$1" -v sec="$2" 'BEGIN { if (sec > 0) printf "%.2f", mb / sec; else printf "0.00" }'
+}
+
+docker_mirror_ask_official() {
+	local answer
+	read -e -p "是否加入官方镜像源 registry-1.docker.io？(y/N): " answer
+	case "$answer" in
+		[Yy]) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+docker_mirror_speed_run() {
+	local timeout_sec="$1"
+	local rounds="$2"
+	shift 2
+	local mirrors=("$@")
+	local image="${IMAGE:-library/python:3.12-slim}"
+	local platform="${PLATFORM:-}"
+	local pull_args=()
+	local round mirror base_url host ref start_ms end_ms status size_bytes rc pull_time mb speed
+
+	if ! command -v docker >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 docker，请先安装并启动 Docker。${gl_bai}"
+		return 1
+	fi
+	if ! command -v timeout >/dev/null 2>&1 || ! command -v awk >/dev/null 2>&1; then
+		echo -e "${gl_hong}缺少 timeout 或 awk 命令。${gl_bai}"
+		return 1
+	fi
+	if [ ${#mirrors[@]} -eq 0 ]; then
+		echo -e "${gl_huang}没有可测速的镜像源。${gl_bai}"
+		return 1
+	fi
+	[ -n "$platform" ] && pull_args+=(--platform "$platform")
+
+	echo "image=$image timeout=${timeout_sec}s rounds=$rounds"
+	echo "------------------------"
+	for round in $(seq 1 "$rounds"); do
+		for mirror in "${mirrors[@]}"; do
+			base_url="$(docker_mirror_scheme_url "$mirror")"
+			host="$(docker_mirror_normalize_host "$mirror")"
+			ref="${host}/${image}"
+			echo "round=${round} mirror=${base_url}"
+			docker image rm -f "$ref" >/dev/null 2>&1 || true
+			start_ms="$(date +%s%3N)"
+			if timeout "${timeout_sec}s" docker pull "${pull_args[@]}" "$ref" >/dev/null 2>&1; then
+				end_ms="$(date +%s%3N)"
+				status="OK"
+				size_bytes="$(docker image inspect -f '{{.Size}}' "$ref" 2>/dev/null || echo 0)"
+				docker image rm -f "$ref" >/dev/null 2>&1 || true
+			else
+				rc=$?
+				end_ms="$(date +%s%3N)"
+				if [ "$rc" -eq 124 ]; then
+					status="FAIL(timeout ${timeout_sec}s)"
+				else
+					status="FAIL"
+				fi
+				size_bytes=0
+				docker image rm -f "$ref" >/dev/null 2>&1 || true
+			fi
+			pull_time="$(awk -v s="$start_ms" -v e="$end_ms" 'BEGIN { printf "%.3f", (e - s) / 1000 }')"
+			mb="$(docker_mirror_size_mb "$size_bytes")"
+			speed="$(docker_mirror_rate_mb_s "$mb" "$pull_time")"
+			echo "${status} pull=${pull_time}s size=${mb}MB approx=${speed}MB/s"
+			echo
+		done
+	done
+}
+
+docker_mirror_collect_defaults() {
+	local selected="$1"
+	local add_official="$2"
+	local default_mirrors=()
+	local mirrors=()
+	local idx
+	mapfile -t default_mirrors < <(docker_mirror_default_urls)
+	selected=${selected:-"1 2 3 4"}
+	for idx in $selected; do
+		if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt ${#default_mirrors[@]} ]; then
+			echo -e "${gl_huang}跳过无效编号: $idx${gl_bai}" >&2
+			continue
+		fi
+		mirrors+=("${default_mirrors[$((idx-1))]}")
+	done
+	[ "$add_official" = "yes" ] && mirrors+=("https://registry-1.docker.io")
+	printf '%s\n' "${mirrors[@]}"
+}
+
+docker_mirror_speed_test_menu() {
+	local default_mirrors=()
+	mapfile -t default_mirrors < <(docker_mirror_default_urls)
+	while true; do
+		clear
+		echo "Docker镜像源测速"
+		echo "------------------------"
+		echo "默认镜像源："
+		for i in "${!default_mirrors[@]}"; do
+			printf "%2d. %s\n" "$((i+1))" "${default_mirrors[$i]}"
+		done
+		echo "官方镜像源: https://registry-1.docker.io"
+		echo "------------------------"
+		echo "1. 测速默认镜像源"
+		echo "2. 测速第三方镜像源"
+		echo "3. 测速第三方镜像源 + 默认镜像源"
+		echo "0. 返回上一级菜单"
+		echo "------------------------"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				local selected timeout_sec rounds add_official mirrors=()
+				read -e -i "1 2 3 4" -p "请选择默认镜像源编号（空格分隔）: " selected
+				read -e -i "100" -p "请输入超时时间（秒）: " timeout_sec
+				read -e -i "1" -p "请输入测速轮数: " rounds
+				if docker_mirror_ask_official; then add_official=yes; else add_official=no; fi
+				mapfile -t mirrors < <(docker_mirror_collect_defaults "$selected" "$add_official")
+				docker_mirror_speed_run "${timeout_sec:-100}" "${rounds:-1}" "${mirrors[@]}"
+				break_end
+				;;
+			2)
+				local third timeout_sec rounds mirrors=()
+				read -e -p "请输入第三方镜像源地址: " third
+				[ -z "$third" ] && echo "镜像源不能为空" && break_end && continue
+				read -e -i "100" -p "请输入超时时间（秒）: " timeout_sec
+				read -e -i "1" -p "请输入测速轮数: " rounds
+				mirrors+=("$(docker_mirror_scheme_url "$third")")
+				if docker_mirror_ask_official; then mirrors+=("https://registry-1.docker.io"); fi
+				docker_mirror_speed_run "${timeout_sec:-100}" "${rounds:-1}" "${mirrors[@]}"
+				break_end
+				;;
+			3)
+				local third selected timeout_sec rounds add_official mirrors=() default_selected=()
+				read -e -p "请输入第三方镜像源地址: " third
+				[ -z "$third" ] && echo "镜像源不能为空" && break_end && continue
+				read -e -i "1 2 3 4" -p "请选择默认镜像源编号（空格分隔）: " selected
+				read -e -i "100" -p "请输入超时时间（秒）: " timeout_sec
+				read -e -i "1" -p "请输入测速轮数: " rounds
+				mirrors+=("$(docker_mirror_scheme_url "$third")")
+				if docker_mirror_ask_official; then add_official=yes; else add_official=no; fi
+				mapfile -t default_selected < <(docker_mirror_collect_defaults "$selected" "$add_official")
+				mirrors+=("${default_selected[@]}")
+				docker_mirror_speed_run "${timeout_sec:-100}" "${rounds:-1}" "${mirrors[@]}"
+				break_end
+				;;
+			0) return ;;
+			*) echo "无效的输入!"; break_end ;;
+		esac
+	done
+}
 
 
 linuxmirrors_install_docker() {
@@ -8762,7 +8924,7 @@ linux_Settings() {
 		printf "%b\033[55G%b\n" "${gl_kjlan}13.  ${gl_bai}网卡管理工具" "${gl_kjlan}14.  ${gl_bai}journalctl日志管理"
 		printf "%b\033[55G%b\n" "${gl_kjlan}15.  ${gl_bai}系统网络自适应优化" "${gl_kjlan}16.  ${gl_bai}禁用IPv6"
 		printf "%b\033[55G%b\n" "${gl_kjlan}17.  ${gl_bai}开启IPv6" "${gl_kjlan}18.  ${gl_bai}设置本地语言"
-		echo -e "${gl_kjlan}19.  ${gl_bai}卸载daimon脚本"
+		printf "%b\033[55G%b\n" "${gl_kjlan}19.  ${gl_bai}Docker镜像源测速" "${gl_kjlan}20.  ${gl_bai}卸载daimon脚本"
 		echo -e "${gl_kjlan}------------------------"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -9031,7 +9193,8 @@ linux_Settings() {
 			16) clear; system_disable_ipv6; break_end ;;
 			17) clear; system_enable_ipv6; break_end ;;
 			18) clear; linux_language ;;
-			19)
+			19) docker_mirror_speed_test_menu ;;
+			20)
 				clear
 				send_stats "卸载daimon脚本"
 				echo "卸载daimon脚本"

@@ -246,7 +246,7 @@ echo "LANG=en_US.UTF-8" > /etc/default/locale
 
 ## 5. 系统工具
 
-进入“系统工具”默认展示 1-19 号子选项，本身不修改系统。
+进入“系统工具”默认展示 1-20 号子选项，本身不修改系统。
 
 ### 5.1 设置脚本启动快捷键
 
@@ -658,7 +658,27 @@ echo "LANG=en_US.UTF-8" > /etc/default/locale
 ```
 解释：设置本地语言。菜单中 `1` 是 `en_US.UTF-8`，`2` 是 `zh_CN.UTF-8`，并包含中文繁体、日文、韩文、德文、法文、西班牙文、俄文等常用 UTF-8 locale。
 
-### 5.19 卸载 daimon 脚本
+### 5.19 Docker 镜像源测速
+
+默认镜像源：
+
+```bash
+https://hub.333186.xyz
+https://docker.m.daocloud.io
+https://docker.1ms.run
+https://docker.registry.cyou
+```
+
+测速命令核心：
+
+```bash
+timeout 100s docker pull 镜像源域名/library/python:3.12-slim
+docker image inspect -f '{{.Size}}' 镜像源域名/library/python:3.12-slim
+docker image rm -f 镜像源域名/library/python:3.12-slim
+```
+解释：支持测速默认镜像源、第三方镜像源、第三方+默认镜像源；三种模式都会询问是否加入官方镜像源 `https://registry-1.docker.io`。默认超时时间 100 秒，默认测速 1 轮。
+
+### 5.20 卸载 daimon 脚本
 
 ```bash
 rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
@@ -1031,16 +1051,15 @@ docker system prune -af --volumes
 
 ### 8.8 更换 Docker 源
 
-默认回车写入前 5 个镜像源：
+默认回车写入 4 个镜像源：
 
 ```json
 {
   "registry-mirrors": [
+    "https://hub.333186.xyz",
+    "https://docker.m.daocloud.io",
     "https://docker.1ms.run",
-    "https://docker.1panel.live",
-    "https://hub.rat.dev",
-    "https://dockerproxy.net",
-    "https://docker-registry.nmqu.com"
+    "https://docker.registry.cyou"
   ]
 }
 ```
@@ -1050,7 +1069,7 @@ mkdir -p /etc/docker
 cat > /etc/docker/daemon.json
 systemctl restart docker
 ```
-解释：写入 Docker daemon 镜像源并重启 Docker；选择官方源时写入 `https://registry-1.docker.io`。
+解释：写入 Docker daemon 镜像源并重启 Docker。
 
 ### 8.9 编辑 daemon.json 文件
 
