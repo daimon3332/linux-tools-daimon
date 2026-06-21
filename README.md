@@ -38,7 +38,7 @@ d
 | 8 | Docker管理 | 安装、卸载、状态查看、镜像源、容器、镜像、网络、卷、Compose、备份迁移等 |
 | 9 | SSH管理 | 修改 SSH 端口、密码登录、密钥登录、公钥私钥和 sshd_config |
 | 10 | UFW管理 | 安装/卸载 UFW、开放端口、删除端口规则 |
-| 11 | Nginx + 域名管理 | 安装 Nginx、申请证书、删除证书、配置 Nginx、测试页面管理 |
+| 11 | Nginx + 域名管理 | 安装 Nginx、申请证书、删除证书、配置 Nginx、备份/恢复域名和 Nginx 配置 |
 | 12 | fail2ban管理 | 安装/卸载 fail2ban，并自动配置 sshd 防护 |
 | 13 | BBR管理 | 进入 BBR / 网络加速管理脚本 |
 | 14 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
@@ -194,6 +194,8 @@ d
 | 8 | 创建测试页面 | 创建测试页面 |
 | 9 | 删除测试页面 | 删除测试页面 |
 | 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
+| 11 | 备份域名 + nginx 配置 | 备份 Nginx 配置、域名证书、acme.sh 和 letsencrypt 到 `/root/backup/nginx-domain` |
+| 12 | 恢复域名 + nginx 配置 | 从 `/root/backup/nginx-domain` 选择备份恢复，恢复前自动保存当前状态 |
 
 ### fail2ban管理
 

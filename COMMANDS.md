@@ -1328,7 +1328,7 @@ sh /root/daimon/acme-install.sh email=asdad@163.com
 ```
 解释：安装依赖、安装 acme.sh，并设置默认 CA。
 
-默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx。
+默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx；11 备份域名+nginx 配置；12 恢复域名+nginx 配置。
 
 申请证书：
 
@@ -1400,6 +1400,20 @@ rm -rf /var/www/测试名
 nginx -t && nginx -s reload
 ```
 解释：创建或删除 Nginx 测试页面。
+
+备份/恢复域名和 Nginx 配置：
+
+```bash
+mkdir -p /root/backup/nginx-domain
+cp -a /etc/nginx/nginx.conf /root/backup/nginx-domain/备份目录/
+cp -a /etc/nginx/sites-available /root/backup/nginx-domain/备份目录/
+cp -a /etc/nginx/sites-enabled /root/backup/nginx-domain/备份目录/
+cp -a /etc/nginx/conf.d /root/backup/nginx-domain/备份目录/
+cp -a /root/domain /root/backup/nginx-domain/备份目录/
+cp -a ~/.acme.sh /root/backup/nginx-domain/备份目录/acme.sh
+cp -a /etc/letsencrypt /root/backup/nginx-domain/备份目录/letsencrypt
+```
+解释：备份保存到 `/root/backup/nginx-domain/backup_时间戳`；恢复时按时间倒序列出备份，恢复前会把当前状态保存到 `/root/backup/nginx-domain/_before_restore`，恢复后执行 `nginx -t` 并重载 nginx。
 
 ## 12. fail2ban 管理
 

@@ -17719,6 +17719,120 @@ remove_test_page() {
     echo -e "${GREEN}测试页面 $TEST_NAME 已删除${NC}"
 }
 
+
+backup_nginx_domain() {
+    local backup_root="/root/backup/nginx-domain"
+    local prefix="${1:-backup}"
+    local backup_dir="$backup_root/${prefix}_$(date +%Y%m%d_%H%M%S)"
+    local item_count=0
+
+    mkdir -p "$backup_dir"
+
+    copy_backup_item() {
+        local src="$1"
+        local dst="$2"
+        if [ -e "$src" ] || [ -L "$src" ]; then
+            mkdir -p "$(dirname "$dst")"
+            cp -a "$src" "$dst"
+            item_count=$((item_count + 1))
+        fi
+    }
+
+    copy_backup_item "/etc/nginx/nginx.conf" "$backup_dir/nginx.conf"
+    copy_backup_item "/etc/nginx/sites-available" "$backup_dir/sites-available"
+    copy_backup_item "/etc/nginx/sites-enabled" "$backup_dir/sites-enabled"
+    copy_backup_item "/etc/nginx/conf.d" "$backup_dir/conf.d"
+    copy_backup_item "/root/domain" "$backup_dir/domain"
+    copy_backup_item "$HOME/.acme.sh" "$backup_dir/acme.sh"
+    copy_backup_item "/etc/letsencrypt" "$backup_dir/letsencrypt"
+
+    cat > "$backup_dir/manifest.txt" <<EOF
+backup_time=$(date '+%Y-%m-%d %H:%M:%S')
+hostname=$(hostname 2>/dev/null || true)
+items=$item_count
+paths=/etc/nginx/nginx.conf /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d /root/domain $HOME/.acme.sh /etc/letsencrypt
+EOF
+
+    echo -e "${GREEN}备份完成：$backup_dir${NC}"
+}
+
+restore_nginx_domain() {
+    local backup_root="/root/backup/nginx-domain"
+    local backups=()
+    local backup_dir choice confirm
+    local i=1
+
+    if [ ! -d "$backup_root" ]; then
+        echo -e "${YELLOW}暂无备份目录：$backup_root${NC}"
+        return 0
+    fi
+
+    while IFS= read -r backup_dir; do
+        backups+=("$backup_dir")
+    done < <(find "$backup_root" -mindepth 1 -maxdepth 1 -type d ! -name '_before_restore' -printf '%T@ %p\n' 2>/dev/null | sort -rn | awk '{$1=""; sub(/^ /, ""); print}')
+
+    if [ ${#backups[@]} -eq 0 ]; then
+        echo -e "${YELLOW}暂无可恢复的备份${NC}"
+        return 0
+    fi
+
+    echo -e "${GREEN}可恢复的备份：${NC}"
+    for backup_dir in "${backups[@]}"; do
+        printf "%2d) %s\n" "$i" "$backup_dir"
+        if [ -f "$backup_dir/manifest.txt" ]; then
+            sed 's/^/    /' "$backup_dir/manifest.txt" | head -n 4
+        fi
+        i=$((i + 1))
+    done
+    echo ""
+
+    read -e -i "1" -p "请选择要恢复的备份编号（默认 1 最新）: " choice
+    choice=${choice:-1}
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#backups[@]} ]; then
+        echo -e "${RED}无效选择${NC}"
+        return 1
+    fi
+
+    backup_dir="${backups[$((choice - 1))]}"
+    echo -e "${YELLOW}将从以下备份恢复：$backup_dir${NC}"
+    read -p "恢复会覆盖当前 nginx 配置和域名证书，是否继续？[y/N]: " confirm
+    if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+        echo "已取消"
+        return 0
+    fi
+
+    mkdir -p "$backup_root/_before_restore"
+    backup_nginx_domain "_before_restore/before_restore" >/dev/null 2>&1 || true
+
+    install_nginx
+
+    restore_backup_item() {
+        local src="$1"
+        local dst="$2"
+        rm -rf "$dst"
+        if [ -e "$src" ] || [ -L "$src" ]; then
+            mkdir -p "$(dirname "$dst")"
+            cp -a "$src" "$dst"
+        fi
+    }
+
+    restore_backup_item "$backup_dir/nginx.conf" "/etc/nginx/nginx.conf"
+    restore_backup_item "$backup_dir/sites-available" "/etc/nginx/sites-available"
+    restore_backup_item "$backup_dir/sites-enabled" "/etc/nginx/sites-enabled"
+    restore_backup_item "$backup_dir/conf.d" "/etc/nginx/conf.d"
+    restore_backup_item "$backup_dir/domain" "/root/domain"
+    restore_backup_item "$backup_dir/acme.sh" "$HOME/.acme.sh"
+    restore_backup_item "$backup_dir/letsencrypt" "/etc/letsencrypt"
+
+    if nginx -t; then
+        systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+        echo -e "${GREEN}恢复完成，nginx 配置检查通过。${NC}"
+    else
+        echo -e "${RED}恢复完成，但 nginx -t 检查失败；恢复前状态已保存到 $backup_root/_before_restore。${NC}"
+        return 1
+    fi
+}
+
 setup_cron() {
     CRON_LINE="0 3 * * * $ACME --cron --home $HOME/.acme.sh >/dev/null 2>&1"
     ( crontab -l 2>/dev/null | grep -v "$ACME --cron" || true; echo "$CRON_LINE" ) | crontab -
@@ -17855,13 +17969,15 @@ show_menu() {
     echo "8) 创建测试页面"
     echo "9) 删除测试页面"
     echo "10) 安装 nginx"
+    echo "11) 备份域名 + nginx 配置"
+    echo "12) 恢复域名 + nginx 配置"
     echo "0) 返回上一级菜单"
     echo -e "${GREEN}=========================================${NC}"
 }
 
 while true; do
     show_menu
-    read -p "请选择操作 [0-10]: " ACTION
+    read -p "请选择操作 [0-12]: " ACTION
 
     case $ACTION in
         1)
@@ -17919,6 +18035,12 @@ while true; do
             install_nginx
             nginx -v 2>&1 || true
             systemctl status nginx --no-pager 2>/dev/null || true
+            ;;
+        11)
+            backup_nginx_domain
+            ;;
+        12)
+            restore_nginx_domain
             ;;
         0)
             echo -e "${GREEN}返回上一级菜单${NC}"
