@@ -73,7 +73,7 @@ d
 | 5 | 优化 DNS 地址 | 根据 `ipinfo.io` 的 `country` 字段自动选择 DNS；`CN` 使用国内 DNS，其他地区包括香港使用国外 DNS |
 | 6 | 开启 BBR 加速（BBR + FQ） | 设置 BBR + FQ 加速参数 |
 | 7 | 安装 Docker | 根据 `ipinfo.io` 的 `country` 字段自动选择国内镜像或 Docker 官方源 |
-| 8 | 执行系统网络自适应优化 | 运行网络自适应优化脚本 |
+| 8 | 应用自定义网络优化 | 使用内置参数优化网络，自动检测默认出口网卡并应用 `fq` |
 | 9 | 安装第三方工具 | 默认预填全部第三方工具编号，用户可修改 |
 | 10 | 修改时区和本地语言 | 设置时区为 `Asia/Shanghai`，本地语言为 `en_US.UTF-8` |
 
@@ -95,7 +95,7 @@ d
 | 12 | 查看ssh的ip | 查看当前 SSH 连接 IP 和所有 SSH 连接地址 |
 | 13 | 网卡管理工具 | 查看、启用、禁用网卡和查看网卡详细信息 |
 | 14 | journalctl日志管理 | 配置日志自动清理、查看占用、查看服务日志、按时间/大小清理 |
-| 15 | 系统网络自适应优化 | 执行、查看或回滚网络自适应优化 |
+| 15 | 系统网络自适应优化 | 应用、查看或清除内置自定义网络优化；自动检测默认出口网卡并应用 `fq` |
 | 16 | 禁用IPv6 | 写入 sysctl 配置禁用 IPv6 |
 | 17 | 开启IPv6 | 写入 sysctl 配置开启 IPv6 |
 | 18 | 设置本地语言 | 支持 `en_US.UTF-8`、中文简体和其他常用 UTF-8 locale |
@@ -273,7 +273,7 @@ d
 | 系统工具 | cmdbox 命令收藏夹脚本 | `https://raw.githubusercontent.com/byJoey/cmdbox/refs/heads/main/install.sh` | 安装命令收藏夹 |
 | Docker | linuxmirrors Docker 安装脚本 | `https://linuxmirrors.cn/docker.sh` | 安装 Docker、配置 Docker CE 源和镜像源 |
 | 系统工具 | jhb IPv6 修复脚本 | `https://jhb.ovh/jb/v6.sh` | IPv6 修复 |
-| 系统工具 | kejilion 网络自适应优化脚本 | `https://raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh` | 系统网络自适应优化、查看状态、回滚 |
+| BBR 管理 | kejilion 网络自适应优化脚本 | `https://raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh` | Linux 内核调优管理中的自动调优/还原 |
 | BBR 管理 | Linux-NetSpeed | `https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh` | BBR / 网络加速管理 |
 | BBR 管理 | jhb BBRv3 ARM 脚本 | `https://jhb.ovh/jb/bbrv3arm.sh` | ARM 环境 BBRv3 相关处理 |
 | WARP 管理 | fscarmen WARP 菜单脚本 | `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh` | WARP 安装、管理和彻底删除 |

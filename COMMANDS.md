@@ -223,10 +223,10 @@ bash /root/daimon/install-docker-auto.sh 2   # 国外和香港：Docker 官方�
 ### 4.8 系统网络自适应优化
 
 ```bash
-source /root/daimon/network-optimize.sh
-auto_optimize_network
+sysctl -e -p /etc/sysctl.d/99-network-optimize.conf
+tc qdisc replace dev 默认出口网卡 root fq
 ```
-解释：下载/加载 kejilion 的网络自适应优化脚本并执行自动优化。
+解释：执行内置自定义网络优化，不下载第三方脚本，不换内核，网卡名称自动检测。
 
 ### 4.9 安装第三方工具
 
@@ -597,28 +597,64 @@ sysctl -n net.ipv4.tcp_congestion_control
 sysctl -n net.core.default_qdisc
 [ -f /etc/sysctl.d/99-network-optimize.conf ]
 ```
-解释：显示当前拥塞算法、队列算法、是否已安装自动优化配置。
+解释：显示当前拥塞算法、队列算法、是否已安装自定义优化配置。
 
-执行自适应优化：
+应用自定义网络优化：
 
 ```bash
-bash /root/daimon/network-optimize.sh
+cat > /etc/sysctl.d/99-network-optimize.conf <<EOF
+net.core.default_qdisc=fq
+net.ipv4.tcp_congestion_control=bbr
+net.core.rmem_max=134217728
+net.core.wmem_max=134217728
+net.core.netdev_max_backlog=300000
+net.ipv4.tcp_rmem=4096 131072 134217728
+net.ipv4.tcp_wmem=4096 131072 134217728
+fs.file-max=2097152
+net.ipv4.tcp_tw_reuse=1
+net.ipv4.tcp_fastopen=3
+net.ipv4.tcp_window_scaling=1
+net.ipv4.tcp_max_syn_backlog=262144
+net.core.somaxconn=65535
+net.ipv4.tcp_low_latency=1
+net.ipv4.ip_local_port_range=1024 65535
+vm.swappiness=10
+net.ipv4.tcp_slow_start_after_idle=0
+net.ipv4.tcp_limit_output_bytes=4194304
+net.ipv4.tcp_mtu_probing=1
+EOF
+sysctl -e -p /etc/sysctl.d/99-network-optimize.conf
 ```
-解释：运行 kejilion 的 `network-optimize.sh`，自动检测链路速率、延迟、丢包、内存、内核版本，并写入 `/etc/sysctl.d/99-network-optimize.conf`。
+解释：使用内置固定参数，不换内核；本地临时端口范围保留 `1024 65535`。
+
+自动应用当前默认出口网卡 qdisc：
+
+```bash
+ip route show default | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | sort -u
+tc qdisc replace dev 网卡 root fq
+```
+解释：网卡名称不写死，脚本会自动检测默认路由出口网卡，并写入 systemd oneshot 服务，开机后重新应用 `fq`。
 
 查看优化状态：
 
 ```bash
-bash /root/daimon/network-optimize.sh status
+sysctl net.core.default_qdisc net.ipv4.tcp_congestion_control
+tc qdisc show dev 网卡
+modinfo tcp_bbr 2>/dev/null | grep -E '^(filename|version|description):'
 ```
-解释：查看当前网络内核参数和优化配置状态。
+解释：查看当前网络内核参数、默认出口网卡 qdisc、BBR 模块信息和优化配置状态。
 
-回滚自适应优化：
+清除自定义网络优化：
 
 ```bash
-bash /root/daimon/network-optimize.sh restore
+systemctl disable --now daimon-network-optimize.service
+rm -f /etc/sysctl.d/99-network-optimize.conf
+rm -f /usr/local/bin/daimon-network-optimize-apply.sh
+rm -f /etc/systemd/system/daimon-network-optimize.service
+systemctl daemon-reload
+sysctl --system
 ```
-解释：调用脚本内置回滚逻辑，恢复备份或删除自动优化配置。
+解释：删除本脚本写入的网络优化配置。部分运行态参数需要重启后完全恢复系统默认值。
 
 ### 5.16 禁用 IPv6
 
