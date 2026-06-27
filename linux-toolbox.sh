@@ -8319,53 +8319,13 @@ EOF
 }
 
 DAIMON_NETWORK_OPTIMIZE_CONF="/etc/sysctl.d/99-network-optimize.conf"
-DAIMON_NETWORK_OPTIMIZE_APPLY="/usr/local/bin/daimon-network-optimize-apply.sh"
-DAIMON_NETWORK_OPTIMIZE_SERVICE="/etc/systemd/system/daimon-network-optimize.service"
 
-daimon_network_default_ifaces() {
-	ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | sort -u
-}
-
-daimon_network_write_apply_script() {
-	cat > "$DAIMON_NETWORK_OPTIMIZE_APPLY" <<'EOF'
-#!/usr/bin/env bash
-set -u
-
-default_ifaces() {
-	ip route show default 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev") print $(i+1)}' | sort -u
-}
-
-command -v tc >/dev/null 2>&1 || exit 0
-
-while IFS= read -r dev; do
-	[ -z "$dev" ] && continue
-	case "$dev" in
-		lo|docker*|veth*|br-*|virbr*|zt*|tailscale*|wg*|tun*|tap*) continue ;;
-	esac
-	tc qdisc replace dev "$dev" root fq 2>/dev/null || true
-done < <(default_ifaces)
-EOF
-	chmod +x "$DAIMON_NETWORK_OPTIMIZE_APPLY"
-}
-
-daimon_network_write_service() {
-	cat > "$DAIMON_NETWORK_OPTIMIZE_SERVICE" <<EOF
-[Unit]
-Description=linux-tools-daimon network qdisc optimizer
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=oneshot
-ExecStart=$DAIMON_NETWORK_OPTIMIZE_APPLY
-RemainAfterExit=yes
-
-[Install]
-WantedBy=multi-user.target
-EOF
-	systemctl daemon-reload 2>/dev/null || true
-	systemctl enable daimon-network-optimize.service >/dev/null 2>&1 || true
-	systemctl restart daimon-network-optimize.service >/dev/null 2>&1 || true
+daimon_network_cleanup_old_qdisc_service() {
+	if command -v systemctl >/dev/null 2>&1; then
+		systemctl disable --now daimon-network-optimize.service >/dev/null 2>&1 || true
+	fi
+	rm -f /etc/systemd/system/daimon-network-optimize.service /usr/local/bin/daimon-network-optimize-apply.sh
+	command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
 daimon_network_apply_custom_optimize() {
@@ -8375,10 +8335,7 @@ daimon_network_apply_custom_optimize() {
 	if ! echo "$available_cc" | grep -qw bbr; then
 		echo -e "${gl_huang}当前内核未检测到 bbr，可先升级内核或安装支持 BBR 的内核。${gl_bai}"
 	fi
-	if ! command -v tc >/dev/null 2>&1 && command -v apt-get >/dev/null 2>&1; then
-		DEBIAN_FRONTEND=noninteractive apt-get update -y >/dev/null 2>&1 || true
-		DEBIAN_FRONTEND=noninteractive apt-get install -y iproute2 >/dev/null 2>&1 || true
-	fi
+	daimon_network_cleanup_old_qdisc_service
 	cat > "$DAIMON_NETWORK_OPTIMIZE_CONF" <<'EOF'
 # linux-tools-daimon custom network optimization
 net.core.default_qdisc=fq
@@ -8402,17 +8359,12 @@ net.ipv4.tcp_limit_output_bytes=4194304
 net.ipv4.tcp_mtu_probing=1
 EOF
 	sysctl -e -p "$DAIMON_NETWORK_OPTIMIZE_CONF"
-	daimon_network_write_apply_script
-	if command -v systemctl >/dev/null 2>&1; then
-		daimon_network_write_service
-	fi
-	bash "$DAIMON_NETWORK_OPTIMIZE_APPLY" 2>/dev/null || true
-	echo -e "${gl_lv}自定义网络优化已应用。配置文件: $DAIMON_NETWORK_OPTIMIZE_CONF${gl_bai}"
+	echo -e "${gl_lv}自定义网络优化已应用。只写入 sysctl 参数，配置文件: $DAIMON_NETWORK_OPTIMIZE_CONF${gl_bai}"
 	send_stats "自定义网络优化"
 }
 
 daimon_network_show_custom_status() {
-	local key dev enabled active
+	local key
 	echo "sysctl 配置："
 	for key in \
 		net.core.default_qdisc \
@@ -8438,16 +8390,6 @@ daimon_network_show_custom_status() {
 		printf "  %-38s %s\n" "$key" "$(sysctl -n "$key" 2>/dev/null || echo 未支持)"
 	done
 	echo "------------------------------------------------"
-	echo "默认出口网卡 qdisc："
-	if command -v tc >/dev/null 2>&1; then
-		while IFS= read -r dev; do
-			[ -z "$dev" ] && continue
-			printf "  %-12s %s\n" "$dev" "$(tc qdisc show dev "$dev" 2>/dev/null | head -n 1)"
-		done < <(daimon_network_default_ifaces)
-	else
-		echo "  未安装 tc(iproute2)"
-	fi
-	echo "------------------------------------------------"
 	echo "BBR 模块信息："
 	modinfo tcp_bbr 2>/dev/null | grep -E '^(filename|version|description):' || echo "  未检测到 tcp_bbr 模块信息"
 	echo "------------------------------------------------"
@@ -8456,30 +8398,12 @@ daimon_network_show_custom_status() {
 	else
 		echo -e "自定义优化配置: ${gl_hui}未安装${gl_bai}"
 	fi
-	if ! command -v systemctl >/dev/null 2>&1; then
-		echo "开机 qdisc 服务: 未检测到 systemd"
-	elif [ ! -f "$DAIMON_NETWORK_OPTIMIZE_SERVICE" ]; then
-		echo "开机 qdisc 服务: 未安装"
-	else
-		enabled=$(systemctl is-enabled daimon-network-optimize.service 2>/dev/null || true)
-		active=$(systemctl is-active daimon-network-optimize.service 2>/dev/null || true)
-		[ -z "$enabled" ] && enabled="unknown"
-		[ -z "$active" ] && active="unknown"
-		if [ "$enabled" = "disabled" ]; then
-			echo "开机 qdisc 服务: disabled（已安装但未开机自启，重新执行 1 可修复） | 当前状态: $active"
-		else
-			echo "开机 qdisc 服务: $enabled | 当前状态: $active"
-		fi
-	fi
 }
 
 daimon_network_clear_custom_optimize() {
 	root_use
-	if command -v systemctl >/dev/null 2>&1; then
-		systemctl disable --now daimon-network-optimize.service 2>/dev/null || true
-	fi
-	rm -f "$DAIMON_NETWORK_OPTIMIZE_CONF" "$DAIMON_NETWORK_OPTIMIZE_APPLY" "$DAIMON_NETWORK_OPTIMIZE_SERVICE"
-	command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload 2>/dev/null || true
+	daimon_network_cleanup_old_qdisc_service
+	rm -f "$DAIMON_NETWORK_OPTIMIZE_CONF"
 	sysctl --system >/dev/null 2>&1 || true
 	echo "已清除自定义网络优化配置。部分运行态参数需要重启后完全恢复系统默认值。"
 	send_stats "清除自定义网络优化"
@@ -8952,7 +8876,7 @@ system_network_auto_optimize() {
 			echo -e "自定义优化配置: ${gl_hui}未安装${gl_bai}"
 		fi
 		echo "------------------------------------------------"
-		echo "说明：使用内置自定义参数，不换内核；网卡 qdisc 会自动检测默认出口网卡，不固定网卡名称。"
+		echo "说明：使用内置自定义参数，不换内核；只写入 /etc/sysctl.d/99-network-optimize.conf，不创建 qdisc 服务。"
 		echo "------------------------------------------------"
 		echo "1. 应用自定义网络优化"
 		echo "2. 查看当前网络优化状态"
