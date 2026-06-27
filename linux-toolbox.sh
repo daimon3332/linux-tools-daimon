@@ -8325,6 +8325,7 @@ daimon_network_cleanup_old_qdisc_service() {
 		systemctl disable --now daimon-network-optimize.service >/dev/null 2>&1 || true
 	fi
 	rm -f /etc/systemd/system/daimon-network-optimize.service /usr/local/bin/daimon-network-optimize-apply.sh
+	rm -f /etc/sysctl.d/99-network-restore-before-daimon.conf
 	command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
