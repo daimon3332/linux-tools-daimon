@@ -8364,7 +8364,8 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOF
 	systemctl daemon-reload 2>/dev/null || true
-	systemctl enable --now daimon-network-optimize.service 2>/dev/null || true
+	systemctl enable daimon-network-optimize.service >/dev/null 2>&1 || true
+	systemctl restart daimon-network-optimize.service >/dev/null 2>&1 || true
 }
 
 daimon_network_apply_custom_optimize() {
@@ -8411,7 +8412,7 @@ EOF
 }
 
 daimon_network_show_custom_status() {
-	local key dev
+	local key dev enabled active
 	echo "sysctl 配置："
 	for key in \
 		net.core.default_qdisc \
@@ -8455,8 +8456,20 @@ daimon_network_show_custom_status() {
 	else
 		echo -e "自定义优化配置: ${gl_hui}未安装${gl_bai}"
 	fi
-	if command -v systemctl >/dev/null 2>&1; then
-		echo "开机 qdisc 服务: $(systemctl is-enabled daimon-network-optimize.service 2>/dev/null || echo 未安装)"
+	if ! command -v systemctl >/dev/null 2>&1; then
+		echo "开机 qdisc 服务: 未检测到 systemd"
+	elif [ ! -f "$DAIMON_NETWORK_OPTIMIZE_SERVICE" ]; then
+		echo "开机 qdisc 服务: 未安装"
+	else
+		enabled=$(systemctl is-enabled daimon-network-optimize.service 2>/dev/null || true)
+		active=$(systemctl is-active daimon-network-optimize.service 2>/dev/null || true)
+		[ -z "$enabled" ] && enabled="unknown"
+		[ -z "$active" ] && active="unknown"
+		if [ "$enabled" = "disabled" ]; then
+			echo "开机 qdisc 服务: disabled（已安装但未开机自启，重新执行 1 可修复） | 当前状态: $active"
+		else
+			echo "开机 qdisc 服务: $enabled | 当前状态: $active"
+		fi
 	fi
 }
 
