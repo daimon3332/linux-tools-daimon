@@ -9315,9 +9315,9 @@ linux_Settings() {
 
 
 linux_tools() {
-  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi fastfetch ncdu)
-  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "fastfetch" "ncdu")
-  local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "系统概览" "磁盘占用")
+  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi fastfetch ncdu nexttrace iperf3)
+  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "fastfetch" "ncdu" "NextTrace" "iperf3")
+  local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "系统概览" "磁盘占用" "路由追踪" "网络性能测试")
 
   local programming_ids=(python npm nodejs bun uv git claude codex)
   local programming_names=("python" "npm" "nodejs" "bun" "uv" "git" "ClaudeCode" "Codex")
@@ -10190,6 +10190,39 @@ EOF
     fi
   }
 
+  install_nexttrace() {
+    root_use
+    if command -v apt >/dev/null 2>&1; then
+      install curl ca-certificates
+      command install -d -m 0755 /etc/apt/keyrings
+      curl -fsSL -o /tmp/nexttrace-archive-keyring.gpg "https://github.com/nxtrace/nexttrace-debs/releases/latest/download/nexttrace-archive-keyring.gpg" || return 1
+      command install -m 0644 /tmp/nexttrace-archive-keyring.gpg /etc/apt/keyrings/nexttrace.gpg
+      rm -f /tmp/nexttrace-archive-keyring.gpg
+      printf '%s\n' \
+        'Types: deb' \
+        'URIs: https://github.com/nxtrace/nexttrace-debs/releases/latest/download/' \
+        'Suites: ./' \
+        'Signed-By: /etc/apt/keyrings/nexttrace.gpg' \
+        | tee /etc/apt/sources.list.d/nexttrace.sources >/dev/null
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        nexttrace
+    else
+      install nexttrace
+    fi
+    nexttrace --version 2>/dev/null | head -n 1 || true
+  }
+
+  remove_nexttrace_all() {
+    remove nexttrace
+    if command -v apt >/dev/null 2>&1; then
+      rm -f /etc/apt/keyrings/nexttrace.gpg /etc/apt/sources.list.d/nexttrace.sources
+      apt update -y 2>/dev/null || true
+    fi
+  }
+
 
   load_nvm_env() {
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -10528,7 +10561,10 @@ EOF
       yazi)
         install_yazi_griffo
         ;;
-      git|curl|tree|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu)
+      nexttrace)
+        install_nexttrace
+        ;;
+      git|curl|tree|npm|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu|iperf3)
         install "$id"
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
@@ -10571,6 +10607,7 @@ EOF
       fd) remove_fd_alias; remove fd-find ;;
       fzf) remove_fzf_all ;;
       blesh) remove_blesh_all ;;
+      nexttrace) remove_nexttrace_all ;;
       python) remove python3 python3-pip python3-venv python-is-python3 ;;
       npm|nodejs) remove_nvm_all ;;
       iptables-persistent) remove_iptables_persistent_all ;;

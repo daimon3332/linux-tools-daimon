@@ -232,7 +232,7 @@ sysctl -e -p /etc/sysctl.d/99-network-optimize.conf
 ```bash
 linux_tools thirdparty-install-all
 ```
-解释：调用第三方工具分类的全部安装逻辑，安装 vim、cpcat、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、yazi、fastfetch 等工具。
+解释：调用第三方工具分类的全部安装逻辑，安装 vim、cpcat、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、yazi、fastfetch、ncdu、NextTrace、iperf3 等工具。
 
 ### 4.10 修改时区和本地语言
 
@@ -725,6 +725,8 @@ rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
 12. yazi
 13. fastfetch
 14. ncdu
+15. NextTrace
+16. iperf3
 
 ```bash
 command -v 工具名
@@ -744,6 +746,8 @@ grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
 command -v yazi
 command -v fastfetch
 command -v ncdu
+command -v nexttrace
+command -v iperf3
 ```
 解释：判断第三方工具是否存在。
 
@@ -811,6 +815,7 @@ if [ -f ~/.bat.sh ]; then
 fi
 EOF
 apt install -y tree ripgrep fd-find ncdu
+apt install -y iperf3
 curl -sS https://debian.griffo.io/EA0F721D231FDD3A0A17B9AC7808B4DD62C41256.asc | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
 echo "deb https://debian.griffo.io/apt $(lsb_release -sc 2>/dev/null) main" | tee /etc/apt/sources.list.d/debian.griffo.io.list >/dev/null
 apt update -y
@@ -818,6 +823,13 @@ apt install -y yazi
 add-apt-repository -y ppa:zhangsongcui3371/fastfetch
 apt update -y
 apt install -y fastfetch
+install -d -m 0755 /etc/apt/keyrings
+curl -fsSL -o /tmp/nexttrace-archive-keyring.gpg https://github.com/nxtrace/nexttrace-debs/releases/latest/download/nexttrace-archive-keyring.gpg
+install -m 0644 /tmp/nexttrace-archive-keyring.gpg /etc/apt/keyrings/nexttrace.gpg
+rm -f /tmp/nexttrace-archive-keyring.gpg
+printf '%s\n' 'Types: deb' 'URIs: https://github.com/nxtrace/nexttrace-debs/releases/latest/download/' 'Suites: ./' 'Signed-By: /etc/apt/keyrings/nexttrace.gpg' | tee /etc/apt/sources.list.d/nexttrace.sources >/dev/null
+apt update -y
+apt install -y nexttrace
 echo "alias fd='fdfind'" >> ~/.bashrc
 git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
 ~/.fzf/install --key-bindings --completion --no-update-rc
@@ -855,7 +867,7 @@ if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
 EOF
 exec bash
 ```
-解释：安装第三方常用工具；安装过程中不再直接 `source ~/.bashrc`，避免 ble.sh 重复加载导致 TTY 异常，安装完成后统一 `exec bash` 重新进入命令行；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ncdu 使用 apt 安装；yazi 通过 `debian.griffo.io` apt 源安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，并自动清理旧的重复 `source ~/.local/share/blesh/ble.sh`，保证 ble.sh 配置块位于 `.bashrc` 末尾。
+解释：安装第三方常用工具；安装过程中不再直接 `source ~/.bashrc`，避免 ble.sh 重复加载导致 TTY 异常，安装完成后统一 `exec bash` 重新进入命令行；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ncdu、iperf3 使用 apt 安装；yazi 通过 `debian.griffo.io` apt 源安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；NextTrace 通过官方 apt 源安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，并自动清理旧的重复 `source ~/.local/share/blesh/ble.sh`，保证 ble.sh 配置块位于 `.bashrc` 末尾。
 
 特殊卸载：
 
@@ -872,11 +884,12 @@ rm -rf ~/.fzf
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
 rm -rf ~/.config/btop ~/.config/yazi ~/.local/share/yazi ~/.cache/yazi ~/.config/fastfetch
 rm -f /etc/apt/sources.list.d/debian.griffo.io.list /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
+rm -f /etc/apt/keyrings/nexttrace.gpg /etc/apt/sources.list.d/nexttrace.sources
 add-apt-repository --remove -y ppa:zhangsongcui3371/fastfetch
-apt purge -y vim bat batcat btop tree ripgrep fd-find fzf yazi fastfetch ncdu
+apt purge -y vim bat batcat btop tree ripgrep fd-find fzf yazi fastfetch ncdu nexttrace iperf3
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
 ```
-解释：卸载第三方工具第 1-14 项的 apt 包、git clone 目录和脚本写入的配置。
+解释：卸载第三方工具第 1-16 项的 apt 包、git clone 目录、apt 源和脚本写入的配置。
 
 ## 7. 编程工具
 

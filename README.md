@@ -33,7 +33,7 @@ d
 | 3 | 系统清理 | 清理缓存、无用依赖、日志和临时文件 |
 | 4 | 一键配置 | 快速执行系统更新、清理、Swap、DNS、BBR、Docker、网络优化、第三方工具安装、时区和本地语言配置 |
 | 5 | 系统工具 | 管理快捷键、软件源、DNS、Swap、用户、时区、本地语言、主机名、hosts、网卡、日志、IPv6、Docker 镜像源测速等 |
-| 6 | 第三方工具 | 安装/卸载 vim、cpcat、starship、bat、btop、yazi 等常用工具 |
+| 6 | 第三方工具 | 安装/卸载 vim、cpcat、starship、bat、btop、yazi、NextTrace、iperf3 等常用工具 |
 | 7 | 编程工具 | 安装/卸载 Python、Node.js、Bun、uv、git、ClaudeCode、Codex 等开发工具 |
 | 8 | Docker管理 | 安装、卸载、状态查看、镜像源、容器、镜像、网络、卷、Compose、备份迁移等 |
 | 9 | SSH管理 | 修改 SSH 端口、密码登录、密钥登录、公钥私钥和 sshd_config |
@@ -124,6 +124,8 @@ d
 | 12 | yazi | 现代终端文件管理器，通过 `debian.griffo.io` apt 源安装 |
 | 13 | fastfetch | 系统概览信息展示工具 |
 | 14 | ncdu | 交互式磁盘占用分析工具 |
+| 15 | NextTrace | 可视化路由追踪工具，通过官方 apt 源安装 |
+| 16 | iperf3 | 网络性能测试工具 |
 
 ### 编程工具
 
