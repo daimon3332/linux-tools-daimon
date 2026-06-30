@@ -102,6 +102,30 @@ d
 | 19 | Docker镜像源测速 | 测速默认镜像源、第三方镜像源或两者组合，可选择加入官方镜像源 |
 | 20 | 卸载daimon脚本 | 删除 daimon 本地脚本和快捷命令 |
 
+#### 系统网络自适应优化参数
+
+| 参数 | 参数的含义 | 调优的参数值 | 调优之后的效果 |
+|---|---|---|---|
+| `net.core.default_qdisc` | 默认网络队列调度算法 | `fq` | 配合 BBR 做公平队列调度，降低排队延迟 |
+| `net.ipv4.tcp_congestion_control` | TCP 拥塞控制算法 | `bbr` | 使用 BBR 提升高延迟、高带宽链路吞吐 |
+| `net.core.rmem_max` | Socket 最大接收缓冲区 | `134217728` | 提高大带宽链路接收能力 |
+| `net.core.wmem_max` | Socket 最大发送缓冲区 | `134217728` | 提高大带宽链路发送能力 |
+| `net.core.netdev_max_backlog` | 网卡收包队列长度 | `300000` | 缓解高并发或突发流量下的丢包 |
+| `net.ipv4.tcp_rmem` | TCP 接收缓冲区最小值、默认值、最大值 | `4096 131072 134217728` | 让 TCP 接收窗口可随链路质量扩大 |
+| `net.ipv4.tcp_wmem` | TCP 发送缓冲区最小值、默认值、最大值 | `4096 131072 134217728` | 让 TCP 发送窗口可随链路质量扩大 |
+| `fs.file-max` | 系统最大文件句柄数 | `2097152` | 提升大量连接和文件打开场景的容量 |
+| `net.ipv4.tcp_tw_reuse` | TIME_WAIT 连接复用 | `1` | 减少短连接过多时的端口占用 |
+| `net.ipv4.tcp_fastopen` | TCP Fast Open | `3` | 客户端和服务端均启用 TFO，减少握手延迟 |
+| `net.ipv4.tcp_window_scaling` | TCP 窗口缩放 | `1` | 支持更大的 TCP 窗口，提高长肥链路吞吐 |
+| `net.ipv4.tcp_max_syn_backlog` | SYN 半连接队列长度 | `262144` | 提升高并发建连承载能力 |
+| `net.core.somaxconn` | Socket listen 队列上限 | `65535` | 提升服务端连接排队能力 |
+| `net.ipv4.tcp_low_latency` | TCP 低延迟倾向 | `1` | 优先降低延迟，适合交互和转发场景 |
+| `net.ipv4.ip_local_port_range` | 本地临时端口范围 | `1024 65535` | 扩大主动连接可用端口范围 |
+| `vm.swappiness` | Swap 使用倾向 | `10` | 降低系统主动使用 Swap 的概率 |
+| `net.ipv4.tcp_slow_start_after_idle` | 空闲后重新慢启动 | `0` | 避免连接空闲后吞吐重新爬升过慢 |
+| `net.ipv4.tcp_limit_output_bytes` | TCP 单连接排队输出上限 | `4194304` | 限制过量排队，兼顾吞吐和延迟 |
+| `net.ipv4.tcp_mtu_probing` | TCP MTU 探测 | `1` | 遇到 PMTU 黑洞时自动探测，减少传输异常 |
+
 ### 第三方工具
 
 - 支持按编号安装、按编号卸载、全部安装、全部卸载。
