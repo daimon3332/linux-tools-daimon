@@ -751,6 +751,12 @@ docker_mirror_rate_mb_s() {
 	awk -v mb="$1" -v sec="$2" 'BEGIN { if (sec > 0) printf "%.2f", mb / sec; else printf "0.00" }'
 }
 
+docker_mirror_cleanup_test_image() {
+	local ref="$1"
+	docker image rm -f "$ref" >/dev/null 2>&1 || true
+	docker image prune -f >/dev/null 2>&1 || true
+}
+
 docker_mirror_ask_official() {
 	local answer
 	read -e -p "是否加入官方镜像源 registry-1.docker.io？(y/N): " answer
@@ -785,6 +791,7 @@ docker_mirror_speed_run() {
 	[ -n "$platform" ] && pull_args+=(--platform "$platform")
 
 	echo "image=$image timeout=${timeout_sec}s rounds=$rounds"
+	echo "说明：每次测速前后会删除测试镜像引用并清理 dangling 镜像；若本机已有相同镜像层缓存，结果仍可能偏快。"
 	echo "------------------------"
 	for round in $(seq 1 "$rounds"); do
 		for mirror in "${mirrors[@]}"; do
@@ -792,13 +799,13 @@ docker_mirror_speed_run() {
 			host="$(docker_mirror_normalize_host "$mirror")"
 			ref="${host}/${image}"
 			echo "round=${round} mirror=${base_url}"
-			docker image rm -f "$ref" >/dev/null 2>&1 || true
+			docker_mirror_cleanup_test_image "$ref"
 			start_ms="$(date +%s%3N)"
 			if timeout "${timeout_sec}s" docker pull "${pull_args[@]}" "$ref" >/dev/null 2>&1; then
 				end_ms="$(date +%s%3N)"
 				status="OK"
 				size_bytes="$(docker image inspect -f '{{.Size}}' "$ref" 2>/dev/null || echo 0)"
-				docker image rm -f "$ref" >/dev/null 2>&1 || true
+				docker_mirror_cleanup_test_image "$ref"
 			else
 				rc=$?
 				end_ms="$(date +%s%3N)"
@@ -808,7 +815,7 @@ docker_mirror_speed_run() {
 					status="FAIL"
 				fi
 				size_bytes=0
-				docker image rm -f "$ref" >/dev/null 2>&1 || true
+				docker_mirror_cleanup_test_image "$ref"
 			fi
 			pull_time="$(awk -v s="$start_ms" -v e="$end_ms" 'BEGIN { printf "%.3f", (e - s) / 1000 }')"
 			mb="$(docker_mirror_size_mb "$size_bytes")"

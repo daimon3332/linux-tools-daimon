@@ -697,8 +697,9 @@ https://docker.registry.cyou
 timeout 100s docker pull 镜像源域名/library/python:3.12-slim
 docker image inspect -f '{{.Size}}' 镜像源域名/library/python:3.12-slim
 docker image rm -f 镜像源域名/library/python:3.12-slim
+docker image prune -f
 ```
-解释：支持测速默认镜像源、第三方镜像源、第三方+默认镜像源；三种模式都会询问是否加入官方镜像源 `https://registry-1.docker.io`。默认超时时间 100 秒，默认测速 1 轮。
+解释：支持测速默认镜像源、第三方镜像源、第三方+默认镜像源；三种模式都会询问是否加入官方镜像源 `https://registry-1.docker.io`。默认超时时间 100 秒，默认测速 1 轮。每次测速前后会删除测试镜像引用并清理 dangling 镜像，避免后续镜像源直接复用测试残留导致结果异常偏快；如果本机原本已有相同镜像层缓存，测速仍可能偏快。
 
 ### 5.20 卸载 daimon 脚本
 
