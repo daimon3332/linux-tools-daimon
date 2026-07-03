@@ -44,7 +44,7 @@ d
 | 14 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
 | 15 | rclone管理 | 安装 rclone、修改配置文件、卸载 rclone |
 | 16 | Bitwarden管理 | 配置 vaultwarden-backup 的 rclone.conf、执行备份和还原 |
-| 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via 和自定义 rclone 同步脚本 |
+| 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via、域名和 Nginx 配置备份、自定义同步脚本 |
 | 18 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
 
 ## 主要内容
@@ -221,8 +221,10 @@ d
 | 8 | 创建测试页面 | 创建测试页面 |
 | 9 | 删除测试页面 | 删除测试页面 |
 | 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
-| 11 | 备份域名 + nginx 配置 | 备份 Nginx 配置、域名证书、acme.sh 和 letsencrypt 到 `/root/backup/nginx-domain` |
-| 12 | 恢复域名 + nginx 配置 | 从 `/root/backup/nginx-domain` 选择备份恢复，恢复前自动保存当前状态 |
+| 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/backup/nginx-domain/auto_latest` |
+| 12 | 恢复域名 + nginx 配置 | 从 `/root/backup/nginx-domain/auto_latest` 恢复 Nginx 配置、域名证书、acme.sh 和 letsencrypt |
+
+进入 Nginx + 域名管理时会自动检测域名备份状态：存在 `/root/domain/*/fullchain.pem` 时自动开启每天 05:00 的本地备份并刷新 `auto_latest`；没有域名时自动删除备份脚本、crontab 任务和 `auto_latest`。
 
 ### fail2ban管理
 
@@ -264,9 +266,18 @@ d
 
 ### crontab同步脚本管理
 
+内置脚本编号：
+
+| 序号 | 名称 | 作用 |
+|---:|---|---|
+| 1 | Bitwarden 同步脚本 | 每天 06:00 同步 Bitwarden 备份到 `Infini-cloud` |
+| 2 | 图床同步脚本 | 每天 04:00 同步图床数据 |
+| 3 | Via 同步脚本 | 每天 04:30 同步 Via 数据 |
+| 4 | 域名和nginx配置备份脚本 | 每天 05:00 本地备份到 `/root/backup/nginx-domain/auto_latest`，只保留 1 份，不使用 rclone |
+
 | 序号 | 选项 | 作用 |
 |---:|---|---|
-| 1 | 安装脚本 | 支持多选安装 Bitwarden、图床、Via 或已有自定义脚本 |
+| 1 | 安装脚本 | 支持多选安装 Bitwarden、图床、Via、域名和 Nginx 配置备份或已有自定义脚本 |
 | 2 | 卸载脚本 | 支持多选删除脚本文件和对应 crontab |
 | 3 | 一键安装 | 默认预填所有脚本编号，用户可自行删除编号 |
 | 4 | 一键卸载 | 默认预填所有脚本编号，用户可自行删除编号 |

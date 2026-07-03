@@ -1394,7 +1394,7 @@ sh /root/daimon/acme-install.sh email=asdad@163.com
 ```
 解释：安装依赖、安装 acme.sh，并设置默认 CA。
 
-默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx；11 备份域名+nginx 配置；12 恢复域名+nginx 配置。
+默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx；11 备份域名+nginx 配置；12 恢复域名+nginx 配置。进入菜单会自动检测域名备份状态，有域名则开启本地单份备份，无域名则删除自动备份和定时任务。
 
 申请证书：
 
@@ -1471,15 +1471,19 @@ nginx -t && nginx -s reload
 
 ```bash
 mkdir -p /root/backup/nginx-domain
-cp -a /etc/nginx/nginx.conf /root/backup/nginx-domain/备份目录/
-cp -a /etc/nginx/sites-available /root/backup/nginx-domain/备份目录/
-cp -a /etc/nginx/sites-enabled /root/backup/nginx-domain/备份目录/
-cp -a /etc/nginx/conf.d /root/backup/nginx-domain/备份目录/
-cp -a /root/domain /root/backup/nginx-domain/备份目录/
-cp -a ~/.acme.sh /root/backup/nginx-domain/备份目录/acme.sh
-cp -a /etc/letsencrypt /root/backup/nginx-domain/备份目录/letsencrypt
+rm -rf /root/backup/nginx-domain/auto_latest.tmp
+mkdir -p /root/backup/nginx-domain/auto_latest.tmp
+cp -a /etc/nginx/nginx.conf /root/backup/nginx-domain/auto_latest.tmp/
+cp -a /etc/nginx/sites-available /root/backup/nginx-domain/auto_latest.tmp/
+cp -a /etc/nginx/sites-enabled /root/backup/nginx-domain/auto_latest.tmp/
+cp -a /etc/nginx/conf.d /root/backup/nginx-domain/auto_latest.tmp/
+cp -a /root/domain /root/backup/nginx-domain/auto_latest.tmp/
+cp -a ~/.acme.sh /root/backup/nginx-domain/auto_latest.tmp/acme.sh
+cp -a /etc/letsencrypt /root/backup/nginx-domain/auto_latest.tmp/letsencrypt
+rm -rf /root/backup/nginx-domain/auto_latest
+mv /root/backup/nginx-domain/auto_latest.tmp /root/backup/nginx-domain/auto_latest
 ```
-解释：备份保存到 `/root/backup/nginx-domain/backup_时间戳`；恢复时按时间倒序列出备份，恢复前会把当前状态保存到 `/root/backup/nginx-domain/_before_restore`，恢复后执行 `nginx -t` 并重载 nginx。
+解释：手动备份和自动备份都只保留 `/root/backup/nginx-domain/auto_latest` 这一份；恢复只恢复该目录，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才会保留备份；无域名时会删除自动备份、脚本和 crontab 任务。
 
 ## 12. fail2ban 管理
 
@@ -1708,7 +1712,7 @@ chmod +x /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh
 ls -1 /root/backup-sh/*.sh 2>/dev/null
 crontab -l
 ```
-解释：显示内置脚本和自定义脚本的安装状态；状态会同时检查脚本文件、脚本内容关键字段和 crontab 里的精确任务行。
+解释：显示内置脚本和自定义脚本的安装状态；状态会同时检查脚本文件、脚本内容关键字段和 crontab 里的精确任务行。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
 
 内置脚本目录：
 
@@ -1747,6 +1751,13 @@ Via 同步脚本：
 30 4 * * * /bin/bash /root/backup-sh/Via_Infini_to_OneDrive.sh >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1
 ```
 解释：每天 04:30 同步 `Infini-cloud:Via` 到 `qq3303338052@outlook:Via`。
+
+域名和 nginx 配置备份脚本：
+
+```bash
+0 5 * * * /bin/bash /root/backup-sh/Nginx_Domain_Local_Backup.sh >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1
+```
+解释：每天 05:00 在服务器本地备份 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt 到 `/root/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时会删除 `auto_latest` 并跳过备份。
 
 自定义脚本：
 

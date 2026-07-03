@@ -18087,89 +18087,170 @@ remove_test_page() {
 }
 
 
-backup_nginx_domain() {
-    local backup_root="/root/backup/nginx-domain"
-    local prefix="${1:-backup}"
-    local backup_dir="$backup_root/${prefix}_$(date +%Y%m%d_%H%M%S)"
-    local item_count=0
+nginx_domain_backup_root() {
+    echo "/root/backup/nginx-domain"
+}
 
-    mkdir -p "$backup_dir"
+nginx_domain_auto_backup_dir() {
+    echo "$(nginx_domain_backup_root)/auto_latest"
+}
 
-    copy_backup_item() {
-        local src="$1"
-        local dst="$2"
-        if [ -e "$src" ] || [ -L "$src" ]; then
-            mkdir -p "$(dirname "$dst")"
-            cp -a "$src" "$dst"
-            item_count=$((item_count + 1))
-        fi
-    }
+nginx_domain_auto_backup_script() {
+    echo "/root/backup-sh/Nginx_Domain_Local_Backup.sh"
+}
 
-    copy_backup_item "/etc/nginx/nginx.conf" "$backup_dir/nginx.conf"
-    copy_backup_item "/etc/nginx/sites-available" "$backup_dir/sites-available"
-    copy_backup_item "/etc/nginx/sites-enabled" "$backup_dir/sites-enabled"
-    copy_backup_item "/etc/nginx/conf.d" "$backup_dir/conf.d"
-    copy_backup_item "/root/domain" "$backup_dir/domain"
-    copy_backup_item "$HOME/.acme.sh" "$backup_dir/acme.sh"
-    copy_backup_item "/etc/letsencrypt" "$backup_dir/letsencrypt"
+nginx_domain_auto_backup_cron_line() {
+    echo "0 5 * * * /bin/bash $(nginx_domain_auto_backup_script) >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1"
+}
 
-    cat > "$backup_dir/manifest.txt" <<EOF
+nginx_domain_has_domains() {
+    find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit 2>/dev/null | grep -q .
+}
+
+nginx_domain_write_auto_backup_script() {
+    local script_file
+    script_file="$(nginx_domain_auto_backup_script)"
+    mkdir -p "$(dirname "$script_file")" /var/log/rclone
+    cat > "$script_file" <<'EOF'
+#!/bin/bash
+set -e
+
+BACKUP_ROOT="/root/backup/nginx-domain"
+BACKUP_DIR="$BACKUP_ROOT/auto_latest"
+TMP_DIR="${BACKUP_DIR}.tmp"
+ITEM_COUNT=0
+
+has_domain() {
+    find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit 2>/dev/null | grep -q .
+}
+
+copy_backup_item() {
+    local src="$1"
+    local dst="$2"
+    if [ -e "$src" ] || [ -L "$src" ]; then
+        mkdir -p "$(dirname "$dst")"
+        cp -a "$src" "$dst"
+        ITEM_COUNT=$((ITEM_COUNT + 1))
+    fi
+}
+
+if ! has_domain; then
+    rm -rf "$BACKUP_DIR" "$TMP_DIR"
+    exit 0
+fi
+
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR"
+
+copy_backup_item "/etc/nginx/nginx.conf" "$TMP_DIR/nginx.conf"
+copy_backup_item "/etc/nginx/sites-available" "$TMP_DIR/sites-available"
+copy_backup_item "/etc/nginx/sites-enabled" "$TMP_DIR/sites-enabled"
+copy_backup_item "/etc/nginx/conf.d" "$TMP_DIR/conf.d"
+copy_backup_item "/root/domain" "$TMP_DIR/domain"
+copy_backup_item "/root/.acme.sh" "$TMP_DIR/acme.sh"
+copy_backup_item "/etc/letsencrypt" "$TMP_DIR/letsencrypt"
+
+cat > "$TMP_DIR/manifest.txt" <<MANIFEST
 backup_time=$(date '+%Y-%m-%d %H:%M:%S')
 hostname=$(hostname 2>/dev/null || true)
-items=$item_count
-paths=/etc/nginx/nginx.conf /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d /root/domain $HOME/.acme.sh /etc/letsencrypt
-EOF
+items=$ITEM_COUNT
+mode=auto_latest
+paths=/etc/nginx/nginx.conf /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d /root/domain /root/.acme.sh /etc/letsencrypt
+MANIFEST
 
+rm -rf "$BACKUP_DIR"
+mv "$TMP_DIR" "$BACKUP_DIR"
+EOF
+    chmod +x "$script_file"
+}
+
+nginx_domain_ensure_crontab() {
+    if ! command -v crontab >/dev/null 2>&1; then
+        if command -v apt >/dev/null 2>&1; then
+            apt update -y
+            apt install -y cron
+        fi
+    fi
+    systemctl enable cron >/dev/null 2>&1 || true
+    systemctl start cron >/dev/null 2>&1 || true
+    command -v crontab >/dev/null 2>&1
+}
+
+nginx_domain_enable_auto_backup() {
+    local script_file cron_line
+    script_file="$(nginx_domain_auto_backup_script)"
+    cron_line="$(nginx_domain_auto_backup_cron_line)"
+    nginx_domain_write_auto_backup_script
+    nginx_domain_ensure_crontab || return 1
+    (crontab -l 2>/dev/null | grep -vF "$script_file" || true; echo "$cron_line") | crontab -
+}
+
+nginx_domain_disable_auto_backup() {
+    local script_file
+    script_file="$(nginx_domain_auto_backup_script)"
+    rm -f "$script_file"
+    crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+    rm -rf "$(nginx_domain_auto_backup_dir)" "$(nginx_domain_auto_backup_dir).tmp"
+}
+
+nginx_domain_sync_auto_backup_state() {
+    local script_file
+    script_file="$(nginx_domain_auto_backup_script)"
+    if nginx_domain_has_domains; then
+        nginx_domain_enable_auto_backup || return 1
+        /bin/bash "$script_file" >/dev/null 2>&1 || true
+    else
+        nginx_domain_disable_auto_backup
+    fi
+}
+
+nginx_domain_auto_backup_status() {
+    local script_file cron_line backup_dir cron_output
+    script_file="$(nginx_domain_auto_backup_script)"
+    cron_line="$(nginx_domain_auto_backup_cron_line)"
+    backup_dir="$(nginx_domain_auto_backup_dir)"
+    cron_output=$(crontab -l 2>/dev/null || true)
+    if ! nginx_domain_has_domains; then
+        echo -e "${YELLOW}无域名，已关闭${NC}"
+    elif [ -f "$script_file" ] && echo "$cron_output" | grep -Fxq "$cron_line" && [ -d "$backup_dir" ]; then
+        echo -e "${GREEN}已开启，本地备份: $backup_dir${NC}"
+    elif [ -f "$script_file" ] && echo "$cron_output" | grep -Fq "$script_file"; then
+        echo -e "${YELLOW}已加入定时，等待生成备份${NC}"
+    else
+        echo -e "${YELLOW}未开启${NC}"
+    fi
+}
+
+backup_nginx_domain() {
+    local script_file backup_dir
+    if ! nginx_domain_has_domains; then
+        nginx_domain_disable_auto_backup
+        echo -e "${YELLOW}未检测到域名证书，已删除自动备份和定时任务。${NC}"
+        return 0
+    fi
+    nginx_domain_enable_auto_backup || return 1
+    script_file="$(nginx_domain_auto_backup_script)"
+    backup_dir="$(nginx_domain_auto_backup_dir)"
+    /bin/bash "$script_file" || return 1
     echo -e "${GREEN}备份完成：$backup_dir${NC}"
 }
 
 restore_nginx_domain() {
-    local backup_root="/root/backup/nginx-domain"
-    local backups=()
-    local backup_dir choice confirm
-    local i=1
+    local backup_dir confirm
+    backup_dir="$(nginx_domain_auto_backup_dir)"
 
-    if [ ! -d "$backup_root" ]; then
-        echo -e "${YELLOW}暂无备份目录：$backup_root${NC}"
+    if [ ! -d "$backup_dir" ]; then
+        echo -e "${YELLOW}暂无可恢复的自动备份：$backup_dir${NC}"
         return 0
     fi
 
-    while IFS= read -r backup_dir; do
-        backups+=("$backup_dir")
-    done < <(find "$backup_root" -mindepth 1 -maxdepth 1 -type d ! -name '_before_restore' -printf '%T@ %p\n' 2>/dev/null | sort -rn | awk '{$1=""; sub(/^ /, ""); print}')
-
-    if [ ${#backups[@]} -eq 0 ]; then
-        echo -e "${YELLOW}暂无可恢复的备份${NC}"
-        return 0
-    fi
-
-    echo -e "${GREEN}可恢复的备份：${NC}"
-    for backup_dir in "${backups[@]}"; do
-        printf "%2d) %s\n" "$i" "$backup_dir"
-        if [ -f "$backup_dir/manifest.txt" ]; then
-            sed 's/^/    /' "$backup_dir/manifest.txt" | head -n 4
-        fi
-        i=$((i + 1))
-    done
-    echo ""
-
-    read -e -i "1" -p "请选择要恢复的备份编号（默认 1 最新）: " choice
-    choice=${choice:-1}
-    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt ${#backups[@]} ]; then
-        echo -e "${RED}无效选择${NC}"
-        return 1
-    fi
-
-    backup_dir="${backups[$((choice - 1))]}"
-    echo -e "${YELLOW}将从以下备份恢复：$backup_dir${NC}"
+    echo -e "${GREEN}将恢复最新备份：$backup_dir${NC}"
+    [ -f "$backup_dir/manifest.txt" ] && sed 's/^/  /' "$backup_dir/manifest.txt" | head -n 5
     read -p "恢复会覆盖当前 nginx 配置和域名证书，是否继续？[y/N]: " confirm
     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
         echo "已取消"
         return 0
     fi
-
-    mkdir -p "$backup_root/_before_restore"
-    backup_nginx_domain "_before_restore/before_restore" >/dev/null 2>&1 || true
 
     install_nginx
 
@@ -18193,9 +18274,10 @@ restore_nginx_domain() {
 
     if nginx -t; then
         systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+        nginx_domain_sync_auto_backup_state >/dev/null 2>&1 || true
         echo -e "${GREEN}恢复完成，nginx 配置检查通过。${NC}"
     else
-        echo -e "${RED}恢复完成，但 nginx -t 检查失败；恢复前状态已保存到 $backup_root/_before_restore。${NC}"
+        echo -e "${RED}恢复完成，但 nginx -t 检查失败。${NC}"
         return 1
     fi
 }
@@ -18325,6 +18407,9 @@ show_menu() {
     echo -e "${GREEN}=========================================${NC}"
     echo -e "${GREEN}       Nginx + 域名管理${NC}"
     echo -e "${GREEN}=========================================${NC}"
+    nginx_domain_sync_auto_backup_state >/dev/null 2>&1 || true
+    echo -e "域名备份: $(nginx_domain_auto_backup_status)"
+    echo "---"
     show_existing_nginx_and_certs
     echo "1) 申请证书 + 配置 nginx"
     echo "2) 删除 nginx 配置 + 证书"
@@ -18418,6 +18503,7 @@ while true; do
             ;;
     esac
 
+    nginx_domain_sync_auto_backup_state >/dev/null 2>&1 || true
     echo ""
     read -p "按回车键返回主菜单..."
 done
@@ -18761,7 +18847,7 @@ echo "===== $(date) Vaultwarden 备份同步完成（sync） =====" >> "$LOG_FIL
 EOF
 	chmod +x "$script_file"
 
-	(crontab -l 2>/dev/null | grep -vF "$script_file"; echo "$cron_line") | crontab -
+    (crontab -l 2>/dev/null | grep -vF "$script_file" || true; echo "$cron_line") | crontab -
 
 	echo -e "${gl_lv}Bitwarden 同步脚本已配置${gl_bai}"
 	echo "脚本路径: $script_file"
@@ -18813,6 +18899,7 @@ crontab_sync_script_file_by_id() {
 		bitwarden) echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Infini.sh" ;;
 		imagebed) echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh" ;;
 		via) echo "$(crontab_sync_backup_dir)/Via_Infini_to_OneDrive.sh" ;;
+		nginxdomain) echo "$(crontab_sync_backup_dir)/Nginx_Domain_Local_Backup.sh" ;;
 		custom) echo "$(crontab_sync_backup_dir)/$2" ;;
 	esac
 }
@@ -18824,6 +18911,7 @@ crontab_sync_cron_line_by_id() {
 		bitwarden) echo "0 6 * * * /bin/bash $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1" ;;
 		imagebed) echo "0 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1" ;;
 		via) echo "30 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1" ;;
+		nginxdomain) echo "0 5 * * * /bin/bash $script_file >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1" ;;
 		custom)
 			local script_base
 			script_base=$(basename "$script_file" .sh)
@@ -18852,6 +18940,12 @@ crontab_sync_script_content_ok() {
 				&& grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \
 				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
 			;;
+		nginxdomain)
+			grep -q 'BACKUP_DIR="$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null \
+				&& grep -q 'find /root/domain' "$script_file" 2>/dev/null \
+				&& grep -q 'copy_backup_item "/etc/nginx/sites-available"' "$script_file" 2>/dev/null \
+				&& grep -q 'mv "$TMP_DIR" "$BACKUP_DIR"' "$script_file" 2>/dev/null
+			;;
 		custom)
 			grep -q 'SRC1="/root"' "$script_file" 2>/dev/null \
 				&& grep -q 'DEST1="Infini-cloud:$SCRIPT_NAME"' "$script_file" 2>/dev/null \
@@ -18872,6 +18966,13 @@ crontab_sync_status_text() {
 
 	[ -f "$script_file" ] && has_file=true
 	cron_output=$(crontab -l 2>/dev/null || true)
+	if [ "$id" = "nginxdomain" ] && ! find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit 2>/dev/null | grep -q .; then
+		rm -f "$script_file"
+		crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+		rm -rf /root/backup/nginx-domain/auto_latest /root/backup/nginx-domain/auto_latest.tmp
+		echo -e "${gl_hong}未安装${gl_bai}"
+		return 0
+	fi
 	if echo "$cron_output" | grep -Fxq "$cron_line" || echo "$cron_output" | grep -Fq "$script_file"; then
 		has_cron=true
 	fi
@@ -18895,6 +18996,7 @@ crontab_sync_builtin_name_by_id() {
 		bitwarden) echo "bitwarden同步脚本" ;;
 		imagebed) echo "图床同步脚本" ;;
 		via) echo "via同步脚本" ;;
+		nginxdomain) echo "域名和nginx配置备份脚本" ;;
 	esac
 }
 
@@ -18903,6 +19005,7 @@ crontab_sync_builtin_id_by_number() {
 		1) echo "bitwarden" ;;
 		2) echo "imagebed" ;;
 		3) echo "via" ;;
+		4) echo "nginxdomain" ;;
 	esac
 }
 
@@ -18914,6 +19017,7 @@ crontab_sync_custom_files() {
 		! -name 'Vaultwarden_OneDrive_to_Infini.sh' \
 		! -name 'ImageBed_CloudFlare-R2_to_OneDrive.sh' \
 		! -name 'Via_Infini_to_OneDrive.sh' \
+		! -name 'Nginx_Domain_Local_Backup.sh' \
 		-printf '%f\n' 2>/dev/null | sort
 }
 
@@ -18990,6 +19094,58 @@ rclone sync \
   --log-level INFO
 EOF
 			;;
+		nginxdomain)
+			cat > "$script_file" <<'EOF'
+#!/bin/bash
+set -e
+
+BACKUP_ROOT="/root/backup/nginx-domain"
+BACKUP_DIR="$BACKUP_ROOT/auto_latest"
+TMP_DIR="${BACKUP_DIR}.tmp"
+ITEM_COUNT=0
+
+has_domain() {
+    find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit 2>/dev/null | grep -q .
+}
+
+copy_backup_item() {
+    local src="$1"
+    local dst="$2"
+    if [ -e "$src" ] || [ -L "$src" ]; then
+        mkdir -p "$(dirname "$dst")"
+        cp -a "$src" "$dst"
+        ITEM_COUNT=$((ITEM_COUNT + 1))
+    fi
+}
+
+if ! has_domain; then
+    rm -rf "$BACKUP_DIR" "$TMP_DIR"
+    exit 0
+fi
+
+rm -rf "$TMP_DIR"
+mkdir -p "$TMP_DIR"
+
+copy_backup_item "/etc/nginx/nginx.conf" "$TMP_DIR/nginx.conf"
+copy_backup_item "/etc/nginx/sites-available" "$TMP_DIR/sites-available"
+copy_backup_item "/etc/nginx/sites-enabled" "$TMP_DIR/sites-enabled"
+copy_backup_item "/etc/nginx/conf.d" "$TMP_DIR/conf.d"
+copy_backup_item "/root/domain" "$TMP_DIR/domain"
+copy_backup_item "/root/.acme.sh" "$TMP_DIR/acme.sh"
+copy_backup_item "/etc/letsencrypt" "$TMP_DIR/letsencrypt"
+
+cat > "$TMP_DIR/manifest.txt" <<MANIFEST
+backup_time=$(date '+%Y-%m-%d %H:%M:%S')
+hostname=$(hostname 2>/dev/null || true)
+items=$ITEM_COUNT
+mode=auto_latest
+paths=/etc/nginx/nginx.conf /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d /root/domain /root/.acme.sh /etc/letsencrypt
+MANIFEST
+
+rm -rf "$BACKUP_DIR"
+mv "$TMP_DIR" "$BACKUP_DIR"
+EOF
+			;;
 		custom)
 			cat > "$script_file" <<'EOF'
 #!/bin/bash
@@ -19045,13 +19201,21 @@ crontab_sync_install_one() {
 	local script_file="$2"
 	local cron_line="$3"
 	root_use
-	if ! command -v rclone >/dev/null 2>&1; then
+	if [ "$id" = "nginxdomain" ] && ! find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit 2>/dev/null | grep -q .; then
+		rm -f "$script_file"
+		crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+		rm -rf /root/backup/nginx-domain/auto_latest /root/backup/nginx-domain/auto_latest.tmp
+		echo -e "${gl_huang}未检测到域名证书，已删除域名和 nginx 自动备份。${gl_bai}"
+		return 1
+	fi
+	if [ "$id" != "nginxdomain" ] && ! command -v rclone >/dev/null 2>&1; then
 		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
 		return 1
 	fi
 	check_crontab_installed
 	crontab_sync_write_script "$id" "$script_file"
 	(crontab -l 2>/dev/null | grep -vF "$script_file"; echo "$cron_line") | crontab -
+	[ "$id" = "nginxdomain" ] && /bin/bash "$script_file" >/dev/null 2>&1 || true
 	echo -e "${gl_lv}已安装: $(basename "$script_file")${gl_bai}"
 	echo "定时任务: $cron_line"
 }
@@ -19061,6 +19225,9 @@ crontab_sync_remove_one() {
 	root_use
 	rm -f "$script_file"
 	crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+	if [ "$(basename "$script_file")" = "Nginx_Domain_Local_Backup.sh" ]; then
+		rm -rf /root/backup/nginx-domain/auto_latest /root/backup/nginx-domain/auto_latest.tmp
+	fi
 	echo -e "${gl_lv}已卸载: $(basename "$script_file")${gl_bai}"
 }
 
@@ -19070,7 +19237,7 @@ crontab_sync_show_status() {
 	local file cron_line id name
 
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
-	for n in 1 2 3; do
+	for n in 1 2 3 4; do
 		id=$(crontab_sync_builtin_id_by_number "$n")
 		name=$(crontab_sync_builtin_name_by_id "$id")
 		file=$(crontab_sync_script_file_by_id "$id")
@@ -19087,7 +19254,7 @@ crontab_sync_show_status() {
 			custom_count=$((custom_count + 1))
 			file="$(crontab_sync_script_file_by_id custom "$file_name")"
 			cron_line=$(crontab_sync_cron_line_by_id custom "$file")
-			printf "%2d. %-20s %-58s %b\n" "$((3 + custom_count))" "${file_name%.sh}" "$file" "$(crontab_sync_status_text custom "$file" "$cron_line")"
+			printf "%2d. %-20s %-58s %b\n" "$((4 + custom_count))" "${file_name%.sh}" "$file" "$(crontab_sync_status_text custom "$file" "$cron_line")"
 		done
 	fi
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
@@ -19097,7 +19264,7 @@ crontab_sync_get_item_by_number() {
 	local num="$1"
 	local id file cron_line
 	case "$num" in
-		1|2|3)
+		1|2|3|4)
 			id=$(crontab_sync_builtin_id_by_number "$num")
 			file=$(crontab_sync_script_file_by_id "$id")
 			cron_line=$(crontab_sync_cron_line_by_id "$id" "$file")
@@ -19106,7 +19273,7 @@ crontab_sync_get_item_by_number() {
 			;;
 	esac
 
-	local custom_index=$((num - 4))
+	local custom_index=$((num - 5))
 	if [ "$custom_index" -ge 0 ]; then
 		local custom_files=()
 		mapfile -t custom_files < <(crontab_sync_custom_files)
@@ -19143,7 +19310,7 @@ crontab_sync_handle_numbers() {
 }
 
 crontab_sync_all_numbers() {
-	local count=3
+	local count=4
 	local custom_files=()
 	mapfile -t custom_files < <(crontab_sync_custom_files)
 	count=$((count + ${#custom_files[@]}))
