@@ -158,7 +158,7 @@ d
 
 | 序号 | 名称 | 工具的作用 |
 |---:|---|---|
-| 1 | python | 安装 Python3、pip、venv 和 `python-is-python3` |
+| 1 | python | 默认安装 Python 3.12、pip 和 venv，并将 `python` 指向 Python 3.12 |
 | 2 | npm | 通过 nvm 安装 Node.js LTS 后提供 npm；CN 使用 nvm-cn，非 CN 使用官方 nvm |
 | 3 | nodejs | 通过 nvm 安装最新 LTS 版本 Node.js |
 | 4 | bun | Bun JavaScript 运行时和包管理器 |

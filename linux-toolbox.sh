@@ -10230,6 +10230,76 @@ EOF
     fi
   }
 
+  python_312_is_default() {
+    command -v python3.12 >/dev/null 2>&1 || return 1
+    python --version 2>&1 | grep -q '^Python 3\.12\.'
+  }
+
+  install_python_312() {
+    root_use
+    local python312_bin
+    if command -v apt >/dev/null 2>&1; then
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+      if ! apt-cache show python3.12 >/dev/null 2>&1; then
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+          -o Dpkg::Options::="--force-confdef" \
+          -o Dpkg::Options::="--force-confold" \
+          software-properties-common || return 1
+        if ! command -v add-apt-repository >/dev/null 2>&1; then
+          echo "未检测到 add-apt-repository，无法添加 Python 3.12 软件源"
+          return 1
+        fi
+        add-apt-repository -y ppa:deadsnakes/ppa || return 1
+        mkdir -p /root/daimon
+        touch /root/daimon/python312-deadsnakes-added
+        DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+      fi
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+        -o Dpkg::Options::="--force-confdef" \
+        -o Dpkg::Options::="--force-confold" \
+        python3.12 python3.12-venv python3.12-dev python3-pip || return 1
+    else
+      install python3.12
+    fi
+
+    python312_bin="$(command -v python3.12 2>/dev/null || true)"
+    if [ -n "$python312_bin" ]; then
+      if [ -e /usr/local/bin/python ] && [ "$(readlink /usr/local/bin/python 2>/dev/null)" != "/etc/alternatives/daimon-python" ]; then
+        echo "检测到 /usr/local/bin/python 已存在，跳过默认 python 切换"
+      elif command -v update-alternatives >/dev/null 2>&1; then
+        update-alternatives --install /usr/local/bin/python daimon-python "$python312_bin" 312
+        update-alternatives --set daimon-python "$python312_bin"
+      fi
+    fi
+
+    hash -r 2>/dev/null || true
+    python3.12 --version 2>/dev/null || true
+    python --version 2>/dev/null || true
+    if ! command -v python3.12 >/dev/null 2>&1; then
+      echo "Python 3.12 安装失败"
+      return 1
+    fi
+    if ! python_312_is_default; then
+      echo "Python 3.12 已安装，但 python 默认命令未切换到 3.12"
+      return 1
+    fi
+  }
+
+  remove_python_312_all() {
+    if command -v update-alternatives >/dev/null 2>&1; then
+      update-alternatives --remove daimon-python /usr/bin/python3.12 2>/dev/null || true
+    fi
+    if [ -L /usr/local/bin/python ] && [ "$(readlink /usr/local/bin/python 2>/dev/null)" = "/etc/alternatives/daimon-python" ]; then
+      rm -f /usr/local/bin/python
+    fi
+    remove python3.12 python3.12-venv python3.12-dev
+    if [ -f /root/daimon/python312-deadsnakes-added ] && command -v add-apt-repository >/dev/null 2>&1; then
+      add-apt-repository --remove -y ppa:deadsnakes/ppa 2>/dev/null || true
+      rm -f /root/daimon/python312-deadsnakes-added
+      apt update -y 2>/dev/null || true
+    fi
+  }
+
 
   load_nvm_env() {
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
@@ -10431,7 +10501,7 @@ EOF
       fd) command -v fd >/dev/null 2>&1 || (command -v fdfind >/dev/null 2>&1 && grep -Eq "^alias fd=('fdfind'|\"fdfind\"|fdfind)$" "$HOME/.bashrc" 2>/dev/null) ;;
       fzf) [ -x "$HOME/.fzf/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       blesh) [ -f "$HOME/.local/share/blesh/ble.sh" ] && grep -q '^# ========== ble.sh setup ==========$' "$HOME/.bashrc" 2>/dev/null ;;
-      python) command -v python3 >/dev/null 2>&1 || command -v python >/dev/null 2>&1 ;;
+      python) python_312_is_default ;;
       npm) command -v npm >/dev/null 2>&1 ;;
       nodejs) command -v node >/dev/null 2>&1 ;;
       iptables-persistent) command -v netfilter-persistent >/dev/null 2>&1 || dpkg -s iptables-persistent >/dev/null 2>&1 ;;
@@ -10496,8 +10566,7 @@ EOF
         configure_blesh
         ;;
       python)
-        install python3 python3-pip python3-venv python-is-python3
-        python3 --version 2>/dev/null || python --version 2>/dev/null
+        install_python_312
         ;;
       npm|nodejs)
         install_nvm_lts_auto
@@ -10615,7 +10684,7 @@ EOF
       fzf) remove_fzf_all ;;
       blesh) remove_blesh_all ;;
       nexttrace) remove_nexttrace_all ;;
-      python) remove python3 python3-pip python3-venv python-is-python3 ;;
+      python) remove_python_312_all ;;
       npm|nodejs) remove_nvm_all ;;
       iptables-persistent) remove_iptables_persistent_all ;;
       ufw) remove_ufw_all ;;

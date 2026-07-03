@@ -906,7 +906,8 @@ sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/
 8. Codex
 
 ```bash
-command -v python3 || command -v python
+command -v python3.12
+python --version | grep '^Python 3\.12\.'
 command -v npm
 command -v node
 command -v bun
@@ -929,7 +930,17 @@ read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工
 编程工具安装核心命令：
 
 ```bash
-apt install -y python3 python3-pip python3-venv python-is-python3
+apt update -y
+apt install -y python3.12 python3.12-venv python3.12-dev python3-pip
+# 如果当前软件源没有 python3.12：
+apt install -y software-properties-common
+add-apt-repository -y ppa:deadsnakes/ppa
+apt update -y
+apt install -y python3.12 python3.12-venv python3.12-dev python3-pip
+update-alternatives --install /usr/local/bin/python daimon-python /usr/bin/python3.12 312
+update-alternatives --set daimon-python /usr/bin/python3.12
+python3.12 --version
+python --version
 
 # npm / nodejs：国外使用官方 nvm，国内使用 nvm-cn，然后安装 LTS
 curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
@@ -952,7 +963,7 @@ claude --version
 npm install -g @openai/codex@latest
 codex --version
 ```
-解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。npm/nodejs 统一通过 nvm 安装 LTS；ClaudeCode 按 CN/非 CN 分流；Codex 不分流；ClaudeCode 写入 `~/.claude/settings.json`，Codex 写入 `~/.codex/config.toml`。
+解释：安装 Python 3.12、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Python 默认安装 3.12、venv、dev 包和 pip；软件源没有 Python 3.12 时添加 `ppa:deadsnakes/ppa` 后重试；脚本只将 `python` 指向 `/usr/bin/python3.12`，不强改系统 `python3`，避免影响系统组件。npm/nodejs 统一通过 nvm 安装 LTS；ClaudeCode 按 CN/非 CN 分流；Codex 不分流；ClaudeCode 写入 `~/.claude/settings.json`，Codex 写入 `~/.codex/config.toml`。
 
 ## 8. Docker 管理
 
