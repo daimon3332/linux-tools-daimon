@@ -1394,7 +1394,7 @@ sh /root/daimon/acme-install.sh email=asdad@163.com
 ```
 解释：安装依赖、安装 acme.sh，并设置默认 CA。
 
-默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx；11 备份域名+nginx 配置；12 恢复域名+nginx 配置。进入菜单会自动检测域名备份状态，有域名则开启本地单份备份，无域名则删除自动备份和定时任务。
+默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx；11 备份域名+nginx 配置；12 恢复域名+nginx 配置。进入菜单只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启本地单份备份脚本。
 
 申请证书：
 
@@ -1471,6 +1471,7 @@ nginx -t && nginx -s reload
 
 ```bash
 mkdir -p /root/backup/nginx-domain
+find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit | grep -q . || exit 0
 rm -rf /root/backup/nginx-domain/auto_latest.tmp
 mkdir -p /root/backup/nginx-domain/auto_latest.tmp
 cp -a /etc/nginx/nginx.conf /root/backup/nginx-domain/auto_latest.tmp/
@@ -1483,7 +1484,7 @@ cp -a /etc/letsencrypt /root/backup/nginx-domain/auto_latest.tmp/letsencrypt
 rm -rf /root/backup/nginx-domain/auto_latest
 mv /root/backup/nginx-domain/auto_latest.tmp /root/backup/nginx-domain/auto_latest
 ```
-解释：手动备份和自动备份都只保留 `/root/backup/nginx-domain/auto_latest` 这一份；恢复只恢复该目录，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才会保留备份；无域名时会删除自动备份、脚本和 crontab 任务。
+解释：手动备份和自动备份都只保留 `/root/backup/nginx-domain/auto_latest` 这一份；恢复只恢复该目录，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才刷新备份；无域名时跳过备份并保留已有 `auto_latest`。
 
 ## 12. fail2ban 管理
 
@@ -1757,7 +1758,7 @@ Via 同步脚本：
 ```bash
 0 5 * * * /bin/bash /root/backup-sh/Nginx_Domain_Local_Backup.sh >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1
 ```
-解释：每天 05:00 在服务器本地备份 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt 到 `/root/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时会删除 `auto_latest` 并跳过备份。
+解释：每天 05:00 在服务器本地备份 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt 到 `/root/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时跳过备份并保留已有 `auto_latest`。
 
 自定义脚本：
 

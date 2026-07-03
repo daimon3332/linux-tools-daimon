@@ -224,7 +224,7 @@ d
 | 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/backup/nginx-domain/auto_latest` |
 | 12 | 恢复域名 + nginx 配置 | 从 `/root/backup/nginx-domain/auto_latest` 恢复 Nginx 配置、域名证书、acme.sh 和 letsencrypt |
 
-进入 Nginx + 域名管理时会自动检测域名备份状态：存在 `/root/domain/*/fullchain.pem` 时自动开启每天 05:00 的本地备份并刷新 `auto_latest`；没有域名时自动删除备份脚本、crontab 任务和 `auto_latest`。
+进入 Nginx + 域名管理时只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启每天 05:00 的本地备份脚本。脚本运行时检测 `/root/domain/*/fullchain.pem`，有域名才刷新 `auto_latest`，无域名则跳过且保留已有备份。
 
 ### fail2ban管理
 

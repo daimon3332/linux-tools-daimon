@@ -17760,6 +17760,7 @@ install_nginx() {
     systemctl start nginx 2>/dev/null || true
     systemctl enable nginx 2>/dev/null || true
     echo -e "${GREEN}nginx 已安装并启动${NC}"
+    nginx_domain_enable_auto_backup >/dev/null 2>&1 || true
 }
 
 ensure_ufw_80() {
@@ -18135,7 +18136,7 @@ copy_backup_item() {
 }
 
 if ! has_domain; then
-    rm -rf "$BACKUP_DIR" "$TMP_DIR"
+    rm -rf "$TMP_DIR"
     exit 0
 fi
 
@@ -18190,17 +18191,14 @@ nginx_domain_disable_auto_backup() {
     script_file="$(nginx_domain_auto_backup_script)"
     rm -f "$script_file"
     crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
-    rm -rf "$(nginx_domain_auto_backup_dir)" "$(nginx_domain_auto_backup_dir).tmp"
+    rm -rf "$(nginx_domain_auto_backup_dir).tmp"
 }
 
 nginx_domain_sync_auto_backup_state() {
     local script_file
     script_file="$(nginx_domain_auto_backup_script)"
-    if nginx_domain_has_domains; then
-        nginx_domain_enable_auto_backup || return 1
+    if [ -f "$script_file" ]; then
         /bin/bash "$script_file" >/dev/null 2>&1 || true
-    else
-        nginx_domain_disable_auto_backup
     fi
 }
 
@@ -18210,12 +18208,14 @@ nginx_domain_auto_backup_status() {
     cron_line="$(nginx_domain_auto_backup_cron_line)"
     backup_dir="$(nginx_domain_auto_backup_dir)"
     cron_output=$(crontab -l 2>/dev/null || true)
-    if ! nginx_domain_has_domains; then
-        echo -e "${YELLOW}无域名，已关闭${NC}"
-    elif [ -f "$script_file" ] && echo "$cron_output" | grep -Fxq "$cron_line" && [ -d "$backup_dir" ]; then
-        echo -e "${GREEN}已开启，本地备份: $backup_dir${NC}"
+    if [ -f "$script_file" ] && echo "$cron_output" | grep -Fxq "$cron_line"; then
+        if [ -d "$backup_dir" ]; then
+            echo -e "${GREEN}已开启，最新备份: $backup_dir${NC}"
+        else
+            echo -e "${GREEN}已开启，等待生成备份${NC}"
+        fi
     elif [ -f "$script_file" ] && echo "$cron_output" | grep -Fq "$script_file"; then
-        echo -e "${YELLOW}已加入定时，等待生成备份${NC}"
+        echo -e "${YELLOW}已加入定时，任务行需要更新${NC}"
     else
         echo -e "${YELLOW}未开启${NC}"
     fi
@@ -18224,8 +18224,7 @@ nginx_domain_auto_backup_status() {
 backup_nginx_domain() {
     local script_file backup_dir
     if ! nginx_domain_has_domains; then
-        nginx_domain_disable_auto_backup
-        echo -e "${YELLOW}未检测到域名证书，已删除自动备份和定时任务。${NC}"
+        echo -e "${YELLOW}未检测到域名证书，跳过备份，已有备份不会删除。${NC}"
         return 0
     fi
     nginx_domain_enable_auto_backup || return 1
@@ -18322,6 +18321,7 @@ issue_cert() {
         ls -la "$CERT_DIR"
         echo -e "${GREEN}=========================================${NC}"
         setup_cron
+        nginx_domain_enable_auto_backup >/dev/null 2>&1 || true
         return 0
     else
         echo -e "${RED}证书安装失败${NC}"
@@ -18407,7 +18407,6 @@ show_menu() {
     echo -e "${GREEN}=========================================${NC}"
     echo -e "${GREEN}       Nginx + 域名管理${NC}"
     echo -e "${GREEN}=========================================${NC}"
-    nginx_domain_sync_auto_backup_state >/dev/null 2>&1 || true
     echo -e "域名备份: $(nginx_domain_auto_backup_status)"
     echo "---"
     show_existing_nginx_and_certs
@@ -18503,7 +18502,6 @@ while true; do
             ;;
     esac
 
-    nginx_domain_sync_auto_backup_state >/dev/null 2>&1 || true
     echo ""
     read -p "按回车键返回主菜单..."
 done
@@ -18966,13 +18964,6 @@ crontab_sync_status_text() {
 
 	[ -f "$script_file" ] && has_file=true
 	cron_output=$(crontab -l 2>/dev/null || true)
-	if [ "$id" = "nginxdomain" ] && ! find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit 2>/dev/null | grep -q .; then
-		rm -f "$script_file"
-		crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
-		rm -rf /root/backup/nginx-domain/auto_latest /root/backup/nginx-domain/auto_latest.tmp
-		echo -e "${gl_hong}未安装${gl_bai}"
-		return 0
-	fi
 	if echo "$cron_output" | grep -Fxq "$cron_line" || echo "$cron_output" | grep -Fq "$script_file"; then
 		has_cron=true
 	fi
@@ -19119,7 +19110,7 @@ copy_backup_item() {
 }
 
 if ! has_domain; then
-    rm -rf "$BACKUP_DIR" "$TMP_DIR"
+    rm -rf "$TMP_DIR"
     exit 0
 fi
 
@@ -19201,13 +19192,6 @@ crontab_sync_install_one() {
 	local script_file="$2"
 	local cron_line="$3"
 	root_use
-	if [ "$id" = "nginxdomain" ] && ! find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit 2>/dev/null | grep -q .; then
-		rm -f "$script_file"
-		crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
-		rm -rf /root/backup/nginx-domain/auto_latest /root/backup/nginx-domain/auto_latest.tmp
-		echo -e "${gl_huang}未检测到域名证书，已删除域名和 nginx 自动备份。${gl_bai}"
-		return 1
-	fi
 	if [ "$id" != "nginxdomain" ] && ! command -v rclone >/dev/null 2>&1; then
 		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
 		return 1
@@ -19225,9 +19209,6 @@ crontab_sync_remove_one() {
 	root_use
 	rm -f "$script_file"
 	crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
-	if [ "$(basename "$script_file")" = "Nginx_Domain_Local_Backup.sh" ]; then
-		rm -rf /root/backup/nginx-domain/auto_latest /root/backup/nginx-domain/auto_latest.tmp
-	fi
 	echo -e "${gl_lv}已卸载: $(basename "$script_file")${gl_bai}"
 }
 
