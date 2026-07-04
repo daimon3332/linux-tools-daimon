@@ -50,7 +50,7 @@
 
 ## 6. 第三方脚本下载
 
-- 需要落地保存的第三方脚本默认缓存到 `/root/daimon`。
+- 需要落地保存的第三方脚本默认缓存到 `/root/linux-daimon/daimon`。
 - 优先使用 `daimon_run_cached_script` 或 `daimon_exec_cached_script`。
 - 常用一键脚本适合使用 `exec bash`，避免输出被主菜单覆盖。
 - 下载失败必须停止当前功能，不能继续提示成功。
@@ -154,7 +154,7 @@
 - Bitwarden 配置 rclone.conf 后必须验证 `[BitwardenBackup]`。
 - Bitwarden 备份必须检测 `upload backup file to storage system`。
 - Bitwarden 还原前要列出远程备份文件，最新的排最前。
-- crontab 同步脚本统一放到 `/root/backup-sh`。
+- crontab 同步脚本统一放到 `/root/linux-daimon/backup-sh`。
 - crontab 同步脚本日志统一放到 `/var/log/rclone`。
 - 自定义脚本名要自动补全 `.sh` 后缀。
 

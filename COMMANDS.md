@@ -15,7 +15,7 @@ d
 解释：已安装快捷命令后，直接启动工具箱。
 
 ```bash
-mkdir -p /root/daimon
+mkdir -p /root/linux-daimon/daimon
 ```
 解释：创建第三方脚本缓存目录。
 
@@ -54,10 +54,10 @@ mkdir -p /root/daimon
 curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o /tmp/daimon_tmp.xxxxxx https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh
 head -1 /tmp/daimon_tmp.xxxxxx | grep -q '^#!/bin/bash'
 grep -q 'DAIMON_NAME="linux-tools-daimon"' /tmp/daimon_tmp.xxxxxx
-cp -f ~/linux-toolbox.sh ~/linux-toolbox.sh.bak.$(date +%Y%m%d%H%M%S)
-mv -f /tmp/daimon_tmp.xxxxxx ~/linux-toolbox.sh
-cp -f ~/linux-toolbox.sh /usr/local/bin/d
-chmod +x ~/linux-toolbox.sh /usr/local/bin/d
+cp -f /root/linux-daimon/linux-toolbox.sh /root/linux-daimon/linux-toolbox.sh.bak.$(date +%Y%m%d%H%M%S)
+mv -f /tmp/daimon_tmp.xxxxxx /root/linux-daimon/linux-toolbox.sh
+cp -f /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
+chmod +x /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
 ln -sf /usr/local/bin/d /usr/bin/d
 ```
 解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，备份旧脚本，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
@@ -215,8 +215,8 @@ sysctl -p /etc/sysctl.d/99-daimon-bbr-fq.conf
 
 ```bash
 curl -s --max-time 8 ipinfo.io
-bash /root/daimon/install-docker-auto.sh 1   # 中国大陆：阿里云，失败切清华/官方
-bash /root/daimon/install-docker-auto.sh 2   # 国外和香港：Docker 官方源
+bash /root/linux-daimon/daimon/install-docker-auto.sh 1   # 中国大陆：阿里云，失败切清华/官方
+bash /root/linux-daimon/daimon/install-docker-auto.sh 2   # 国外和香港：Docker 官方源
 ```
 解释：根据 `ipinfo.io` 的 `country` 字段判断；`CN` 使用国内镜像源，其他地区包括香港使用 Docker 官方源。
 
@@ -349,7 +349,7 @@ rm -f /etc/gai.conf
 解释：恢复默认 IPv6 优先。
 
 ```bash
-bash /root/daimon/jhb-v6.sh
+bash /root/linux-daimon/daimon/jhb-v6.sh
 ```
 解释：运行 IPv6 修复工具，来源 `https://jhb.ovh/jb/v6.sh`。
 
@@ -522,13 +522,13 @@ source ~/.profile
 默认展示：
 
 ```bash
-cat /root/daimon/github_proxy_sources.txt
+cat /root/linux-daimon/daimon/github_proxy_sources.txt
 ```
 解释：显示当前镜像源列表。
 
 ```bash
-echo "https://ghproxy.net" >> /root/daimon/github_proxy_sources.txt
-sed -i "编号d" /root/daimon/github_proxy_sources.txt
+echo "https://ghproxy.net" >> /root/linux-daimon/daimon/github_proxy_sources.txt
+sed -i "编号d" /root/linux-daimon/daimon/github_proxy_sources.txt
 curl -L --connect-timeout 4 --max-time 12 --retry 0 -o /tmp/daimon_proxy_test_xxx -w "%{http_code} %{time_total} %{speed_download} %{size_download}" -s "镜像后的测试URL"
 rm -f /tmp/daimon_proxy_test_xxx
 ```
@@ -740,7 +740,7 @@ command -v btop
 command -v tree
 command -v rg
 command -v fd || command -v fdfind
-test -x ~/.fzf/bin/fzf
+test -x /root/linux-daimon/tools/fzf/bin/fzf
 grep -q '^# ========== fzf 核心配置 ==========$' ~/.bashrc
 test -f ~/.local/share/blesh/ble.sh
 grep -q '^# ========== ble.sh setup ==========$' ~/.bashrc
@@ -832,11 +832,11 @@ printf '%s\n' 'Types: deb' 'URIs: https://github.com/nxtrace/nexttrace-debs/rele
 apt update -y
 apt install -y nexttrace
 echo "alias fd='fdfind'" >> ~/.bashrc
-git clone --depth 1 https://github.com/junegunn/fzf.git ~/.fzf
-~/.fzf/install --key-bindings --completion --no-update-rc
+git clone --depth 1 https://github.com/junegunn/fzf.git /root/linux-daimon/tools/fzf
+/root/linux-daimon/tools/fzf/install --key-bindings --completion --no-update-rc
 cat >> ~/.bashrc <<'EOF'
 # ========== fzf 核心配置 ==========
-[ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
+[ -d "/root/linux-daimon/tools/fzf/bin" ] && export PATH="/root/linux-daimon/tools/fzf/bin:$PATH"
 if command -v fzf >/dev/null 2>&1; then
   if command -v fdfind >/dev/null 2>&1; then
     export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
@@ -862,13 +862,13 @@ bleopt complete_auto_complete=1
 # history 自动补全
 bleopt complete_auto_history=1
 # 使用fzf的快捷键
-if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
+if command -v fzf >/dev/null 2>&1 || [ -x "/root/linux-daimon/tools/fzf/bin/fzf" ]; then
    ble-import -d integration/fzf-key-bindings
  fi
 EOF
 exec bash
 ```
-解释：安装第三方常用工具；安装过程中不再直接 `source ~/.bashrc`，避免 ble.sh 重复加载导致 TTY 异常，安装完成后统一 `exec bash` 重新进入命令行；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ncdu、iperf3 使用 apt 安装；yazi 通过 `debian.griffo.io` apt 源安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；NextTrace 通过官方 apt 源安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `~/.fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，并自动清理旧的重复 `source ~/.local/share/blesh/ble.sh`，保证 ble.sh 配置块位于 `.bashrc` 末尾。
+解释：安装第三方常用工具；安装过程中不再直接 `source ~/.bashrc`，避免 ble.sh 重复加载导致 TTY 异常，安装完成后统一 `exec bash` 重新进入命令行；vim 会同时设置 `EDITOR=vim` 和 `VISUAL=vim`；cpcat、Ctrl+D、starship、bat 通过写入 `~/.bashrc` 或配置文件完成；btop、tree、ripgrep、fd、ncdu、iperf3 使用 apt 安装；yazi 通过 `debian.griffo.io` apt 源安装；fastfetch 在 Ubuntu 下先添加 `ppa:zhangsongcui3371/fastfetch` 再安装；NextTrace 通过官方 apt 源安装；Ubuntu 上 fd 对应包名通常是 fd-find，脚本会在 `~/.bashrc` 中补充 `alias fd='fdfind'`；fzf 使用 git clone 安装到 `/root/linux-daimon/tools/fzf`，并在缺少 fd/bat/tree 时自动安装依赖；fzf 配置会自动兼容 `fd/fdfind`、`bat/batcat`，没有 bat 时回退到 `sed`，没有 tree 时回退到 `ls`；ble.sh 会写入 `~/.bashrc` 和 `~/.blerc`，并自动清理旧的重复 `source ~/.local/share/blesh/ble.sh`，保证 ble.sh 配置块位于 `.bashrc` 末尾。
 
 特殊卸载：
 
@@ -877,10 +877,10 @@ sed -i '/^export EDITOR=vim$/d;/^export VISUAL=vim$/d' ~/.bashrc
 # 删除 ~/.bashrc 中 cpcat clipboard setup 配置块
 # 删除 ~/.bashrc 中 Ctrl+D 改为删除下一个单词配置块
 # 删除 ~/.bashrc / ~/.zshrc 中 starship prompt setup 配置块
-rm -f ~/.config/starship.toml /root/daimon/starship-install.sh /usr/local/bin/starship /usr/bin/starship ~/.local/bin/starship ~/.cargo/bin/starship
+rm -f ~/.config/starship.toml /root/linux-daimon/daimon/starship-install.sh /usr/local/bin/starship /usr/bin/starship ~/.local/bin/starship ~/.cargo/bin/starship
 rm -f ~/.bat.sh
 # 删除 ~/.bashrc 中 fzf 核心配置块
-rm -rf ~/.fzf
+rm -rf /root/linux-daimon/tools/fzf
 # 删除 ~/.bashrc 中 ble.sh setup 配置块
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
 rm -rf ~/.config/btop ~/.config/yazi ~/.local/share/yazi ~/.cache/yazi ~/.config/fastfetch
@@ -950,8 +950,8 @@ nvm install --lts
 nvm alias default lts/*
 
 apt install -y git
-bash /root/daimon/bun-install.sh
-bash /root/daimon/uv-install.sh
+bash /root/linux-daimon/daimon/bun-install.sh
+bash /root/linux-daimon/daimon/uv-install.sh
 
 # ClaudeCode：国外官方脚本，国内 npm 镜像源
 curl -fsSL https://claude.ai/install.sh | bash
@@ -980,7 +980,7 @@ docker volume ls -q | wc -l
 ### 8.1 安装更新 Docker 环境
 
 ```bash
-bash /root/daimon/linuxmirrors-docker.sh --source mirrors.huaweicloud.com/docker-ce --source-registry docker.1ms.run --protocol http --use-intranet-source false --install-latest true --close-firewall false --ignore-backup-tips
+bash /root/linux-daimon/daimon/linuxmirrors-docker.sh --source mirrors.huaweicloud.com/docker-ce --source-registry docker.1ms.run --protocol http --use-intranet-source false --install-latest true --close-firewall false --ignore-backup-tips
 apt install -y docker docker-compose
 systemctl enable docker
 systemctl start docker
@@ -1141,8 +1141,8 @@ crontab -l
 安装自动更新：
 
 ```bash
-mkdir -p /root/docker-compose-update /var/log/docker-compose-update
-cat > /root/docker-compose-update/compose_update_项目名_路径.sh <<'EOF'
+mkdir -p /root/linux-daimon/docker-compose-update /var/log/docker-compose-update
+cat > /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh <<'EOF'
 #!/bin/bash
 COMPOSE_PATH="/root/CLIProxyAPI"
 echo "========================================"
@@ -1156,16 +1156,16 @@ echo "========================================"
 echo "更新完成: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "========================================"
 EOF
-chmod +x /root/docker-compose-update/compose_update_项目名_路径.sh
-(crontab -l 2>/dev/null | grep -vF "/root/docker-compose-update/compose_update_项目名_路径.sh"; echo "错开的时间 /bin/bash /root/docker-compose-update/compose_update_项目名_路径.sh >> /var/log/docker-compose-update/cron_compose_update_项目名_路径.log 2>&1") | crontab -
+chmod +x /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh
+(crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh"; echo "错开的时间 /bin/bash /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh >> /var/log/docker-compose-update/cron_compose_update_项目名_路径.log 2>&1") | crontab -
 ```
 解释：每个 Compose 项目生成一个独立更新脚本；脚本进入项目目录执行 `docker compose down && docker compose pull && docker compose up -d`，定时任务会按项目编号错开分钟，避免所有项目同一时间更新。
 
 卸载自动更新：
 
 ```bash
-rm -f /root/docker-compose-update/compose_update_项目名_路径.sh
-crontab -l 2>/dev/null | grep -vF "/root/docker-compose-update/compose_update_项目名_路径.sh" | crontab -
+rm -f /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh
+crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh" | crontab -
 ```
 解释：删除对应项目的自动更新脚本和 crontab 任务。
 
@@ -1388,8 +1388,8 @@ ufw status numbered
 
 ```bash
 apt install -y curl socat lsof dnsutils ufw openssl nginx
-curl -fsSL https://get.acme.sh -o /root/daimon/acme-install.sh
-sh /root/daimon/acme-install.sh email=asdad@163.com
+curl -fsSL https://get.acme.sh -o /root/linux-daimon/daimon/acme-install.sh
+sh /root/linux-daimon/daimon/acme-install.sh email=asdad@163.com
 ~/.acme.sh/acme.sh --set-default-ca --server letsencrypt
 ```
 解释：安装依赖、安装 acme.sh，并设置默认 CA。
@@ -1470,21 +1470,21 @@ nginx -t && nginx -s reload
 备份/恢复域名和 Nginx 配置：
 
 ```bash
-mkdir -p /root/backup/nginx-domain
+mkdir -p /root/linux-daimon/backup/nginx-domain
 find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit | grep -q . || exit 0
-rm -rf /root/backup/nginx-domain/auto_latest.tmp
-mkdir -p /root/backup/nginx-domain/auto_latest.tmp
-cp -a /etc/nginx/nginx.conf /root/backup/nginx-domain/auto_latest.tmp/
-cp -a /etc/nginx/sites-available /root/backup/nginx-domain/auto_latest.tmp/
-cp -a /etc/nginx/sites-enabled /root/backup/nginx-domain/auto_latest.tmp/
-cp -a /etc/nginx/conf.d /root/backup/nginx-domain/auto_latest.tmp/
-cp -a /root/domain /root/backup/nginx-domain/auto_latest.tmp/
-cp -a ~/.acme.sh /root/backup/nginx-domain/auto_latest.tmp/acme.sh
-cp -a /etc/letsencrypt /root/backup/nginx-domain/auto_latest.tmp/letsencrypt
-rm -rf /root/backup/nginx-domain/auto_latest
-mv /root/backup/nginx-domain/auto_latest.tmp /root/backup/nginx-domain/auto_latest
+rm -rf /root/linux-daimon/backup/nginx-domain/auto_latest.tmp
+mkdir -p /root/linux-daimon/backup/nginx-domain/auto_latest.tmp
+cp -a /etc/nginx/nginx.conf /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
+cp -a /etc/nginx/sites-available /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
+cp -a /etc/nginx/sites-enabled /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
+cp -a /etc/nginx/conf.d /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
+cp -a /root/domain /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
+cp -a ~/.acme.sh /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/acme.sh
+cp -a /etc/letsencrypt /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/letsencrypt
+rm -rf /root/linux-daimon/backup/nginx-domain/auto_latest
+mv /root/linux-daimon/backup/nginx-domain/auto_latest.tmp /root/linux-daimon/backup/nginx-domain/auto_latest
 ```
-解释：手动备份和自动备份都只保留 `/root/backup/nginx-domain/auto_latest` 这一份；恢复只恢复该目录，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才刷新备份；无域名时跳过备份并保留已有 `auto_latest`。
+解释：手动备份和自动备份都只保留 `/root/linux-daimon/backup/nginx-domain/auto_latest` 这一份；恢复只恢复该目录，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才刷新备份；无域名时跳过备份并保留已有 `auto_latest`。
 
 ## 12. fail2ban 管理
 
@@ -1552,10 +1552,10 @@ systemctl restart fail2ban
 
 ```bash
 apt install -y wget curl
-mkdir -p /root/daimon
-curl -fsSL https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh -o /root/daimon/tcpx.sh
-chmod +x /root/daimon/tcpx.sh
-bash /root/daimon/tcpx.sh
+mkdir -p /root/linux-daimon/daimon
+curl -fsSL https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh -o /root/linux-daimon/daimon/tcpx.sh
+chmod +x /root/linux-daimon/daimon/tcpx.sh
+bash /root/linux-daimon/daimon/tcpx.sh
 ```
 解释：下载并运行 `tcpx.sh`，进入 BBR/加速管理菜单。
 
@@ -1567,7 +1567,7 @@ bash /root/daimon/tcpx.sh
 
 ```bash
 apt install -y wget curl
-bash /root/daimon/warp-menu.sh
+bash /root/linux-daimon/daimon/warp-menu.sh
 ```
 解释：下载并运行 fscarmen WARP 菜单脚本，来源 `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh`。
 
@@ -1575,7 +1575,7 @@ bash /root/daimon/warp-menu.sh
 
 ```bash
 apt install -y wget curl
-bash /root/daimon/warp-menu.sh u
+bash /root/linux-daimon/daimon/warp-menu.sh u
 ```
 解释：调用 fscarmen 脚本的 `warp u` 逻辑，永久关闭并删除 WARP 网络接口、WARP Linux Client 和 WireProxy。
 
@@ -1672,8 +1672,8 @@ docker run --rm -it \
 配置 Bitwarden 同步脚本：
 
 ```bash
-mkdir -p /root/backup-sh /var/log/rclone
-cat > /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh <<'EOF'
+mkdir -p /root/linux-daimon/backup-sh /var/log/rclone
+cat > /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh <<'EOF'
 #!/bin/bash
 
 # ========= 源与目标 =========
@@ -1700,8 +1700,8 @@ rclone sync \
 
 echo "===== $(date) Vaultwarden 备份同步完成（sync） =====" >> "$LOG_FILE"
 EOF
-chmod +x /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh
-(crontab -l 2>/dev/null | grep -vF "/root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh"; echo "0 6 * * * /bin/bash /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1") | crontab -
+chmod +x /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh
+(crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh"; echo "0 6 * * * /bin/bash /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1") | crontab -
 ```
 解释：脚本会自动检测同步脚本和 crontab 是否已配置；配置后每天 06:00 使用 `rclone sync` 从 `qq3303338052@outlook:/BitwardenBackup` 同步到 `Infini-cloud:/BitwardenBackup`。
 
@@ -1710,7 +1710,7 @@ chmod +x /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh
 默认展示：
 
 ```bash
-ls -1 /root/backup-sh/*.sh 2>/dev/null
+ls -1 /root/linux-daimon/backup-sh/*.sh 2>/dev/null
 crontab -l
 ```
 解释：显示内置脚本和自定义脚本的安装状态；状态会同时检查脚本文件、脚本内容关键字段和 crontab 里的精确任务行。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
@@ -1718,53 +1718,53 @@ crontab -l
 内置脚本目录：
 
 ```bash
-mkdir -p /root/backup-sh /var/log/rclone
+mkdir -p /root/linux-daimon/backup-sh /var/log/rclone
 ```
-解释：所有同步脚本都放在 `/root/backup-sh`，日志默认放在 `/var/log/rclone`。
+解释：所有同步脚本都放在 `/root/linux-daimon/backup-sh`，日志默认放在 `/var/log/rclone`。
 
 安装/卸载脚本：
 
 ```bash
-crontab -l 2>/dev/null | grep -vF "/root/backup-sh/脚本名.sh" | crontab -
-cat > /root/backup-sh/脚本名.sh
-chmod +x /root/backup-sh/脚本名.sh
-(crontab -l 2>/dev/null | grep -vF "/root/backup-sh/脚本名.sh"; echo "错开的时间 /bin/bash /root/backup-sh/脚本名.sh >> /var/log/rclone/cron_脚本名.log 2>&1") | crontab -
+crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/backup-sh/脚本名.sh" | crontab -
+cat > /root/linux-daimon/backup-sh/脚本名.sh
+chmod +x /root/linux-daimon/backup-sh/脚本名.sh
+(crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/backup-sh/脚本名.sh"; echo "错开的时间 /bin/bash /root/linux-daimon/backup-sh/脚本名.sh >> /var/log/rclone/cron_脚本名.log 2>&1") | crontab -
 ```
 解释：安装时写入脚本并添加定时任务；卸载时删除脚本文件，并删除 crontab 中包含该脚本路径的任务行。
 
 Bitwarden 同步脚本：
 
 ```bash
-0 6 * * * /bin/bash /root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1
+0 6 * * * /bin/bash /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1
 ```
 解释：每天 06:00 同步 `qq3303338052@outlook:/BitwardenBackup` 到 `Infini-cloud:/BitwardenBackup`。
 
 图床同步脚本：
 
 ```bash
-0 4 * * * /bin/bash /root/backup-sh/ImageBed_CloudFlare-R2_to_OneDrive.sh >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1
+0 4 * * * /bin/bash /root/linux-daimon/backup-sh/ImageBed_CloudFlare-R2_to_OneDrive.sh >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1
 ```
 解释：每天 04:00 同步 `qq3303338052@cloudflare:image-bed-daimon` 到 `qq3303338052@outlook:image-bed-daimon`。
 
 Via 同步脚本：
 
 ```bash
-30 4 * * * /bin/bash /root/backup-sh/Via_Infini_to_OneDrive.sh >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1
+30 4 * * * /bin/bash /root/linux-daimon/backup-sh/Via_Infini_to_OneDrive.sh >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1
 ```
 解释：每天 04:30 同步 `Infini-cloud:Via` 到 `qq3303338052@outlook:Via`。
 
 域名和 nginx 配置备份脚本：
 
 ```bash
-0 5 * * * /bin/bash /root/backup-sh/Nginx_Domain_Local_Backup.sh >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1
+0 5 * * * /bin/bash /root/linux-daimon/backup-sh/Nginx_Domain_Local_Backup.sh >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1
 ```
-解释：每天 05:00 在服务器本地备份 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt 到 `/root/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时跳过备份并保留已有 `auto_latest`。
+解释：每天 05:00 在服务器本地备份 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt 到 `/root/linux-daimon/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时跳过备份并保留已有 `auto_latest`。
 
 自定义脚本：
 
 ```bash
-cat > /root/backup-sh/自定义名称.sh
-45 4 * * * /bin/bash /root/backup-sh/自定义名称.sh >> /var/log/rclone/cron_自定义名称.log 2>&1
+cat > /root/linux-daimon/backup-sh/自定义名称.sh
+45 4 * * * /bin/bash /root/linux-daimon/backup-sh/自定义名称.sh >> /var/log/rclone/cron_自定义名称.log 2>&1
 ```
 解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 同步到 `Infini-cloud:脚本名` 和 `qq3303338052@outlook:脚本名`，并排除隐藏文件/目录和 `snap/**`。
 
@@ -1773,49 +1773,49 @@ cat > /root/backup-sh/自定义名称.sh
 这些脚本会先退出当前脚本，再运行目标脚本，避免输出被主菜单覆盖。
 
 ```bash
-bash /root/daimon/NodeQuality.sh
+bash /root/linux-daimon/daimon/NodeQuality.sh
 ```
 解释：NodeQuality 网络质量测试，来源 `https://run.NodeQuality.com`。
 
 ```bash
-bash /root/daimon/IPQuality.sh
-bash /root/daimon/IPQuality.sh -i eth0
-bash /root/daimon/IPQuality.sh -x socks5://username:password@socksproxy:port
+bash /root/linux-daimon/daimon/IPQuality.sh
+bash /root/linux-daimon/daimon/IPQuality.sh -i eth0
+bash /root/linux-daimon/daimon/IPQuality.sh -x socks5://username:password@socksproxy:port
 ```
 解释：IPQuality IP 纯净度和流媒体解锁检测，来源 `https://IP.Check.Place`。
 
 ```bash
-bash /root/daimon/ecs.sh
+bash /root/linux-daimon/daimon/ecs.sh
 ```
 解释：融合怪综合测评，来源 `https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh`。
 
 ```bash
-bash /root/daimon/NetQuality.sh
+bash /root/linux-daimon/daimon/NetQuality.sh
 ```
 解释：NetQuality 三网回程路由和延迟，来源 `https://Net.Check.Place`。
 
 ```bash
-bash /root/daimon/RegionRestrictionCheck.sh
+bash /root/linux-daimon/daimon/RegionRestrictionCheck.sh
 ```
 解释：RegionRestrictionCheck 流媒体解锁测试，来源 `https://check.unlock.media`。
 
 ```bash
-bash /root/daimon/bench.sh
+bash /root/linux-daimon/daimon/bench.sh
 ```
 解释：bench.sh 系统信息、I/O、网络测速，来源 `https://bench.sh`。
 
 ```bash
-bash /root/daimon/yabs.sh
+bash /root/linux-daimon/daimon/yabs.sh
 ```
 解释：YABS 综合性能测试，来源 `https://yabs.sh`。
 
 ```bash
-bash /root/daimon/HardwareQuality.sh -H
+bash /root/linux-daimon/daimon/HardwareQuality.sh -H
 ```
 解释：HardwareQuality 硬件质量检测，来源 `https://Check.Place`。
 
 ```bash
-bash /root/daimon/x-ui-yg-install.sh
+bash /root/linux-daimon/daimon/x-ui-yg-install.sh
 ```
 解释：勇哥 x-ui-yg 脚本，来源 `https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh`。
 

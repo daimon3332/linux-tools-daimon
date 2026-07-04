@@ -16,19 +16,78 @@ canshu="default"
 permission_granted="false"
 ENABLE_STATS="false"
 
-# daimon 本地脚本缓存目录：除 linux-toolbox.sh 主脚本外，所有需要落地保存的外部脚本统一放这里
 DAIMON_NAME="linux-tools-daimon"
 DAIMON_BIN="d"
-DAIMON_SCRIPT_DIR="/root/daimon"
+DAIMON_ROOT_DIR="/root/linux-daimon"
+DAIMON_SCRIPT_DIR="$DAIMON_ROOT_DIR/daimon"
+DAIMON_BACKUP_DIR="$DAIMON_ROOT_DIR/backup"
+DAIMON_BACKUP_SH_DIR="$DAIMON_ROOT_DIR/backup-sh"
+DAIMON_TOOLS_DIR="$DAIMON_ROOT_DIR/tools"
+DAIMON_FZF_DIR="$DAIMON_TOOLS_DIR/fzf"
+DAIMON_DOCKER_COMPOSE_UPDATE_DIR="$DAIMON_ROOT_DIR/docker-compose-update"
 DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh"
 DAIMON_UPDATE_GITHUB_URL="https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh"
 DAIMON_UPDATE_GITHUB_PROXY_URL="https://gh-proxy.com/raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh"
-DAIMON_LOCAL_SCRIPT="$HOME/linux-toolbox.sh"
-DAIMON_OLD_LOCAL_SCRIPT="$HOME/daimon.sh"
+DAIMON_LOCAL_SCRIPT="$DAIMON_ROOT_DIR/linux-toolbox.sh"
+DAIMON_OLD_LOCAL_SCRIPT="$DAIMON_ROOT_DIR/daimon.sh"
 DAIMON_REPO_URL="https://github.com/daimon3332/daimon-linux-scripts"
 DAIMON_AGREEMENT_URL="https://github.com/daimon3332/daimon-linux-scripts/blob/master/USER_AGREEMENT.md"
 DAIMON_GITHUB_PROXY_PRIMARY="https://gh-proxy.com/"
-mkdir -p "$DAIMON_SCRIPT_DIR" >/dev/null 2>&1 || true
+mkdir -p "$DAIMON_SCRIPT_DIR" "$DAIMON_BACKUP_DIR" "$DAIMON_BACKUP_SH_DIR" "$DAIMON_TOOLS_DIR" "$DAIMON_DOCKER_COMPOSE_UPDATE_DIR" >/dev/null 2>&1 || true
+
+daimon_migrate_path() {
+	local old_path="$1"
+	local new_path="$2"
+	[ "$(id -u 2>/dev/null)" = "0" ] || return 0
+	[ -e "$old_path" ] || [ -L "$old_path" ] || return 0
+	[ "$old_path" != "$new_path" ] || return 0
+	case "$old_path" in
+		/root/daimon|/root/backup|/root/backup-sh|/root/docker-compose-update|/root/.fzf|/root/linux-toolbox.sh|/root/daimon.sh) ;;
+		*) return 0 ;;
+	esac
+	mkdir -p "$(dirname "$new_path")" >/dev/null 2>&1 || true
+	if [ ! -e "$new_path" ] && [ ! -L "$new_path" ]; then
+		mv "$old_path" "$new_path" 2>/dev/null || { cp -a "$old_path" "$new_path" 2>/dev/null && rm -rf "$old_path" 2>/dev/null; } || true
+	else
+		if [ -d "$old_path" ] && [ -d "$new_path" ]; then
+			cp -an "$old_path"/. "$new_path"/ 2>/dev/null || true
+			rm -rf "$old_path" 2>/dev/null || true
+		elif [ ! -d "$old_path" ]; then
+			rm -f "$old_path" 2>/dev/null || true
+		fi
+	fi
+}
+
+
+daimon_migrate_runtime_layout() {
+	[ "$(id -u 2>/dev/null)" = "0" ] || return 0
+	daimon_migrate_path "/root/daimon" "$DAIMON_SCRIPT_DIR"
+	daimon_migrate_path "/root/backup" "$DAIMON_BACKUP_DIR"
+	daimon_migrate_path "/root/backup-sh" "$DAIMON_BACKUP_SH_DIR"
+	daimon_migrate_path "/root/docker-compose-update" "$DAIMON_DOCKER_COMPOSE_UPDATE_DIR"
+	daimon_migrate_path "/root/.fzf" "$DAIMON_FZF_DIR"
+	daimon_migrate_path "/root/linux-toolbox.sh" "$DAIMON_LOCAL_SCRIPT"
+	daimon_migrate_path "/root/daimon.sh" "$DAIMON_OLD_LOCAL_SCRIPT"
+
+	if crontab -l >/tmp/daimon_cron_migrate.$$ 2>/dev/null; then
+		sed -i \
+			-e "s|/root/backup-sh|$DAIMON_BACKUP_SH_DIR|g" \
+			-e "s|/root/docker-compose-update|$DAIMON_DOCKER_COMPOSE_UPDATE_DIR|g" \
+			/tmp/daimon_cron_migrate.$$ 2>/dev/null || true
+		crontab /tmp/daimon_cron_migrate.$$ 2>/dev/null || true
+	fi
+	rm -f /tmp/daimon_cron_migrate.$$ 2>/dev/null || true
+
+	if [ -f "$HOME/.bashrc" ]; then
+		sed -i \
+			-e "s|\$HOME/.fzf|$DAIMON_FZF_DIR|g" \
+			-e "s|~/.fzf|$DAIMON_FZF_DIR|g" \
+			"$HOME/.bashrc" 2>/dev/null || true
+	fi
+
+}
+
+daimon_migrate_runtime_layout
 
 daimon_country() {
 	if [ -n "${DAIMON_COUNTRY_CACHE:-}" ]; then
@@ -8641,7 +8700,7 @@ env_menu() {
 }
 
 github_proxy_sources_file() {
-	echo "${DAIMON_SCRIPT_DIR:-/root/daimon}/github_proxy_sources.txt"
+	echo "${DAIMON_SCRIPT_DIR:-/root/linux-daimon/daimon}/github_proxy_sources.txt"
 }
 
 github_proxy_init_sources() {
@@ -9440,7 +9499,7 @@ EOF
 
   remove_fzf_config() {
     remove_shell_block "$HOME/.bashrc" '# ========== fzf 核心配置 ==========' '# ========== end fzf 核心配置 =========='
-    [ -f "$HOME/.bashrc" ] && sed -i '/\.fzf\.bash/d;/FZF_DEFAULT_COMMAND/d;/FZF_DEFAULT_OPTS/d;/FZF_CTRL_T_OPTS/d;/FZF_ALT_C_OPTS/d;/BAT_PREVIEW/d' "$HOME/.bashrc" 2>/dev/null || true
+    [ -f "$HOME/.bashrc" ] && sed -i '/\.fzf\.bash/d;/\.fzf\/bin/d;/\/root\/linux-daimon\/tools\/fzf/d;/FZF_DEFAULT_COMMAND/d;/FZF_DEFAULT_OPTS/d;/FZF_CTRL_T_OPTS/d;/FZF_ALT_C_OPTS/d;/BAT_PREVIEW/d' "$HOME/.bashrc" 2>/dev/null || true
   }
 
   configure_fzf() {
@@ -9458,15 +9517,15 @@ EOF
     fi
     install git
 
-    if [ -d "$HOME/.fzf/.git" ]; then
-      git -C "$HOME/.fzf" pull --ff-only || true
+    if [ -d "$DAIMON_FZF_DIR/.git" ]; then
+      git -C "$DAIMON_FZF_DIR" pull --ff-only || true
     else
-      rm -rf "$HOME/.fzf"
-      daimon_git_clone "https://github.com/junegunn/fzf.git" "$HOME/.fzf" --depth 1
+      rm -rf "$DAIMON_FZF_DIR"
+      daimon_git_clone "https://github.com/junegunn/fzf.git" "$DAIMON_FZF_DIR" --depth 1
     fi
 
-    if [ -x "$HOME/.fzf/install" ]; then
-      "$HOME/.fzf/install" --key-bindings --completion --no-update-rc
+    if [ -x "$DAIMON_FZF_DIR/install" ]; then
+      "$DAIMON_FZF_DIR/install" --key-bindings --completion --no-update-rc
     fi
 
     touch "$HOME/.bashrc"
@@ -9475,8 +9534,8 @@ EOF
 
 # ========== fzf 核心配置 ==========
 
-# git clone 安装的 fzf 默认在 ~/.fzf/bin，先加入 PATH，避免 command -v 找不到
-[ -d "$HOME/.fzf/bin" ] && export PATH="$HOME/.fzf/bin:$PATH"
+# git clone 安装的 fzf 默认在 /root/linux-daimon/tools/fzf/bin，先加入 PATH，避免 command -v 找不到
+[ -d "/root/linux-daimon/tools/fzf/bin" ] && export PATH="/root/linux-daimon/tools/fzf/bin:$PATH"
 
 # 如果没有安装 fzf，只跳过 fzf 配置，不 return 整个 ~/.bashrc
 if command -v fzf >/dev/null 2>&1; then
@@ -9518,16 +9577,16 @@ fi
 EOF
     ensure_blesh_block_last
     reload_bashrc_safely
-    "$HOME/.fzf/bin/fzf" --version 2>/dev/null || fzf --version 2>/dev/null || true
-    echo "fzf 已通过 git clone 安装并写入 ~/.bashrc 配置"
+    "$DAIMON_FZF_DIR/bin/fzf" --version 2>/dev/null || fzf --version 2>/dev/null || true
+    echo "fzf 已通过 git clone 安装到 $DAIMON_FZF_DIR 并写入 ~/.bashrc 配置"
   }
 
   remove_fzf_all() {
     remove_fzf_config
-    rm -rf "$HOME/.fzf"
+    rm -rf "$DAIMON_FZF_DIR"
     remove fzf
     reload_bashrc_safely
-    echo "已删除 fzf、~/.fzf 和 ~/.bashrc 中的 fzf 配置"
+    echo "已删除 fzf、$DAIMON_FZF_DIR 和 ~/.bashrc 中的 fzf 配置"
   }
 
   remove_blesh_config() {
@@ -9567,7 +9626,7 @@ bleopt complete_auto_complete=1
 # history 自动补全
 bleopt complete_auto_history=1
 # 使用fzf的快捷键
-if command -v fzf >/dev/null 2>&1 || [ -x "$HOME/.fzf/bin/fzf" ]; then
+if command -v fzf >/dev/null 2>&1 || [ -x "/root/linux-daimon/tools/fzf/bin/fzf" ]; then
    ble-import -d integration/fzf-key-bindings
  fi
 EOF
@@ -10250,8 +10309,8 @@ EOF
           return 1
         fi
         add-apt-repository -y ppa:deadsnakes/ppa || return 1
-        mkdir -p /root/daimon
-        touch /root/daimon/python312-deadsnakes-added
+        mkdir -p "$DAIMON_SCRIPT_DIR"
+        touch "$DAIMON_SCRIPT_DIR/python312-deadsnakes-added"
         DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
       fi
       DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
@@ -10293,9 +10352,9 @@ EOF
       rm -f /usr/local/bin/python
     fi
     remove python3.12 python3.12-venv python3.12-dev
-    if [ -f /root/daimon/python312-deadsnakes-added ] && command -v add-apt-repository >/dev/null 2>&1; then
+    if [ -f "$DAIMON_SCRIPT_DIR/python312-deadsnakes-added" ] && command -v add-apt-repository >/dev/null 2>&1; then
       add-apt-repository --remove -y ppa:deadsnakes/ppa 2>/dev/null || true
-      rm -f /root/daimon/python312-deadsnakes-added
+      rm -f "$DAIMON_SCRIPT_DIR/python312-deadsnakes-added"
       apt update -y 2>/dev/null || true
     fi
   }
@@ -10499,7 +10558,7 @@ EOF
       bat) (command -v batcat >/dev/null 2>&1 || command -v bat >/dev/null 2>&1) && [ -f "$HOME/.bat.sh" ] && grep -q '^# ========== bat 终端着色增强 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       ripgrep) command -v rg >/dev/null 2>&1 ;;
       fd) command -v fd >/dev/null 2>&1 || (command -v fdfind >/dev/null 2>&1 && grep -Eq "^alias fd=('fdfind'|\"fdfind\"|fdfind)$" "$HOME/.bashrc" 2>/dev/null) ;;
-      fzf) [ -x "$HOME/.fzf/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
+      fzf) [ -x "$DAIMON_FZF_DIR/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       blesh) [ -f "$HOME/.local/share/blesh/ble.sh" ] && grep -q '^# ========== ble.sh setup ==========$' "$HOME/.bashrc" 2>/dev/null ;;
       python) python_312_is_default ;;
       npm) command -v npm >/dev/null 2>&1 ;;
@@ -11176,7 +11235,7 @@ docker_ssh_migration() {
 
 
 docker_compose_update_script_dir() {
-	echo "/root/docker-compose-update"
+	echo "$DAIMON_DOCKER_COMPOSE_UPDATE_DIR"
 }
 
 docker_compose_update_log_dir() {
@@ -18089,7 +18148,7 @@ remove_test_page() {
 
 
 nginx_domain_backup_root() {
-    echo "/root/backup/nginx-domain"
+    echo "$DAIMON_BACKUP_DIR/nginx-domain"
 }
 
 nginx_domain_auto_backup_dir() {
@@ -18097,7 +18156,7 @@ nginx_domain_auto_backup_dir() {
 }
 
 nginx_domain_auto_backup_script() {
-    echo "/root/backup-sh/Nginx_Domain_Local_Backup.sh"
+    echo "$DAIMON_BACKUP_SH_DIR/Nginx_Domain_Local_Backup.sh"
 }
 
 nginx_domain_auto_backup_cron_line() {
@@ -18116,7 +18175,7 @@ nginx_domain_write_auto_backup_script() {
 #!/bin/bash
 set -e
 
-BACKUP_ROOT="/root/backup/nginx-domain"
+BACKUP_ROOT="/root/linux-daimon/backup/nginx-domain"
 BACKUP_DIR="$BACKUP_ROOT/auto_latest"
 TMP_DIR="${BACKUP_DIR}.tmp"
 ITEM_COUNT=0
@@ -18637,7 +18696,7 @@ bitwarden_rclone_conf_file() {
 }
 
 bitwarden_sync_script_file() {
-	echo "/root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh"
+	echo "$DAIMON_BACKUP_SH_DIR/Vaultwarden_OneDrive_to_Infini.sh"
 }
 
 bitwarden_sync_cron_line() {
@@ -18810,7 +18869,7 @@ bitwarden_configure_sync_script() {
 	fi
 	check_crontab_installed
 
-	local script_dir="/root/backup-sh"
+	local script_dir="$DAIMON_BACKUP_SH_DIR"
 	local script_file cron_line
 	script_file=$(bitwarden_sync_script_file)
 	cron_line=$(bitwarden_sync_cron_line)
@@ -18885,7 +18944,7 @@ bitwarden_manager() {
 
 
 crontab_sync_backup_dir() {
-	echo "/root/backup-sh"
+	echo "$DAIMON_BACKUP_SH_DIR"
 }
 
 crontab_sync_log_dir() {
@@ -19090,7 +19149,7 @@ EOF
 #!/bin/bash
 set -e
 
-BACKUP_ROOT="/root/backup/nginx-domain"
+BACKUP_ROOT="/root/linux-daimon/backup/nginx-domain"
 BACKUP_DIR="$BACKUP_ROOT/auto_latest"
 TMP_DIR="${BACKUP_DIR}.tmp"
 ITEM_COUNT=0

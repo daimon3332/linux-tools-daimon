@@ -221,8 +221,8 @@ d
 | 8 | 创建测试页面 | 创建测试页面 |
 | 9 | 删除测试页面 | 删除测试页面 |
 | 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
-| 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/backup/nginx-domain/auto_latest` |
-| 12 | 恢复域名 + nginx 配置 | 从 `/root/backup/nginx-domain/auto_latest` 恢复 Nginx 配置、域名证书、acme.sh 和 letsencrypt |
+| 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/linux-daimon/backup/nginx-domain/auto_latest` |
+| 12 | 恢复域名 + nginx 配置 | 从 `/root/linux-daimon/backup/nginx-domain/auto_latest` 恢复 Nginx 配置、域名证书、acme.sh 和 letsencrypt |
 
 进入 Nginx + 域名管理时只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启每天 05:00 的本地备份脚本。脚本运行时检测 `/root/domain/*/fullchain.pem`，有域名才刷新 `auto_latest`，无域名则跳过且保留已有备份。
 
@@ -261,7 +261,7 @@ d
 | 1 | 配置 rclone.conf 文件 | 从 `qq3303338052@outlook:/rclone.conf` 复制配置到 `vaultwarden-rclone-data` 卷，并验证 `[BitwardenBackup]` |
 | 2 | 数据备份 | 对运行中的 `vaultwarden-backup` 容器执行 `/app/backup.sh`，并检测上传成功字段 |
 | 3 | 数据还原 | 展示 `qq3303338052@outlook:/BitwardenBackup` 下的备份文件，按日期倒序选择后执行 restore |
-| 4 | 配置 Bitwarden 同步脚本 | 写入 `/root/backup-sh/Vaultwarden_OneDrive_to_Infini.sh`，并添加每天 06:00 同步到 `Infini-cloud` 的 crontab |
+| 4 | 配置 Bitwarden 同步脚本 | 写入 `/root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh`，并添加每天 06:00 同步到 `Infini-cloud` 的 crontab |
 | 0 | 返回主菜单 | 返回上一级菜单 |
 
 ### crontab同步脚本管理
@@ -273,7 +273,7 @@ d
 | 1 | Bitwarden 同步脚本 | 每天 06:00 同步 Bitwarden 备份到 `Infini-cloud` |
 | 2 | 图床同步脚本 | 每天 04:00 同步图床数据 |
 | 3 | Via 同步脚本 | 每天 04:30 同步 Via 数据 |
-| 4 | 域名和nginx配置备份脚本 | 每天 05:00 本地备份到 `/root/backup/nginx-domain/auto_latest`，只保留 1 份，不使用 rclone |
+| 4 | 域名和nginx配置备份脚本 | 每天 05:00 本地备份到 `/root/linux-daimon/backup/nginx-domain/auto_latest`，只保留 1 份，不使用 rclone |
 
 | 序号 | 选项 | 作用 |
 |---:|---|---|
@@ -340,11 +340,18 @@ d
 
 ## 目录约定
 
-脚本运行过程中需要额外下载的第三方脚本，默认缓存到：
+脚本运行过程中的 daimon 自有文件默认放到 `/root/linux-daimon`：
 
-```bash
-/root/daimon
-```
+| 路径 | 用途 |
+|---|---|
+| `/root/linux-daimon/linux-toolbox.sh` | 本地脚本 |
+| `/root/linux-daimon/daimon` | 第三方脚本缓存 |
+| `/root/linux-daimon/backup` | 本地备份 |
+| `/root/linux-daimon/backup-sh` | crontab 同步脚本 |
+| `/root/linux-daimon/docker-compose-update` | Docker Compose 自动更新脚本 |
+| `/root/linux-daimon/tools/fzf` | fzf clone 目录 |
+
+域名证书目录保持 `/root/domain`，不迁移到 `/root/linux-daimon`。
 
 
 ## 风险提示
