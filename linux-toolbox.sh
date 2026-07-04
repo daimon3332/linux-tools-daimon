@@ -11235,7 +11235,7 @@ docker_ssh_migration() {
 
 
 docker_compose_update_script_dir() {
-	echo "$DAIMON_DOCKER_COMPOSE_UPDATE_DIR"
+	echo "${DAIMON_DOCKER_COMPOSE_UPDATE_DIR:-/root/linux-daimon/docker-compose-update}"
 }
 
 docker_compose_update_log_dir() {
@@ -18148,7 +18148,7 @@ remove_test_page() {
 
 
 nginx_domain_backup_root() {
-    echo "$DAIMON_BACKUP_DIR/nginx-domain"
+    echo "${DAIMON_BACKUP_DIR:-/root/linux-daimon/backup}/nginx-domain"
 }
 
 nginx_domain_auto_backup_dir() {
@@ -18156,7 +18156,7 @@ nginx_domain_auto_backup_dir() {
 }
 
 nginx_domain_auto_backup_script() {
-    echo "$DAIMON_BACKUP_SH_DIR/Nginx_Domain_Local_Backup.sh"
+    echo "${DAIMON_BACKUP_SH_DIR:-/root/linux-daimon/backup-sh}/Nginx_Domain_Local_Backup.sh"
 }
 
 nginx_domain_auto_backup_cron_line() {
@@ -18769,7 +18769,7 @@ rclone_restore_nginx_domain_item() {
 	local target="$3"
 	local kind="$4"
 	local tmp_root tmp_item
-	tmp_root="$DAIMON_ROOT_DIR/tmp/rclone-nginx-domain-$$"
+	tmp_root="${DAIMON_ROOT_DIR:-/root/linux-daimon}/tmp/rclone-nginx-domain-$$"
 	tmp_item="$tmp_root/$item"
 	rm -rf "$tmp_root"
 	mkdir -p "$(dirname "$tmp_item")"
@@ -18916,7 +18916,7 @@ bitwarden_rclone_conf_file() {
 }
 
 bitwarden_sync_script_file() {
-	echo "$DAIMON_BACKUP_SH_DIR/Vaultwarden_OneDrive_to_Infini.sh"
+	echo "${DAIMON_BACKUP_SH_DIR:-/root/linux-daimon/backup-sh}/Vaultwarden_OneDrive_to_Infini.sh"
 }
 
 bitwarden_sync_cron_line() {
@@ -19164,7 +19164,7 @@ bitwarden_manager() {
 
 
 crontab_sync_backup_dir() {
-	echo "$DAIMON_BACKUP_SH_DIR"
+	echo "${DAIMON_BACKUP_SH_DIR:-/root/linux-daimon/backup-sh}"
 }
 
 crontab_sync_log_dir() {
