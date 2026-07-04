@@ -222,7 +222,7 @@ d
 | 9 | 删除测试页面 | 删除测试页面 |
 | 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
 | 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/linux-daimon/backup/nginx-domain/auto_latest` |
-| 12 | 恢复域名 + nginx 配置 | 从 `/root/linux-daimon/backup/nginx-domain/auto_latest` 合并恢复 Nginx 配置、域名证书、acme.sh 和 letsencrypt；同名文件保留本机版本 |
+| 12 | 恢复域名 + nginx 配置 | 从 `/root/linux-daimon/backup/nginx-domain/auto_latest` 合并恢复 `sites-available` 和 `/root/domain`，并重建 `sites-enabled` 软链接；同名文件保留本机版本 |
 
 进入 Nginx + 域名管理时只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启每天 05:00 的本地备份脚本。脚本运行时检测 `/root/domain/*/fullchain.pem`，有域名才刷新 `auto_latest`，无域名则跳过且保留已有备份。恢复时合并备份内容，同名冲突以本机现有文件为准。
 
@@ -254,7 +254,7 @@ d
 | 2 | 修改配置文件 | 打开 rclone 配置 |
 | 3 | 卸载 rclone | 卸载 rclone |
 | 4 | 恢复远程文件夹到 /root | 选择 `qq3303338052@outlook:` 下的服务器目录和子文件夹，恢复到 `/root/子文件夹名` |
-| 5 | 从远程恢复 Nginx + 域名 | 选择服务器目录后，从 `linux-daimon/backup/nginx-domain/auto_latest` 单项或一键合并恢复；同名文件保留本机版本 |
+| 5 | 从远程恢复 Nginx + 域名 | 选择服务器目录后，恢复 `sites-available`、重建 `sites-enabled` 软链接并恢复 `/root/domain`；同名文件保留本机版本 |
 
 ### Bitwarden管理
 

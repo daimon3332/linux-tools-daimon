@@ -18202,20 +18202,19 @@ fi
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 
-copy_backup_item "/etc/nginx/nginx.conf" "$TMP_DIR/nginx.conf"
 copy_backup_item "/etc/nginx/sites-available" "$TMP_DIR/sites-available"
-copy_backup_item "/etc/nginx/sites-enabled" "$TMP_DIR/sites-enabled"
-copy_backup_item "/etc/nginx/conf.d" "$TMP_DIR/conf.d"
 copy_backup_item "/root/domain" "$TMP_DIR/domain"
-copy_backup_item "/root/.acme.sh" "$TMP_DIR/acme.sh"
-copy_backup_item "/etc/letsencrypt" "$TMP_DIR/letsencrypt"
+if [ -d /etc/nginx/sites-enabled ]; then
+    find /etc/nginx/sites-enabled -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | sort > "$TMP_DIR/enabled_sites.txt"
+    ITEM_COUNT=$((ITEM_COUNT + 1))
+fi
 
 cat > "$TMP_DIR/manifest.txt" <<MANIFEST
 backup_time=$(date '+%Y-%m-%d %H:%M:%S')
 hostname=$(hostname 2>/dev/null || true)
 items=$ITEM_COUNT
 mode=auto_latest
-paths=/etc/nginx/nginx.conf /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d /root/domain /root/.acme.sh /etc/letsencrypt
+paths=/etc/nginx/sites-available /root/domain enabled_sites.txt
 MANIFEST
 
 rm -rf "$BACKUP_DIR"
@@ -18325,13 +18324,30 @@ restore_nginx_domain() {
         fi
     }
 
-    restore_backup_item "$backup_dir/nginx.conf" "/etc/nginx/nginx.conf"
+    rebuild_sites_enabled_links() {
+        local backup_dir="$1"
+        local names=()
+        local name src dst
+        mkdir -p /etc/nginx/sites-enabled
+        if [ -f "$backup_dir/enabled_sites.txt" ]; then
+            mapfile -t names < "$backup_dir/enabled_sites.txt"
+        else
+            mapfile -t names < <(find /etc/nginx/sites-available -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | sort)
+        fi
+        for name in "${names[@]}"; do
+            [ -n "$name" ] && [ "$name" != "." ] && [ "$name" != ".." ] || continue
+            case "$name" in */*|*\\*) continue ;; esac
+            [ "$name" = "default" ] && continue
+            src="/etc/nginx/sites-available/$name"
+            dst="/etc/nginx/sites-enabled/$name"
+            [ -f "$src" ] || continue
+            [ -e "$dst" ] || [ -L "$dst" ] || ln -s "$src" "$dst"
+        done
+    }
+
     restore_backup_item "$backup_dir/sites-available" "/etc/nginx/sites-available"
-    restore_backup_item "$backup_dir/sites-enabled" "/etc/nginx/sites-enabled"
-    restore_backup_item "$backup_dir/conf.d" "/etc/nginx/conf.d"
     restore_backup_item "$backup_dir/domain" "/root/domain"
-    restore_backup_item "$backup_dir/acme.sh" "$HOME/.acme.sh"
-    restore_backup_item "$backup_dir/letsencrypt" "/etc/letsencrypt"
+    rebuild_sites_enabled_links "$backup_dir"
 
     if nginx -t; then
         systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
@@ -18748,51 +18764,106 @@ rclone_restore_remote_folder() {
 	rclone copy "$remote_path" "$target_dir" --progress
 }
 
-rclone_merge_local_item() {
-	local src="$1"
-	local dst="$2"
-	[ -e "$src" ] || [ -L "$src" ] || return 0
-	mkdir -p "$(dirname "$dst")"
-	if [ -d "$src" ] && [ ! -L "$src" ]; then
-		mkdir -p "$dst"
-		cp -an "$src"/. "$dst"/
-	elif [ ! -e "$dst" ] && [ ! -L "$dst" ]; then
-		cp -a "$src" "$dst"
-	else
-		echo -e "${gl_huang}已存在，跳过: $dst${gl_bai}"
-	fi
+rclone_remote_entry_valid() {
+	local name="$1"
+	[ -n "$name" ] && [ "$name" != "." ] && [ "$name" != ".." ] || return 1
+	case "$name" in
+		*/*|*\\*) return 1 ;;
+	esac
+	return 0
 }
 
-rclone_restore_nginx_domain_item() {
+rclone_remote_lsf_entries() {
+	sed '/^[[:space:]]*$/d'
+}
+
+rclone_restore_remote_sites_available() {
 	local remote_backup="$1"
-	local item="$2"
-	local target="$3"
-	local kind="$4"
-	local tmp_root tmp_item
-	tmp_root="${DAIMON_ROOT_DIR:-/root/linux-daimon}/tmp/rclone-nginx-domain-$$"
-	tmp_item="$tmp_root/$item"
-	rm -rf "$tmp_root"
-	mkdir -p "$(dirname "$tmp_item")"
-
-	echo -e "${gl_kjlan}正在下载: $remote_backup/$item${gl_bai}"
-	if [ "$kind" = "file" ]; then
-		if ! rclone copyto "$remote_backup/$item" "$tmp_item" --progress; then
-			rm -rf "$tmp_root"
-			echo -e "${gl_hong}下载失败: $item${gl_bai}"
-			return 1
-		fi
-	else
-		mkdir -p "$tmp_item"
-		if ! rclone copy "$remote_backup/$item" "$tmp_item" --progress; then
-			rm -rf "$tmp_root"
-			echo -e "${gl_hong}下载失败: $item${gl_bai}"
-			return 1
-		fi
+	local remote_dir="$remote_backup/sites-available"
+	local list_output entry name target failed=0 restored=0 skipped=0
+	mkdir -p /etc/nginx/sites-available
+	if ! list_output=$(rclone lsf "$remote_dir" 2>/dev/null); then
+		echo -e "${gl_hong}远程缺少 sites-available: $remote_dir${gl_bai}"
+		return 1
 	fi
+	while IFS= read -r entry; do
+		[ -n "$entry" ] || continue
+		case "$entry" in */) continue ;; esac
+		name="$entry"
+		rclone_remote_entry_valid "$name" || continue
+		target="/etc/nginx/sites-available/$name"
+		if [ -e "$target" ] || [ -L "$target" ]; then
+			echo -e "${gl_huang}已存在，跳过下载: $target${gl_bai}"
+			skipped=$((skipped + 1))
+			continue
+		fi
+		echo -e "${gl_kjlan}正在下载: $remote_dir/$name${gl_bai}"
+		if rclone copyto "$remote_dir/$name" "$target" --progress; then
+			restored=$((restored + 1))
+		else
+			failed=1
+		fi
+	done < <(echo "$list_output" | rclone_remote_lsf_entries)
+	echo -e "${gl_lv}sites-available 恢复完成：新增 $restored，跳过 $skipped${gl_bai}"
+	return "$failed"
+}
 
-	rclone_merge_local_item "$tmp_item" "$target"
-	rm -rf "$tmp_root"
-	echo -e "${gl_lv}已合并恢复到: $target${gl_bai}"
+rclone_rebuild_sites_enabled_links() {
+	local remote_backup="$1"
+	local names=()
+	local name src dst list_output created=0 skipped=0
+	mkdir -p /etc/nginx/sites-enabled
+	if [ -n "$remote_backup" ] && list_output=$(rclone cat "$remote_backup/enabled_sites.txt" 2>/dev/null); then
+		mapfile -t names < <(echo "$list_output" | rclone_remote_lsf_entries)
+	elif [ -n "$remote_backup" ] && list_output=$(rclone lsf "$remote_backup/sites-available" 2>/dev/null); then
+		mapfile -t names < <(echo "$list_output" | rclone_remote_lsf_entries | sed 's#/$##')
+	else
+		mapfile -t names < <(find /etc/nginx/sites-available -maxdepth 1 -type f -printf '%f\n' 2>/dev/null | sort)
+	fi
+	for name in "${names[@]}"; do
+		rclone_remote_entry_valid "$name" || continue
+		[ "$name" = "default" ] && continue
+		src="/etc/nginx/sites-available/$name"
+		dst="/etc/nginx/sites-enabled/$name"
+		if [ -e "$dst" ] || [ -L "$dst" ]; then
+			skipped=$((skipped + 1))
+			continue
+		fi
+		ln -s "$src" "$dst" && created=$((created + 1))
+	done
+	echo -e "${gl_lv}sites-enabled 软链接处理完成：新增 $created，跳过 $skipped${gl_bai}"
+}
+
+rclone_restore_remote_domain() {
+	local remote_backup="$1"
+	local remote_dir="$remote_backup/domain"
+	local list_output entry name target failed=0 restored=0 skipped=0
+	mkdir -p /root/domain
+	if ! list_output=$(rclone lsf "$remote_dir" 2>/dev/null); then
+		echo -e "${gl_hong}远程缺少 domain: $remote_dir${gl_bai}"
+		return 1
+	fi
+	while IFS= read -r entry; do
+		[ -n "$entry" ] || continue
+		case "$entry" in */) name="${entry%/}" ;; *) continue ;; esac
+		rclone_remote_entry_valid "$name" || continue
+		target="/root/domain/$name"
+		if [ -e "$target" ] || [ -L "$target" ]; then
+			echo -e "${gl_huang}已存在，跳过下载: $target${gl_bai}"
+			skipped=$((skipped + 1))
+			continue
+		fi
+		echo -e "${gl_kjlan}正在下载: $remote_dir/$name${gl_bai}"
+		mkdir -p "$target"
+		if rclone copy "$remote_dir/$name" "$target" --progress; then
+			restored=$((restored + 1))
+		else
+			rm -rf "$target"
+			failed=1
+		fi
+	done < <(echo "$list_output" | rclone_remote_lsf_entries)
+	echo -e "${gl_lv}/root/domain 恢复完成：新增 $restored，跳过 $skipped${gl_bai}"
+	return "$failed"
 }
 
 rclone_check_nginx_after_restore() {
@@ -18829,50 +18900,30 @@ rclone_restore_nginx_domain_remote() {
 	while true; do
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		echo "远程备份: $remote_backup"
-		echo -e "${gl_kjlan}1.   ${gl_bai}恢复 nginx.conf"
-		echo -e "${gl_kjlan}2.   ${gl_bai}恢复 sites-available"
-		echo -e "${gl_kjlan}3.   ${gl_bai}恢复 sites-enabled"
-		echo -e "${gl_kjlan}4.   ${gl_bai}恢复 conf.d"
-		echo -e "${gl_kjlan}5.   ${gl_bai}恢复域名证书 /root/domain"
-		echo -e "${gl_kjlan}6.   ${gl_bai}恢复 acme.sh"
-		echo -e "${gl_kjlan}7.   ${gl_bai}恢复 letsencrypt"
-		echo -e "${gl_kjlan}8.   ${gl_bai}一键合并恢复全部"
+		echo -e "${gl_kjlan}1.   ${gl_bai}恢复 sites-available"
+		echo -e "${gl_kjlan}2.   ${gl_bai}重建 sites-enabled 软链接"
+		echo -e "${gl_kjlan}3.   ${gl_bai}恢复域名证书 /root/domain"
+		echo -e "${gl_kjlan}4.   ${gl_bai}一键恢复全部"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " choice
 		case "$choice" in
 			1)
-				rclone_restore_nginx_domain_item "$remote_backup" "nginx.conf" "/etc/nginx/nginx.conf" file && rclone_check_nginx_after_restore
+				rclone_restore_remote_sites_available "$remote_backup" && rclone_check_nginx_after_restore
 				;;
 			2)
-				rclone_restore_nginx_domain_item "$remote_backup" "sites-available" "/etc/nginx/sites-available" dir && rclone_check_nginx_after_restore
+				rclone_rebuild_sites_enabled_links "$remote_backup" && rclone_check_nginx_after_restore
 				;;
 			3)
-				rclone_restore_nginx_domain_item "$remote_backup" "sites-enabled" "/etc/nginx/sites-enabled" dir && rclone_check_nginx_after_restore
+				rclone_restore_remote_domain "$remote_backup" && rclone_check_nginx_after_restore
 				;;
 			4)
-				rclone_restore_nginx_domain_item "$remote_backup" "conf.d" "/etc/nginx/conf.d" dir && rclone_check_nginx_after_restore
-				;;
-			5)
-				rclone_restore_nginx_domain_item "$remote_backup" "domain" "/root/domain" dir && rclone_check_nginx_after_restore
-				;;
-			6)
-				rclone_restore_nginx_domain_item "$remote_backup" "acme.sh" "$HOME/.acme.sh" dir
-				;;
-			7)
-				rclone_restore_nginx_domain_item "$remote_backup" "letsencrypt" "/etc/letsencrypt" dir && rclone_check_nginx_after_restore
-				;;
-			8)
-				read -e -p "确认一键合并恢复全部？同名文件保留本机现有版本。(y/N): " confirm
+				read -e -p "确认一键恢复 sites-available、sites-enabled 软链接和 /root/domain？同名文件保留本机现有版本。(y/N): " confirm
 				[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; continue; }
 				failed=0
-				rclone_restore_nginx_domain_item "$remote_backup" "nginx.conf" "/etc/nginx/nginx.conf" file || failed=1
-				rclone_restore_nginx_domain_item "$remote_backup" "sites-available" "/etc/nginx/sites-available" dir || failed=1
-				rclone_restore_nginx_domain_item "$remote_backup" "sites-enabled" "/etc/nginx/sites-enabled" dir || failed=1
-				rclone_restore_nginx_domain_item "$remote_backup" "conf.d" "/etc/nginx/conf.d" dir || failed=1
-				rclone_restore_nginx_domain_item "$remote_backup" "domain" "/root/domain" dir || failed=1
-				rclone_restore_nginx_domain_item "$remote_backup" "acme.sh" "$HOME/.acme.sh" dir || failed=1
-				rclone_restore_nginx_domain_item "$remote_backup" "letsencrypt" "/etc/letsencrypt" dir || failed=1
+				rclone_restore_remote_sites_available "$remote_backup" || failed=1
+				rclone_rebuild_sites_enabled_links "$remote_backup" || failed=1
+				rclone_restore_remote_domain "$remote_backup" || failed=1
 				[ "$failed" -eq 0 ] && rclone_check_nginx_after_restore
 				;;
 			0) return ;;
@@ -19396,20 +19447,19 @@ fi
 rm -rf "$TMP_DIR"
 mkdir -p "$TMP_DIR"
 
-copy_backup_item "/etc/nginx/nginx.conf" "$TMP_DIR/nginx.conf"
 copy_backup_item "/etc/nginx/sites-available" "$TMP_DIR/sites-available"
-copy_backup_item "/etc/nginx/sites-enabled" "$TMP_DIR/sites-enabled"
-copy_backup_item "/etc/nginx/conf.d" "$TMP_DIR/conf.d"
 copy_backup_item "/root/domain" "$TMP_DIR/domain"
-copy_backup_item "/root/.acme.sh" "$TMP_DIR/acme.sh"
-copy_backup_item "/etc/letsencrypt" "$TMP_DIR/letsencrypt"
+if [ -d /etc/nginx/sites-enabled ]; then
+    find /etc/nginx/sites-enabled -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | sort > "$TMP_DIR/enabled_sites.txt"
+    ITEM_COUNT=$((ITEM_COUNT + 1))
+fi
 
 cat > "$TMP_DIR/manifest.txt" <<MANIFEST
 backup_time=$(date '+%Y-%m-%d %H:%M:%S')
 hostname=$(hostname 2>/dev/null || true)
 items=$ITEM_COUNT
 mode=auto_latest
-paths=/etc/nginx/nginx.conf /etc/nginx/sites-available /etc/nginx/sites-enabled /etc/nginx/conf.d /root/domain /root/.acme.sh /etc/letsencrypt
+paths=/etc/nginx/sites-available /root/domain enabled_sites.txt
 MANIFEST
 
 rm -rf "$BACKUP_DIR"

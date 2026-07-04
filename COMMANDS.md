@@ -1474,17 +1474,13 @@ mkdir -p /root/linux-daimon/backup/nginx-domain
 find /root/domain -mindepth 2 -maxdepth 2 -type f -name fullchain.pem -size +0c -print -quit | grep -q . || exit 0
 rm -rf /root/linux-daimon/backup/nginx-domain/auto_latest.tmp
 mkdir -p /root/linux-daimon/backup/nginx-domain/auto_latest.tmp
-cp -a /etc/nginx/nginx.conf /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
 cp -a /etc/nginx/sites-available /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
-cp -a /etc/nginx/sites-enabled /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
-cp -a /etc/nginx/conf.d /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
 cp -a /root/domain /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/
-cp -a ~/.acme.sh /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/acme.sh
-cp -a /etc/letsencrypt /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/letsencrypt
+find /etc/nginx/sites-enabled -mindepth 1 -maxdepth 1 -printf '%f\n' 2>/dev/null | sort > /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/enabled_sites.txt
 rm -rf /root/linux-daimon/backup/nginx-domain/auto_latest
 mv /root/linux-daimon/backup/nginx-domain/auto_latest.tmp /root/linux-daimon/backup/nginx-domain/auto_latest
 ```
-解释：手动备份和自动备份都只保留 `/root/linux-daimon/backup/nginx-domain/auto_latest` 这一份；恢复时合并该目录中的 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt，同名文件保留本机现有版本，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才刷新备份；无域名时跳过备份并保留已有 `auto_latest`。
+解释：手动备份和自动备份都只保留 `/root/linux-daimon/backup/nginx-domain/auto_latest` 这一份；备份只保存 `sites-available`、`/root/domain` 和 enabled 站点名称。恢复时合并 `sites-available` 与 `/root/domain`，再重建 `sites-enabled` 软链接，同名文件保留本机现有版本，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才刷新备份；无域名时跳过备份并保留已有 `auto_latest`。
 
 ## 12. fail2ban 管理
 
@@ -1633,12 +1629,13 @@ rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/outlook" /root/outlook --
 ```bash
 rclone lsd "qq3303338052@outlook:"
 rclone lsf "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest"
-rclone copyto "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest/nginx.conf" "/root/linux-daimon/tmp/rclone-nginx-domain-$$/nginx.conf" --progress
-rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest/sites-available" "/root/linux-daimon/tmp/rclone-nginx-domain-$$/sites-available" --progress
-cp -an /root/linux-daimon/tmp/rclone-nginx-domain-$$/sites-available/. /etc/nginx/sites-available/
+rclone lsf "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest/sites-available"
+rclone copyto "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest/sites-available/配置名" "/etc/nginx/sites-available/配置名" --progress
+ln -s /etc/nginx/sites-available/配置名 /etc/nginx/sites-enabled/配置名
+rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest/domain/example" "/root/domain/example" --progress
 nginx -t && systemctl reload nginx
 ```
-解释：选择服务器目录后，脚本从 `linux-daimon/backup/nginx-domain/auto_latest` 读取备份，可单独恢复 `nginx.conf`、`sites-available`、`sites-enabled`、`conf.d`、`/root/domain`、acme.sh、letsencrypt，也可以一键合并恢复全部；同名文件保留本机现有版本。
+解释：选择服务器目录后，脚本从 `linux-daimon/backup/nginx-domain/auto_latest` 读取备份，只恢复本机缺失的 `sites-available` 配置和 `/root/domain` 证书目录，再重建 `sites-enabled` 软链接；同名文件保留本机现有版本，不会下载已存在的同名项。
 
 命令行入口：
 
@@ -1780,7 +1777,7 @@ Via 同步脚本：
 ```bash
 0 5 * * * /bin/bash /root/linux-daimon/backup-sh/Nginx_Domain_Local_Backup.sh >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1
 ```
-解释：每天 05:00 在服务器本地备份 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt 到 `/root/linux-daimon/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时跳过备份并保留已有 `auto_latest`。
+解释：每天 05:00 在服务器本地备份 `sites-available`、enabled 站点名称和 `/root/domain` 到 `/root/linux-daimon/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时跳过备份并保留已有 `auto_latest`。
 
 自定义脚本：
 
