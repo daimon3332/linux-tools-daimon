@@ -1484,7 +1484,7 @@ cp -a /etc/letsencrypt /root/linux-daimon/backup/nginx-domain/auto_latest.tmp/le
 rm -rf /root/linux-daimon/backup/nginx-domain/auto_latest
 mv /root/linux-daimon/backup/nginx-domain/auto_latest.tmp /root/linux-daimon/backup/nginx-domain/auto_latest
 ```
-解释：手动备份和自动备份都只保留 `/root/linux-daimon/backup/nginx-domain/auto_latest` 这一份；恢复只恢复该目录，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才刷新备份；无域名时跳过备份并保留已有 `auto_latest`。
+解释：手动备份和自动备份都只保留 `/root/linux-daimon/backup/nginx-domain/auto_latest` 这一份；恢复时合并该目录中的 Nginx 配置、`/root/domain`、acme.sh 和 letsencrypt，同名文件保留本机现有版本，恢复后执行 `nginx -t` 并重载 nginx。只有检测到 `/root/domain/*/fullchain.pem` 时才刷新备份；无域名时跳过备份并保留已有 `auto_latest`。
 
 ## 12. fail2ban 管理
 

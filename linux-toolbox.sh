@@ -18304,7 +18304,7 @@ restore_nginx_domain() {
 
     echo -e "${GREEN}将恢复最新备份：$backup_dir${NC}"
     [ -f "$backup_dir/manifest.txt" ] && sed 's/^/  /' "$backup_dir/manifest.txt" | head -n 5
-    read -p "恢复会覆盖当前 nginx 配置和域名证书，是否继续？[y/N]: " confirm
+    read -p "恢复会合并备份内容，同名文件保留本机现有版本，是否继续？[y/N]: " confirm
     if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
         echo "已取消"
         return 0
@@ -18315,9 +18315,12 @@ restore_nginx_domain() {
     restore_backup_item() {
         local src="$1"
         local dst="$2"
-        rm -rf "$dst"
-        if [ -e "$src" ] || [ -L "$src" ]; then
-            mkdir -p "$(dirname "$dst")"
+        [ -e "$src" ] || [ -L "$src" ] || return 0
+        mkdir -p "$(dirname "$dst")"
+        if [ -d "$src" ] && [ ! -L "$src" ]; then
+            mkdir -p "$dst"
+            cp -an "$src"/. "$dst"/
+        elif [ ! -e "$dst" ] && [ ! -L "$dst" ]; then
             cp -a "$src" "$dst"
         fi
     }
