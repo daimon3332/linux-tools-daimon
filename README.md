@@ -253,6 +253,7 @@ d
 | 1 | 安装 rclone | 安装 rclone |
 | 2 | 修改配置文件 | 打开 rclone 配置 |
 | 3 | 卸载 rclone | 卸载 rclone |
+| 4 | 恢复远程文件夹到 /root | 选择 `qq3303338052@outlook:` 下的服务器目录和子文件夹，恢复到 `/root/子文件夹名` |
 
 ### Bitwarden管理
 

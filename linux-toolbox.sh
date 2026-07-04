@@ -18668,6 +18668,86 @@ rclone_uninstall_tool() {
 	echo -e "${gl_lv}rclone 卸载完成${gl_bai}"
 }
 
+rclone_restore_name_valid() {
+	local name="$1"
+	[ -n "$name" ] && [ "$name" != "." ] && [ "$name" != ".." ] || return 1
+	case "$name" in
+		*/*|*\\*) return 1 ;;
+	esac
+	return 0
+}
+
+rclone_lsd_names() {
+	awk 'NF >= 5 {name=$5; for (i=6; i<=NF; i++) name=name" "$i; print name}' | sed '/^[[:space:]]*$/d'
+}
+
+rclone_select_remote_dir() {
+	local remote="$1"
+	local title="$2"
+	local list_output selected_idx i
+	local dirs=()
+	local valid_dirs=()
+	RCLONE_SELECTED_DIR=""
+
+	echo "$title"
+	echo "远程路径: $remote"
+	if ! list_output=$(rclone lsd "$remote" 2>&1); then
+		echo "$list_output"
+		echo -e "${gl_hong}读取远程目录失败，请检查 rclone 配置和远程路径。${gl_bai}"
+		return 1
+	fi
+
+	mapfile -t dirs < <(echo "$list_output" | rclone_lsd_names)
+	for i in "${dirs[@]}"; do
+		rclone_restore_name_valid "$i" && valid_dirs+=("$i")
+	done
+	if [ "${#valid_dirs[@]}" -eq 0 ]; then
+		echo -e "${gl_huang}未找到可选择的子文件夹。${gl_bai}"
+		return 1
+	fi
+
+	echo "------------------------"
+	for ((i=0; i<${#valid_dirs[@]}; i++)); do
+		printf "%2d. %s\n" "$((i+1))" "${valid_dirs[i]}"
+	done
+	echo "------------------------"
+	read -e -p "请输入目录序号: " selected_idx
+	if ! [[ "$selected_idx" =~ ^[0-9]+$ ]] || [ "$selected_idx" -lt 1 ] || [ "$selected_idx" -gt "${#valid_dirs[@]}" ]; then
+		echo "无效编号"
+		return 1
+	fi
+
+	RCLONE_SELECTED_DIR="${valid_dirs[$((selected_idx-1))]}"
+}
+
+rclone_restore_remote_folder() {
+	root_use
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo -e "${gl_huang}rclone 未安装，请先安装。${gl_bai}"
+		return 1
+	fi
+
+	local remote_root="qq3303338052@outlook:"
+	local server_dir restore_dir remote_path target_dir confirm
+
+	rclone_select_remote_dir "$remote_root" "请选择服务器目录" || return
+	server_dir="$RCLONE_SELECTED_DIR"
+
+	rclone_select_remote_dir "${remote_root}${server_dir}" "请选择要恢复的文件夹" || return
+	restore_dir="$RCLONE_SELECTED_DIR"
+
+	remote_path="${remote_root}${server_dir}/${restore_dir}"
+	target_dir="/root/${restore_dir}"
+
+	echo -e "${gl_huang}即将执行:${gl_bai}"
+	echo "rclone copy \"$remote_path\" \"$target_dir\" --progress"
+	read -e -p "确认恢复到 $target_dir？(y/N): " confirm
+	[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return; }
+
+	mkdir -p "$target_dir"
+	rclone copy "$remote_path" "$target_dir" --progress
+}
+
 rclone_manager() {
 	while true; do
 		clear
@@ -18679,6 +18759,7 @@ rclone_manager() {
 		echo -e "${gl_kjlan}1.   ${gl_bai}安装 rclone（自动创建配置文件并设置权限）"
 		echo -e "${gl_kjlan}2.   ${gl_bai}修改配置文件"
 		echo -e "${gl_kjlan}3.   ${gl_bai}卸载 rclone"
+		echo -e "${gl_kjlan}4.   ${gl_bai}恢复远程文件夹到 /root"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
@@ -18686,6 +18767,7 @@ rclone_manager() {
 			1) rclone_install_tool ;;
 			2) rclone_edit_config ;;
 			3) rclone_uninstall_tool ;;
+			4) rclone_restore_remote_folder ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac

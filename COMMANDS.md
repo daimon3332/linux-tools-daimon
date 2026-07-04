@@ -1618,6 +1618,16 @@ rm -f /usr/bin/rclone /usr/local/bin/rclone
 ```
 解释：删除 rclone 可执行文件；脚本会询问是否同时删除 `/root/.config/rclone` 配置目录。
 
+恢复远程文件夹到 `/root`：
+
+```bash
+rclone lsd "qq3303338052@outlook:"
+rclone lsd "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M"
+mkdir -p /root/outlook
+rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/outlook" /root/outlook --progress
+```
+解释：先选择 `qq3303338052@outlook:` 下的服务器目录，再选择该目录下要恢复的子文件夹；目标目录固定为 `/root/子文件夹名`。
+
 命令行入口：
 
 ```bash
