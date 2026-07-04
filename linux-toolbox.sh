@@ -19487,8 +19487,7 @@ echo "===== $(date) 开始备份 =====" >> "$LOG_FILE"
 rclone sync \
   "$SRC1" "$DEST2" \
   --exclude "snap/**" \
-  --exclude ".*" \
-  --exclude ".*/**" \
+  --exclude "/.*" \
   --transfers=4 \
   --checkers=8 \
   --fast-list \
@@ -19500,8 +19499,7 @@ rclone sync \
 rclone sync \
   "$SRC1" "$DEST1" \
   --exclude "snap/**" \
-  --exclude ".*" \
-  --exclude ".*/**" \
+  --exclude "/.*" \
   --transfers=4 \
   --checkers=8 \
   --fast-list \

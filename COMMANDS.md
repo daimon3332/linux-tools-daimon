@@ -1785,7 +1785,7 @@ Via 同步脚本：
 cat > /root/linux-daimon/backup-sh/自定义名称.sh
 45 4 * * * /bin/bash /root/linux-daimon/backup-sh/自定义名称.sh >> /var/log/rclone/cron_自定义名称.log 2>&1
 ```
-解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 同步到 `Infini-cloud:脚本名` 和 `qq3303338052@outlook:脚本名`，并排除隐藏文件/目录和 `snap/**`。
+解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 同步到 `Infini-cloud:脚本名` 和 `qq3303338052@outlook:脚本名`，并排除 `/root` 第一层隐藏文件/目录和 `snap/**`，子目录里的 `.env` 等隐藏文件会同步。
 
 ## 18. 常用的一键脚本
 
