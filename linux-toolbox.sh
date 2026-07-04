@@ -18748,6 +18748,139 @@ rclone_restore_remote_folder() {
 	rclone copy "$remote_path" "$target_dir" --progress
 }
 
+rclone_merge_local_item() {
+	local src="$1"
+	local dst="$2"
+	[ -e "$src" ] || [ -L "$src" ] || return 0
+	mkdir -p "$(dirname "$dst")"
+	if [ -d "$src" ] && [ ! -L "$src" ]; then
+		mkdir -p "$dst"
+		cp -an "$src"/. "$dst"/
+	elif [ ! -e "$dst" ] && [ ! -L "$dst" ]; then
+		cp -a "$src" "$dst"
+	else
+		echo -e "${gl_huang}已存在，跳过: $dst${gl_bai}"
+	fi
+}
+
+rclone_restore_nginx_domain_item() {
+	local remote_backup="$1"
+	local item="$2"
+	local target="$3"
+	local kind="$4"
+	local tmp_root tmp_item
+	tmp_root="$DAIMON_ROOT_DIR/tmp/rclone-nginx-domain-$$"
+	tmp_item="$tmp_root/$item"
+	rm -rf "$tmp_root"
+	mkdir -p "$(dirname "$tmp_item")"
+
+	echo -e "${gl_kjlan}正在下载: $remote_backup/$item${gl_bai}"
+	if [ "$kind" = "file" ]; then
+		if ! rclone copyto "$remote_backup/$item" "$tmp_item" --progress; then
+			rm -rf "$tmp_root"
+			echo -e "${gl_hong}下载失败: $item${gl_bai}"
+			return 1
+		fi
+	else
+		mkdir -p "$tmp_item"
+		if ! rclone copy "$remote_backup/$item" "$tmp_item" --progress; then
+			rm -rf "$tmp_root"
+			echo -e "${gl_hong}下载失败: $item${gl_bai}"
+			return 1
+		fi
+	fi
+
+	rclone_merge_local_item "$tmp_item" "$target"
+	rm -rf "$tmp_root"
+	echo -e "${gl_lv}已合并恢复到: $target${gl_bai}"
+}
+
+rclone_check_nginx_after_restore() {
+	command -v nginx >/dev/null 2>&1 || { echo -e "${gl_huang}未检测到 nginx，跳过 nginx -t。${gl_bai}"; return 0; }
+	if nginx -t; then
+		systemctl reload nginx 2>/dev/null || systemctl restart nginx 2>/dev/null || true
+		echo -e "${gl_lv}nginx 配置检查通过，已重载。${gl_bai}"
+	else
+		echo -e "${gl_hong}nginx -t 检查失败，请手动检查合并后的配置。${gl_bai}"
+		return 1
+	fi
+}
+
+rclone_restore_nginx_domain_remote() {
+	root_use
+	if ! command -v rclone >/dev/null 2>&1; then
+		echo -e "${gl_huang}rclone 未安装，请先安装。${gl_bai}"
+		return 1
+	fi
+
+	local remote_root="qq3303338052@outlook:"
+	local server_dir remote_backup choice confirm failed
+
+	rclone_select_remote_dir "$remote_root" "请选择包含 Nginx + 域名备份的服务器目录" || return
+	server_dir="$RCLONE_SELECTED_DIR"
+	remote_backup="${remote_root}${server_dir}/linux-daimon/backup/nginx-domain/auto_latest"
+
+	echo "正在检查远程备份: $remote_backup"
+	if ! rclone lsf "$remote_backup" >/dev/null 2>&1; then
+		echo -e "${gl_hong}未找到远程 Nginx + 域名备份：$remote_backup${gl_bai}"
+		return 1
+	fi
+
+	while true; do
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		echo "远程备份: $remote_backup"
+		echo -e "${gl_kjlan}1.   ${gl_bai}恢复 nginx.conf"
+		echo -e "${gl_kjlan}2.   ${gl_bai}恢复 sites-available"
+		echo -e "${gl_kjlan}3.   ${gl_bai}恢复 sites-enabled"
+		echo -e "${gl_kjlan}4.   ${gl_bai}恢复 conf.d"
+		echo -e "${gl_kjlan}5.   ${gl_bai}恢复域名证书 /root/domain"
+		echo -e "${gl_kjlan}6.   ${gl_bai}恢复 acme.sh"
+		echo -e "${gl_kjlan}7.   ${gl_bai}恢复 letsencrypt"
+		echo -e "${gl_kjlan}8.   ${gl_bai}一键合并恢复全部"
+		echo -e "${gl_kjlan}0.   ${gl_bai}返回"
+		echo -e "${gl_kjlan}------------------------${gl_bai}"
+		read -e -p "请输入你的选择: " choice
+		case "$choice" in
+			1)
+				rclone_restore_nginx_domain_item "$remote_backup" "nginx.conf" "/etc/nginx/nginx.conf" file && rclone_check_nginx_after_restore
+				;;
+			2)
+				rclone_restore_nginx_domain_item "$remote_backup" "sites-available" "/etc/nginx/sites-available" dir && rclone_check_nginx_after_restore
+				;;
+			3)
+				rclone_restore_nginx_domain_item "$remote_backup" "sites-enabled" "/etc/nginx/sites-enabled" dir && rclone_check_nginx_after_restore
+				;;
+			4)
+				rclone_restore_nginx_domain_item "$remote_backup" "conf.d" "/etc/nginx/conf.d" dir && rclone_check_nginx_after_restore
+				;;
+			5)
+				rclone_restore_nginx_domain_item "$remote_backup" "domain" "/root/domain" dir && rclone_check_nginx_after_restore
+				;;
+			6)
+				rclone_restore_nginx_domain_item "$remote_backup" "acme.sh" "$HOME/.acme.sh" dir
+				;;
+			7)
+				rclone_restore_nginx_domain_item "$remote_backup" "letsencrypt" "/etc/letsencrypt" dir && rclone_check_nginx_after_restore
+				;;
+			8)
+				read -e -p "确认一键合并恢复全部？同名文件保留本机现有版本。(y/N): " confirm
+				[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; continue; }
+				failed=0
+				rclone_restore_nginx_domain_item "$remote_backup" "nginx.conf" "/etc/nginx/nginx.conf" file || failed=1
+				rclone_restore_nginx_domain_item "$remote_backup" "sites-available" "/etc/nginx/sites-available" dir || failed=1
+				rclone_restore_nginx_domain_item "$remote_backup" "sites-enabled" "/etc/nginx/sites-enabled" dir || failed=1
+				rclone_restore_nginx_domain_item "$remote_backup" "conf.d" "/etc/nginx/conf.d" dir || failed=1
+				rclone_restore_nginx_domain_item "$remote_backup" "domain" "/root/domain" dir || failed=1
+				rclone_restore_nginx_domain_item "$remote_backup" "acme.sh" "$HOME/.acme.sh" dir || failed=1
+				rclone_restore_nginx_domain_item "$remote_backup" "letsencrypt" "/etc/letsencrypt" dir || failed=1
+				[ "$failed" -eq 0 ] && rclone_check_nginx_after_restore
+				;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+	done
+}
+
 rclone_manager() {
 	while true; do
 		clear
@@ -18760,6 +18893,7 @@ rclone_manager() {
 		echo -e "${gl_kjlan}2.   ${gl_bai}修改配置文件"
 		echo -e "${gl_kjlan}3.   ${gl_bai}卸载 rclone"
 		echo -e "${gl_kjlan}4.   ${gl_bai}恢复远程文件夹到 /root"
+		echo -e "${gl_kjlan}5.   ${gl_bai}从远程恢复 Nginx + 域名"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
@@ -18768,6 +18902,7 @@ rclone_manager() {
 			2) rclone_edit_config ;;
 			3) rclone_uninstall_tool ;;
 			4) rclone_restore_remote_folder ;;
+			5) rclone_restore_nginx_domain_remote ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac

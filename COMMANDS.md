@@ -1628,6 +1628,18 @@ rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/outlook" /root/outlook --
 ```
 解释：先选择 `qq3303338052@outlook:` 下的服务器目录，再选择该目录下要恢复的子文件夹；目标目录固定为 `/root/子文件夹名`。
 
+从远程恢复 Nginx + 域名：
+
+```bash
+rclone lsd "qq3303338052@outlook:"
+rclone lsf "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest"
+rclone copyto "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest/nginx.conf" "/root/linux-daimon/tmp/rclone-nginx-domain-$$/nginx.conf" --progress
+rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/linux-daimon/backup/nginx-domain/auto_latest/sites-available" "/root/linux-daimon/tmp/rclone-nginx-domain-$$/sites-available" --progress
+cp -an /root/linux-daimon/tmp/rclone-nginx-domain-$$/sites-available/. /etc/nginx/sites-available/
+nginx -t && systemctl reload nginx
+```
+解释：选择服务器目录后，脚本从 `linux-daimon/backup/nginx-domain/auto_latest` 读取备份，可单独恢复 `nginx.conf`、`sites-available`、`sites-enabled`、`conf.d`、`/root/domain`、acme.sh、letsencrypt，也可以一键合并恢复全部；同名文件保留本机现有版本。
+
 命令行入口：
 
 ```bash
