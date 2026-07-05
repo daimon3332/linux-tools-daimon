@@ -18736,6 +18736,67 @@ rclone_select_remote_dir() {
 	RCLONE_SELECTED_DIR="${valid_dirs[$((selected_idx-1))]}"
 }
 
+rclone_select_remote_dirs_multi() {
+	local remote="$1"
+	local title="$2"
+	local list_output selected_raw token idx i exists
+	local dirs=()
+	local valid_dirs=()
+	local selected_dirs=()
+	RCLONE_SELECTED_DIRS=()
+
+	echo "$title"
+	echo "远程路径: $remote"
+	if ! list_output=$(rclone lsd "$remote" 2>&1); then
+		echo "$list_output"
+		echo -e "${gl_hong}读取远程目录失败，请检查 rclone 配置和远程路径。${gl_bai}"
+		return 1
+	fi
+
+	mapfile -t dirs < <(echo "$list_output" | rclone_lsd_names)
+	for i in "${dirs[@]}"; do
+		rclone_restore_name_valid "$i" && valid_dirs+=("$i")
+	done
+	if [ "${#valid_dirs[@]}" -eq 0 ]; then
+		echo -e "${gl_huang}未找到可选择的子文件夹。${gl_bai}"
+		return 1
+	fi
+
+	echo "------------------------"
+	for ((i=0; i<${#valid_dirs[@]}; i++)); do
+		printf "%2d. %s\n" "$((i+1))" "${valid_dirs[i]}"
+	done
+	echo "------------------------"
+	echo "支持输入: 1 2 3、1,2,3、all"
+	read -e -p "请输入目录序号（0 返回）: " selected_raw
+	[ "$selected_raw" = "0" ] && return 1
+	selected_raw="${selected_raw//,/ }"
+
+	if [[ "$selected_raw" =~ ^[Aa][Ll][Ll]$ ]]; then
+		RCLONE_SELECTED_DIRS=("${valid_dirs[@]}")
+		return 0
+	fi
+
+	for token in $selected_raw; do
+		if ! [[ "$token" =~ ^[0-9]+$ ]] || [ "$token" -lt 1 ] || [ "$token" -gt "${#valid_dirs[@]}" ]; then
+			echo -e "${gl_huang}跳过无效编号: $token${gl_bai}"
+			continue
+		fi
+		idx=$((token - 1))
+		exists=0
+		for i in "${selected_dirs[@]}"; do
+			[ "$i" = "${valid_dirs[idx]}" ] && exists=1 && break
+		done
+		[ "$exists" -eq 0 ] && selected_dirs+=("${valid_dirs[idx]}")
+	done
+
+	if [ "${#selected_dirs[@]}" -eq 0 ]; then
+		echo -e "${gl_huang}未选择有效目录。${gl_bai}"
+		return 1
+	fi
+	RCLONE_SELECTED_DIRS=("${selected_dirs[@]}")
+}
+
 rclone_restore_remote_folder() {
 	root_use
 	if ! command -v rclone >/dev/null 2>&1; then
@@ -18744,24 +18805,32 @@ rclone_restore_remote_folder() {
 	fi
 
 	local remote_root="qq3303338052@outlook:"
-	local server_dir restore_dir remote_path target_dir confirm
+	local server_dir restore_dir remote_path target_dir confirm failed
+	local restore_dirs=()
 
 	rclone_select_remote_dir "$remote_root" "请选择服务器目录" || return
 	server_dir="$RCLONE_SELECTED_DIR"
 
-	rclone_select_remote_dir "${remote_root}${server_dir}" "请选择要恢复的文件夹" || return
-	restore_dir="$RCLONE_SELECTED_DIR"
-
-	remote_path="${remote_root}${server_dir}/${restore_dir}"
-	target_dir="/root/${restore_dir}"
+	rclone_select_remote_dirs_multi "${remote_root}${server_dir}" "请选择要恢复的文件夹，可多选" || return
+	restore_dirs=("${RCLONE_SELECTED_DIRS[@]}")
 
 	echo -e "${gl_huang}即将执行:${gl_bai}"
-	echo "rclone copy \"$remote_path\" \"$target_dir\" --progress"
-	read -e -p "确认恢复到 $target_dir？(y/N): " confirm
+	for restore_dir in "${restore_dirs[@]}"; do
+		remote_path="${remote_root}${server_dir}/${restore_dir}"
+		target_dir="/root/${restore_dir}"
+		echo "rclone copy \"$remote_path\" \"$target_dir\" --progress"
+	done
+	read -e -p "确认恢复以上 ${#restore_dirs[@]} 个文件夹？(y/N): " confirm
 	[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return; }
 
-	mkdir -p "$target_dir"
-	rclone copy "$remote_path" "$target_dir" --progress
+	failed=0
+	for restore_dir in "${restore_dirs[@]}"; do
+		remote_path="${remote_root}${server_dir}/${restore_dir}"
+		target_dir="/root/${restore_dir}"
+		mkdir -p "$target_dir"
+		rclone copy "$remote_path" "$target_dir" --progress || failed=1
+	done
+	return "$failed"
 }
 
 rclone_remote_entry_valid() {

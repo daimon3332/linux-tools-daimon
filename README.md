@@ -253,7 +253,7 @@ d
 | 1 | 安装 rclone | 安装 rclone |
 | 2 | 修改配置文件 | 打开 rclone 配置 |
 | 3 | 卸载 rclone | 卸载 rclone |
-| 4 | 恢复远程文件夹到 /root | 选择 `qq3303338052@outlook:` 下的服务器目录和子文件夹，恢复到 `/root/子文件夹名` |
+| 4 | 恢复远程文件夹到 /root | 一级服务器目录单选，二级子文件夹支持多选，恢复到 `/root/子文件夹名` |
 | 5 | 从远程恢复 Nginx + 域名 | 选择服务器目录后，恢复 `sites-available`、重建 `sites-enabled` 软链接并恢复 `/root/domain`；同名文件保留本机版本 |
 
 ### Bitwarden管理

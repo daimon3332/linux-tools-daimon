@@ -1621,8 +1621,10 @@ rclone lsd "qq3303338052@outlook:"
 rclone lsd "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M"
 mkdir -p /root/outlook
 rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/outlook" /root/outlook --progress
+mkdir -p /root/grok2api
+rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/grok2api" /root/grok2api --progress
 ```
-解释：先选择 `qq3303338052@outlook:` 下的服务器目录，再选择该目录下要恢复的子文件夹；目标目录固定为 `/root/子文件夹名`。
+解释：先单选 `qq3303338052@outlook:` 下的服务器目录，再多选该目录下要恢复的子文件夹；二级目录支持输入 `1 2 3`、`1,2,3` 或 `all`，目标目录固定为 `/root/子文件夹名`。
 
 从远程恢复 Nginx + 域名：
 
