@@ -1626,6 +1626,18 @@ rclone copy "qq3303338052@outlook:HuaWeiYun-HK-1C4G10M/grok2api" /root/grok2api 
 ```
 解释：先单选 `qq3303338052@outlook:` 下的服务器目录，再多选该目录下要恢复的子文件夹；二级目录支持输入 `1 2 3`、`1,2,3` 或 `all`，目标目录固定为 `/root/子文件夹名`。
 
+Docker Compose 恢复：
+
+```bash
+for compose_file in /root/*/docker-compose.yml; do
+  project_dir=$(dirname "$compose_file")
+  running=$(cd "$project_dir" && docker compose ps --status running -q 2>/dev/null || true)
+  [ -n "$running" ] && continue
+  cd "$project_dir" && docker compose up -d
+done
+```
+解释：扫描 `/root` 第一层子文件夹，只有存在 `docker-compose.yml` 的目录才处理；已存在运行中 Compose 容器的目录跳过，未运行的目录执行 `docker compose up -d`，最后汇总启动成功、已跳过和启动失败的目录。
+
 从远程恢复 Nginx + 域名：
 
 ```bash

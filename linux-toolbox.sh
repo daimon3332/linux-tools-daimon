@@ -19001,6 +19001,58 @@ rclone_restore_nginx_domain_remote() {
 	done
 }
 
+rclone_restore_docker_compose_projects() {
+	root_use
+	if ! command -v docker >/dev/null 2>&1; then
+		echo -e "${gl_huang}Docker 未安装，请先安装 Docker。${gl_bai}"
+		return 1
+	fi
+	if ! docker compose version >/dev/null 2>&1; then
+		echo -e "${gl_huang}docker compose 不可用，请先安装 Docker Compose 插件。${gl_bai}"
+		return 1
+	fi
+
+	local compose_file project_dir running
+	local success_dirs=()
+	local skipped_dirs=()
+	local failed_dirs=()
+
+	for compose_file in /root/*/docker-compose.yml; do
+		[ -f "$compose_file" ] || continue
+		project_dir="$(dirname "$compose_file")"
+		running="$(cd "$project_dir" && docker compose ps --status running -q 2>/dev/null || true)"
+		if [ -n "$running" ]; then
+			echo -e "${gl_huang}已启动，跳过: $project_dir${gl_bai}"
+			skipped_dirs+=("$project_dir")
+			continue
+		fi
+		echo -e "${gl_kjlan}正在启动: $project_dir${gl_bai}"
+		if (cd "$project_dir" && docker compose up -d); then
+			success_dirs+=("$project_dir")
+		else
+			failed_dirs+=("$project_dir")
+		fi
+	done
+
+	rclone_show_compose_restore_group() {
+		local title="$1"
+		shift
+		echo -e "${gl_kjlan}${title}:${gl_bai}"
+		if [ "$#" -eq 0 ]; then
+			echo "  无"
+			return
+		fi
+		printf '  %s\n' "$@"
+	}
+
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+	rclone_show_compose_restore_group "启动成功" "${success_dirs[@]}"
+	rclone_show_compose_restore_group "已启动，跳过" "${skipped_dirs[@]}"
+	rclone_show_compose_restore_group "启动失败" "${failed_dirs[@]}"
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+	[ "${#failed_dirs[@]}" -eq 0 ]
+}
+
 rclone_manager() {
 	while true; do
 		clear
@@ -19014,6 +19066,7 @@ rclone_manager() {
 		echo -e "${gl_kjlan}3.   ${gl_bai}卸载 rclone"
 		echo -e "${gl_kjlan}4.   ${gl_bai}恢复远程文件夹到 /root"
 		echo -e "${gl_kjlan}5.   ${gl_bai}从远程恢复 Nginx + 域名"
+		echo -e "${gl_kjlan}6.   ${gl_bai}Docker Compose 恢复"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
@@ -19023,6 +19076,7 @@ rclone_manager() {
 			3) rclone_uninstall_tool ;;
 			4) rclone_restore_remote_folder ;;
 			5) rclone_restore_nginx_domain_remote ;;
+			6) rclone_restore_docker_compose_projects ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
