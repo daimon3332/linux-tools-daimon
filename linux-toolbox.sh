@@ -19007,32 +19007,40 @@ rclone_restore_docker_compose_projects() {
 		echo -e "${gl_huang}Docker 未安装，请先安装 Docker。${gl_bai}"
 		return 1
 	fi
+	if ! docker info >/dev/null 2>&1; then
+		echo -e "${gl_huang}Docker daemon 未运行，正在尝试启动...${gl_bai}"
+		systemctl start docker >/dev/null 2>&1 || service docker start >/dev/null 2>&1 || true
+		sleep 2
+	fi
+	if ! docker info >/dev/null 2>&1; then
+		echo -e "${gl_hong}Docker daemon 启动失败，请手动检查 Docker 服务。${gl_bai}"
+		return 1
+	fi
 	if ! docker compose version >/dev/null 2>&1; then
 		echo -e "${gl_huang}docker compose 不可用，请先安装 Docker Compose 插件。${gl_bai}"
 		return 1
 	fi
 
-	local compose_file project_dir running
+	local compose_file project_dir confirm found=0
+	local start_dirs=()
 	local success_dirs=()
 	local skipped_dirs=()
 	local failed_dirs=()
+	local check_failed_dirs=()
 
-	for compose_file in /root/*/docker-compose.yml; do
-		[ -f "$compose_file" ] || continue
-		project_dir="$(dirname "$compose_file")"
-		running="$(cd "$project_dir" && docker compose ps --status running -q 2>/dev/null || true)"
-		if [ -n "$running" ]; then
-			echo -e "${gl_huang}已启动，跳过: $project_dir${gl_bai}"
-			skipped_dirs+=("$project_dir")
-			continue
+	rclone_compose_all_services_running() {
+		local project_dir="$1"
+		local services running service
+		if ! services="$(cd "$project_dir" && docker compose config --services 2>/dev/null)"; then
+			return 2
 		fi
-		echo -e "${gl_kjlan}正在启动: $project_dir${gl_bai}"
-		if (cd "$project_dir" && docker compose up -d); then
-			success_dirs+=("$project_dir")
-		else
-			failed_dirs+=("$project_dir")
-		fi
-	done
+		[ -n "$services" ] || return 2
+		running="$(cd "$project_dir" && docker compose ps --services --status running 2>/dev/null || true)"
+		for service in $services; do
+			echo "$running" | grep -Fxq "$service" || return 1
+		done
+		return 0
+	}
 
 	rclone_show_compose_restore_group() {
 		local title="$1"
@@ -19045,12 +19053,59 @@ rclone_restore_docker_compose_projects() {
 		printf '  %s\n' "$@"
 	}
 
+	for compose_file in /root/*/docker-compose.yml; do
+		[ -f "$compose_file" ] || continue
+		found=1
+		project_dir="$(dirname "$compose_file")"
+		if rclone_compose_all_services_running "$project_dir"; then
+			skipped_dirs+=("$project_dir")
+		else
+			case "$?" in
+				1) start_dirs+=("$project_dir") ;;
+				*) check_failed_dirs+=("$project_dir") ;;
+			esac
+		fi
+	done
+
+	if [ "$found" -eq 0 ]; then
+		echo -e "${gl_huang}未发现 /root 第一层子文件夹中的 docker-compose.yml。${gl_bai}"
+		return 0
+	fi
+
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+	rclone_show_compose_restore_group "将要启动" "${start_dirs[@]}"
+	rclone_show_compose_restore_group "已完整运行，跳过" "${skipped_dirs[@]}"
+	rclone_show_compose_restore_group "检测失败" "${check_failed_dirs[@]}"
+	echo -e "${gl_kjlan}------------------------${gl_bai}"
+
+	if [ "${#start_dirs[@]}" -eq 0 ]; then
+		if [ "${#check_failed_dirs[@]}" -eq 0 ]; then
+			echo -e "${gl_lv}没有需要启动的 Docker Compose 项目。${gl_bai}"
+			return 0
+		fi
+		echo -e "${gl_hong}存在检测失败的 Docker Compose 项目，请先检查配置。${gl_bai}"
+		return 1
+	fi
+
+	read -e -p "确认启动以上 ${#start_dirs[@]} 个 Docker Compose 项目？(y/N): " confirm
+	[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return 0; }
+
+	for project_dir in "${start_dirs[@]}"; do
+		echo -e "${gl_kjlan}正在启动: $project_dir${gl_bai}"
+		if (cd "$project_dir" && docker compose up -d); then
+			success_dirs+=("$project_dir")
+		else
+			failed_dirs+=("$project_dir")
+		fi
+	done
+
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
 	rclone_show_compose_restore_group "启动成功" "${success_dirs[@]}"
-	rclone_show_compose_restore_group "已启动，跳过" "${skipped_dirs[@]}"
+	rclone_show_compose_restore_group "已完整运行，跳过" "${skipped_dirs[@]}"
 	rclone_show_compose_restore_group "启动失败" "${failed_dirs[@]}"
+	rclone_show_compose_restore_group "检测失败" "${check_failed_dirs[@]}"
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
-	[ "${#failed_dirs[@]}" -eq 0 ]
+	[ "${#failed_dirs[@]}" -eq 0 ] && [ "${#check_failed_dirs[@]}" -eq 0 ]
 }
 
 rclone_manager() {

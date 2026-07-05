@@ -255,7 +255,7 @@ d
 | 3 | 卸载 rclone | 卸载 rclone |
 | 4 | 恢复远程文件夹到 /root | 一级服务器目录单选，二级子文件夹支持多选，恢复到 `/root/子文件夹名` |
 | 5 | 从远程恢复 Nginx + 域名 | 选择服务器目录后，恢复 `sites-available`、重建 `sites-enabled` 软链接并恢复 `/root/domain`；同名文件保留本机版本 |
-| 6 | Docker Compose 恢复 | 扫描 `/root/*/docker-compose.yml`，未运行则执行 `docker compose up -d`，已运行则跳过 |
+| 6 | Docker Compose 恢复 | 扫描 `/root/*/docker-compose.yml`，确认后启动未完整运行的 Compose 项目，已完整运行则跳过 |
 
 ### Bitwarden管理
 

@@ -1631,12 +1631,17 @@ Docker Compose 恢复：
 ```bash
 for compose_file in /root/*/docker-compose.yml; do
   project_dir=$(dirname "$compose_file")
-  running=$(cd "$project_dir" && docker compose ps --status running -q 2>/dev/null || true)
-  [ -n "$running" ] && continue
+  services=$(cd "$project_dir" && docker compose config --services)
+  running=$(cd "$project_dir" && docker compose ps --services --status running)
+  all_running=1
+  for service in $services; do
+    printf '%s\n' "$running" | grep -Fxq "$service" || all_running=0
+  done
+  [ "$all_running" -eq 1 ] && continue
   cd "$project_dir" && docker compose up -d
 done
 ```
-解释：扫描 `/root` 第一层子文件夹，只有存在 `docker-compose.yml` 的目录才处理；已存在运行中 Compose 容器的目录跳过，未运行的目录执行 `docker compose up -d`，最后汇总启动成功、已跳过和启动失败的目录。
+解释：扫描 `/root` 第一层子文件夹，只有存在 `docker-compose.yml` 的目录才处理；会先尝试启动 Docker daemon，再判断 Compose 配置里的服务是否全部处于 running 状态。全部运行则跳过，未完整运行则先展示待启动目录并等待确认，确认后执行 `docker compose up -d`，最后汇总启动成功、已跳过、启动失败和检测失败的目录。
 
 从远程恢复 Nginx + 域名：
 
