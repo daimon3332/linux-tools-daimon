@@ -1861,3 +1861,13 @@ bash /root/linux-daimon/daimon/x-ui-yg-install.sh
 bash <(curl -sL kejilion.sh)
 ```
 解释：运行 kejilion.sh 一键脚本。
+
+```bash
+bash /root/linux-daimon/daimon/sing-box-daimon.sh
+```
+解释：sing-box 安装与管理脚本，来源 `https://raw.githubusercontent.com/daimon3332/sing-box-daimon/master/sb.sh`。
+
+```bash
+bash /root/linux-daimon/daimon/runTcpQuality.sh
+```
+解释：TcpQuality TCP SYN 重传检测，来源 `https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh`。

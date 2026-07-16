@@ -18602,6 +18602,8 @@ common_one_click_scripts() {
 		echo -e "${gl_kjlan}8.   ${gl_bai}HardwareQuality"
 		echo -e "${gl_kjlan}9.   ${gl_bai}勇哥脚本"
 		echo -e "${gl_kjlan}10.  ${gl_bai}kejilion.sh 脚本"
+		echo -e "${gl_kjlan}11.  ${gl_bai}sing-box安装"
+		echo -e "${gl_kjlan}12.  ${gl_bai}TcpQuality"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		read -e -p "请输入你的选择: " sub_choice
 		case "$sub_choice" in
@@ -18615,6 +18617,8 @@ common_one_click_scripts() {
 			8) daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H ;;
 			9) daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh" ;;
 			10) exec bash -c 'bash <(curl -sL kejilion.sh)' ;;
+			11) daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/master/sb.sh" "sing-box-daimon.sh" ;;
+			12) daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh" "runTcpQuality.sh" ;;
 			0) return ;;
 			*) echo "无效的输入!"; break_end ;;
 		esac

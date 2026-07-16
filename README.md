@@ -302,6 +302,8 @@ d
 | 8 | HardwareQuality | `bash <(curl -Ls https://Check.Place) -H` |
 | 9 | 勇哥脚本 | 进入脚本后运行 |
 | 10 | kejilion.sh | `bash <(curl -sL kejilion.sh)` |
+| 11 | sing-box安装 | `bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/sing-box-daimon/master/sb.sh)` |
+| 12 | TcpQuality | `bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh)` |
 
 ## 第三方脚本引用
 
@@ -338,6 +340,8 @@ d
 | 常用一键脚本 | HardwareQuality | `https://Check.Place` | 硬件质量检测 |
 | 常用一键脚本 | 勇哥 x-ui-yg | `https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh` | x-ui-yg 管理脚本 |
 | 常用一键脚本 | kejilion.sh | `https://kejilion.sh` | kejilion 一键脚本 |
+| 常用一键脚本 | sing-box-daimon | `https://raw.githubusercontent.com/daimon3332/sing-box-daimon/master/sb.sh` | sing-box 安装与管理脚本 |
+| 常用一键脚本 | TcpQuality | `https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh` | TCP SYN 重传检测 |
 
 国内机器访问 `raw.githubusercontent.com` / `github.com` 相关脚本时，脚本会优先尝试 GitHub 代理地址，例如 `https://gh-proxy.com/`、`https://ghproxy.net/`、`https://testingcf.jsdelivr.net/gh/`、`https://ghfast.top/`。
 
