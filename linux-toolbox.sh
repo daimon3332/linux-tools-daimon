@@ -16,6 +16,31 @@ canshu="default"
 permission_granted="false"
 ENABLE_STATS="false"
 
+validate_domain_name() {
+	[[ "$1" =~ ^([A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$ ]]
+}
+
+validate_tcp_port() {
+	[[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
+validate_config_name() {
+	[[ "$1" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$1" != "." ] && [ "$1" != ".." ]
+}
+
+openclaw_read_import_path() {
+	local prompt="${1:-请输入备份包路径}" path
+	read -e -p "$prompt（输入 0 取消）: " path
+	[ "$path" = "0" ] && return 0
+	path="${path/#\~/$HOME}"
+	if [ -f "$path" ]; then
+		realpath -m "$path" 2>/dev/null || printf '%s\n' "$path"
+	else
+		echo "❌ 文件不存在: $path" >&2
+		return 1
+	fi
+}
+
 DAIMON_NAME="linux-tools-daimon"
 DAIMON_BIN="d"
 DAIMON_ROOT_DIR="/root/linux-daimon"
@@ -2347,19 +2372,11 @@ web_del() {
 	fi
 
 	for yuming in $yuming_list; do
+		if ! validate_domain_name "$yuming"; then echo "跳过非法域名: $yuming"; continue; fi
 		echo "正在删除域名: $yuming"
-		rm -r /home/web/html/$yuming > /dev/null 2>&1
-		rm /home/web/conf.d/$yuming.conf > /dev/null 2>&1
-		rm /home/web/certs/${yuming}_key.pem > /dev/null 2>&1
-		rm /home/web/certs/${yuming}_cert.pem > /dev/null 2>&1
-
-		# 将域名转换为数据库名
-		dbname=$(echo "$yuming" | sed -e 's/[^A-Za-z0-9]/_/g')
-		dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose.yml | tr -d '[:space:]')
-
-		# 删除数据库前检查是否存在，避免报错
-		echo "正在删除数据库: $dbname"
-		docker exec mysql mysql -u root -p"$dbrootpasswd" -e "DROP DATABASE ${dbname};" > /dev/null 2>&1
+		rm -rf "/home/web/html/$yuming" "/home/web/conf.d/$yuming.conf" \
+			"/home/web/certs/${yuming}_key.pem" "/home/web/certs/${yuming}_cert.pem"
+		echo "已删除反代配置与证书；数据库未删除"
 	done
 
 	docker exec nginx nginx -s reload
@@ -10920,7 +10937,7 @@ docker_ssh_migration() {
 		docker inspect "$container" | jq -e '.[0].Config.Labels["com.docker.compose.project"]' >/dev/null 2>&1
 	}
 
-	list_backups() {
+	docker_migration_list_backups() {
 		local BACKUP_ROOT="/tmp"
 		echo -e "${gl_kjlan}当前备份列表:${gl_bai}"
 		ls -1dt ${BACKUP_ROOT}/docker_backup_* 2>/dev/null || echo "无备份"
@@ -10931,7 +10948,7 @@ docker_ssh_migration() {
 	# ----------------------------
 	# 备份
 	# ----------------------------
-	backup_docker() {
+	docker_migration_backup() {
 		send_stats "Docker备份"
 
 		echo -e "${gl_kjlan}正在备份 Docker 容器...${gl_bai}"
@@ -10953,6 +10970,7 @@ docker_ssh_migration() {
 
 		local BACKUP_DIR="${BACKUP_ROOT}/docker_backup_${DATE_STR}"
 		mkdir -p "$BACKUP_DIR"
+		chmod 700 "$BACKUP_DIR"
 
 		local RESTORE_SCRIPT="${BACKUP_DIR}/docker_restore.sh"
 		echo "#!/bin/bash" > "$RESTORE_SCRIPT"
@@ -11033,7 +11051,7 @@ docker_ssh_migration() {
 			echo -e "${gl_lv}/home/docker 下的文件已打包到: ${BACKUP_DIR}/home_docker_files.tar.gz${gl_bai}"
 		fi
 
-		chmod +x "$RESTORE_SCRIPT"
+		find "$BACKUP_DIR" -type f -exec chmod 600 {} +; chmod 700 "$RESTORE_SCRIPT"
 		echo -e "${gl_lv}备份完成: ${BACKUP_DIR}${gl_bai}"
 		echo -e "${gl_lv}可用还原脚本: ${RESTORE_SCRIPT}${gl_bai}"
 
@@ -11043,11 +11061,11 @@ docker_ssh_migration() {
 	# ----------------------------
 	# 还原
 	# ----------------------------
-	restore_docker() {
+	docker_migration_restore() {
 
 		send_stats "Docker还原"
 		read -e -p  "请输入要还原的备份目录: " BACKUP_DIR
-		[[ ! -d "$BACKUP_DIR" ]] && { echo -e "${gl_hong}备份目录不存在${gl_bai}"; return; }
+		[[ ! -d "$BACKUP_DIR" || "$BACKUP_DIR" != /tmp/docker_backup_* ]] && { echo -e "${gl_hong}备份目录不存在或路径不受支持${gl_bai}"; return; }
 
 		echo -e "${gl_kjlan}开始执行还原操作...${gl_bai}"
 
@@ -11128,7 +11146,8 @@ docker_ssh_migration() {
 				VOL_FILE="$BACKUP_DIR/${container}_$(basename $VOL_SRC).tar.gz"
 				if [[ -f "$VOL_FILE" ]]; then
 					echo "恢复卷数据: $VOL_SRC"
-					tar -xzf "$VOL_FILE" -C /
+					tar -tzf "$VOL_FILE" >/dev/null 2>&1 || { echo "归档校验失败: $VOL_FILE"; continue; }
+					tar --extract --gzip --file "$VOL_FILE" --directory / --no-same-owner
 				fi
 			done
 
@@ -11140,7 +11159,12 @@ docker_ssh_migration() {
 
 			# 启动容器
 			echo "执行还原命令: docker run -d --name \"$container\" $PORT_ARGS $VOL_ARGS $ENV_ARGS \"$IMAGE\""
-			eval "docker run -d --name \"$container\" $PORT_ARGS $VOL_ARGS $ENV_ARGS \"$IMAGE\""
+			local -a run_args=(run -d --name "$container")
+			for p in "${PORTS[@]}"; do [ -n "$p" ] && run_args+=( -p "$p" ); done
+			for e in "${ENVS[@]}"; do [ -n "$e" ] && run_args+=( -e "$e" ); done
+			for v in "${VOLS[@]}"; do [ -n "$v" ] && run_args+=( -v "$v" ); done
+			run_args+=("$IMAGE")
+			docker "${run_args[@]}"
 		done
 
 		[[ "$has_container" == false ]] && echo -e "${gl_huang}未找到普通容器的备份信息${gl_bai}"
@@ -11162,11 +11186,11 @@ docker_ssh_migration() {
 	# ----------------------------
 	# 迁移
 	# ----------------------------
-	migrate_docker() {
+	docker_migration_migrate() {
 		send_stats "Docker迁移"
 		install jq
 		read -e -p  "请输入要迁移的备份目录: " BACKUP_DIR
-		[[ ! -d "$BACKUP_DIR" ]] && { echo -e "${gl_hong}备份目录不存在${gl_bai}"; return; }
+			[[ ! -d "$BACKUP_DIR" || "$BACKUP_DIR" != /tmp/docker_backup_* ]] && { echo -e "${gl_hong}备份目录不存在或路径不受支持${gl_bai}"; return; }
 
 		kj_ssh_read_host_user_port "目标服务器IP: " "目标服务器SSH用户名 [默认root]: " "目标服务器SSH端口 [默认22]: " "root" "22"
 		local TARGET_IP="$KJ_SSH_HOST"
@@ -11178,7 +11202,10 @@ docker_ssh_migration() {
 		echo -e "${gl_huang}传输备份中...${gl_bai}"
 		if [[ -z "$TARGET_PASS" ]]; then
 			# 使用密钥登录
-			scp -P "$TARGET_PORT" -o StrictHostKeyChecking=no -r "$LATEST_TAR" "$TARGET_USER@$TARGET_IP:/tmp/"
+			if ! scp -P "$TARGET_PORT" -o StrictHostKeyChecking=no -r "$LATEST_TAR" "$TARGET_USER@$TARGET_IP:/tmp/"; then
+				echo -e "${gl_hong}迁移失败，请检查 SSH 连接${gl_bai}"; return 1
+			fi
+			echo -e "${gl_lv}迁移完成${gl_bai}"
 		fi
 
 	}
@@ -11186,10 +11213,12 @@ docker_ssh_migration() {
 	# ----------------------------
 	# 删除备份
 	# ----------------------------
-	delete_backup() {
+	docker_migration_delete_backup() {
 		send_stats "Docker备份文件删除"
 		read -e -p  "请输入要删除的备份目录: " BACKUP_DIR
-		[[ ! -d "$BACKUP_DIR" ]] && { echo -e "${gl_hong}备份目录不存在${gl_bai}"; return; }
+		[[ ! -d "$BACKUP_DIR" || "$BACKUP_DIR" != /tmp/docker_backup_* ]] && { echo -e "${gl_hong}备份目录不存在或路径不受支持${gl_bai}"; return; }
+		read -e -p "确认删除 $BACKUP_DIR？[y/N]: " confirm
+		[[ "$confirm" != "y" && "$confirm" != "Y" ]] && return 0
 		rm -rf "$BACKUP_DIR"
 		echo -e "${gl_lv}已删除备份: ${BACKUP_DIR}${gl_bai}"
 	}
@@ -11204,7 +11233,7 @@ docker_ssh_migration() {
 			echo "------------------------"
 			echo -e "Docker备份/迁移/还原工具"
 			echo "------------------------"
-			list_backups
+			docker_migration_list_backups
 			echo -e ""
 			echo "------------------------"
 			echo -e "1. 备份docker项目"
@@ -11216,10 +11245,10 @@ docker_ssh_migration() {
 			echo "------------------------"
 			read -e -p  "请选择: " choice
 			case $choice in
-				1) backup_docker ;;
-				2) migrate_docker ;;
-				3) restore_docker ;;
-				4) delete_backup ;;
+				1) docker_migration_backup ;;
+				2) docker_migration_migrate ;;
+				3) docker_migration_restore ;;
+				4) docker_migration_delete_backup ;;
 				0) return ;;
 				*) echo -e "${gl_hong}无效选项${gl_bai}" ;;
 			esac
@@ -14804,6 +14833,11 @@ if os.path.isdir(agents_root):
 		tmp_unpack=$(mktemp -d) || return 1
 		local pkg_dir
 		pkg_dir=$(openclaw_prepare_import_archive "openclaw-project" "$archive_path" "$tmp_unpack") || { rm -rf "$tmp_unpack"; break_end; return 1; }
+		local rollback_dir
+		rollback_dir=$(mktemp -d)
+		if [ -d "$openclaw_root" ] && ! tar -czf "$rollback_dir/openclaw-before-restore.tar.gz" -C "$openclaw_root" .; then
+			echo "❌ 无法创建还原前备份，已中止"; rm -rf "$rollback_dir" "$tmp_unpack"; break_end; return 1
+		fi
 
 		local invalid=0
 		local valid_list
@@ -14829,17 +14863,17 @@ if os.path.isdir(agents_root):
 
 		if command -v openclaw >/dev/null 2>&1; then
 			echo "⏸️ 还原前停止 OpenClaw gateway..."
-			openclaw gateway stop >/dev/null 2>&1
+			if ! openclaw gateway stop >/dev/null 2>&1; then echo "❌ gateway 停止失败，已中止还原"; rm -f "$valid_list"; rm -rf "$tmp_unpack"; break_end; return 1; fi
 		fi
 
 		while IFS= read -r rel; do
 			mkdir -p "$openclaw_root/$(dirname "$rel")"
-			cp -a "$pkg_dir/payload/$rel" "$openclaw_root/$rel"
+			cp -a "$pkg_dir/payload/$rel" "$openclaw_root/$rel" || { echo "❌ 还原失败: $rel"; rm -f "$valid_list"; rm -rf "$tmp_unpack"; break_end; return 1; }
 		done < "$valid_list"
 
 		if command -v openclaw >/dev/null 2>&1; then
 			echo "▶️ 还原后启动 OpenClaw gateway..."
-			openclaw gateway start >/dev/null 2>&1
+			if ! openclaw gateway start >/dev/null 2>&1; then echo "❌ gateway 启动失败，请检查还原前备份: $rollback_dir/openclaw-before-restore.tar.gz"; fi
 			sleep 2
 			echo "🩺 gateway 健康检查："
 			openclaw gateway status || true
@@ -14847,6 +14881,7 @@ if os.path.isdir(agents_root):
 
 		rm -f "$valid_list"
 		rm -rf "$tmp_unpack"
+		echo "还原前备份已保留: $rollback_dir/openclaw-before-restore.tar.gz"
 		echo "✅ OpenClaw 项目还原完成"
 		break_end
 	}
@@ -17235,7 +17270,8 @@ openclaw_backup_restore_menu() {
 	# 添加域名（调用你给的函数）
 	openclaw_domain_webui() {
 		add_yuming
-		ldnmp_Proxy ${yuming} 127.0.0.1 18789
+		validate_domain_name "$yuming" || { echo "域名格式不正确"; return 1; }
+		ldnmp_Proxy "$yuming" 127.0.0.1 18789
 
 		token=$(
 			openclaw dashboard 2>/dev/null \
@@ -17370,6 +17406,11 @@ ssh_config_manager() {
 	ssh_config_backup() {
 		[ -f "$SSH_CONFIG" ] && cp "$SSH_CONFIG" "$SSH_CONFIG.bak.$(date +%Y%m%d%H%M%S)"
 	}
+	ssh_restore_backup() {
+		local backup
+		backup=$(ls -1t "$SSH_CONFIG".bak.* 2>/dev/null | head -n1)
+		[ -n "$backup" ] && cp "$backup" "$SSH_CONFIG"
+	}
 
 	ssh_set_option() {
 		local key="$1" value="$2"
@@ -17397,7 +17438,11 @@ ssh_config_manager() {
 	}
 
 	ssh_current_ports() {
-		sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null || grep -Ei '^[[:space:]]*Port[[:space:]]+' "$SSH_CONFIG" 2>/dev/null | awk '{print $2}' | xargs
+		local ports
+		ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}')
+		[ -z "$ports" ] && ports=$(grep -Ei '^[[:space:]]*Port[[:space:]]+' "$SSH_CONFIG" 2>/dev/null | awk '{print $2}')
+		[ -n "${SSH_CONNECTION:-}" ] && ports="$ports $(echo "$SSH_CONNECTION" | awk '{print $4}')"
+		echo "$ports" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -n -u | xargs
 	}
 
 	ssh_auth_status() {
@@ -17407,7 +17452,10 @@ ssh_config_manager() {
 
 	ssh_add_public_key() {
 		local public_key="$1"
-		[ -z "$public_key" ] && return 0
+		if [ -z "$public_key" ]; then
+			echo "未提供公钥，已取消"
+			return 1
+		fi
 		if ! echo "$public_key" | grep -Eq '^ssh-(ed25519|rsa|ecdsa)[[:space:]]+'; then
 			echo -e "${gl_hong}公钥格式不正确，应以 ssh-ed25519、ssh-rsa 或 ssh-ecdsa 开头${gl_bai}"
 			return 1
@@ -17521,6 +17569,7 @@ ssh_config_manager() {
 				ssh_add_public_key "$public_key" || { break_end; continue; }
 				read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port
 				new_port=${new_port:-$DEFAULT_SSH_PORT}
+				if ! validate_tcp_port "$new_port"; then echo "端口不合法"; break_end; continue; fi
 				ssh_config_backup
 				ssh_set_option Port "$new_port"
 				ssh_set_option PubkeyAuthentication yes
@@ -17531,11 +17580,14 @@ ssh_config_manager() {
 				ssh_set_option PermitEmptyPasswords no
 				ssh_set_option PermitRootLogin prohibit-password
 				install ufw
-				ufw allow "$new_port/tcp" >/dev/null 2>&1 || true
-				ufw deny 22/tcp >/dev/null 2>&1 || true
+				for p in $(ssh_current_ports) "$new_port"; do validate_tcp_port "$p" && ufw allow "$p/tcp" >/dev/null 2>&1 || true; done
+				[ "$new_port" != "22" ] && ufw deny 22/tcp >/dev/null 2>&1 || true
 				echo y | ufw enable >/dev/null 2>&1 || true
 				ufw reload >/dev/null 2>&1 || true
-				ssh_restart_safe
+				if ! ssh_restart_safe; then
+					ssh_restore_backup
+					echo "SSH 重启失败，已恢复原配置"
+				fi
 				;;
 			5) ssh_key_manager; continue ;;
 			6) install vim; vim "$SSH_CONFIG"; ssh_restart_safe ;;
@@ -17564,7 +17616,7 @@ ufw_manager() {
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		read -e -p "请输入你的选择: " sub_choice
 		case "$sub_choice" in
-			1) root_use; install ufw; echo y | ufw enable; ufw status ;;
+			1) root_use; install ufw; for p in $(ssh_current_ports); do validate_tcp_port "$p" && ufw allow "$p/tcp"; done; echo y | ufw enable; ufw status ;;
 			2) root_use; ufw disable 2>/dev/null || true; remove ufw; rm -rf /etc/ufw /var/lib/ufw ;;
 			3) root_use; read -e -p "请输入要开放的端口/协议: " port_rule; [ -n "$port_rule" ] && ufw allow "$port_rule"; ufw status numbered ;;
 			4) root_use; read -e -p "请输入要删除的端口/协议: " port_rule; [ -n "$port_rule" ] && ufw delete allow "$port_rule"; ufw status numbered ;;
@@ -17778,6 +17830,10 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+validate_domain() { [[ "$1" =~ ^([A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$ ]]; }
+validate_port() { [[ "$1" =~ ^[0-9]+$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+validate_name() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$1" != "." ] && [ "$1" != ".." ]; }
+
 ACME="$HOME/.acme.sh/acme.sh"
 NGINX_WAS_RUNNING=false
 
@@ -17845,17 +17901,17 @@ stop_port_80_services() {
         systemctl stop nginx
         NGINX_WAS_RUNNING=true
     fi
-    systemctl stop apache2 2>/dev/null || true
-    systemctl stop httpd 2>/dev/null || true
-    systemctl stop caddy 2>/dev/null || true
+    for svc in apache2 httpd caddy; do
+        if systemctl is-active "$svc" >/dev/null 2>&1; then
+            echo -e "${YELLOW}检测到 $svc 占用 Web 端口，请先手动停止后重试${NC}"
+            return 1
+        fi
+    done
     sleep 1
 
     if lsof -iTCP:80 -sTCP:LISTEN >/dev/null 2>&1; then
         local PIDS=$(lsof -t -iTCP:80 -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')
-        [ -n "$PIDS" ] && kill $PIDS 2>/dev/null || true
-        sleep 1
-        PIDS=$(lsof -t -iTCP:80 -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')
-        [ -n "$PIDS" ] && kill -9 $PIDS 2>/dev/null || true
+        [ -n "$PIDS" ] && echo -e "${RED}80 端口由进程 $PIDS 占用，请停止占用进程后重试${NC}" && return 1
     fi
 
     if lsof -iTCP:80 -sTCP:LISTEN >/dev/null 2>&1; then
@@ -17930,8 +17986,7 @@ cleanup_nginx_and_cert() {
     local DOMAIN="$1"
     local NGINX_NAME="$2"
     local FOLDER CERT_DIR
-    FOLDER=$(echo "$DOMAIN" | cut -d'.' -f1)
-    CERT_DIR="/root/domain/$FOLDER"
+    CERT_DIR="/root/domain/$DOMAIN"
 
     [ -n "$NGINX_NAME" ] && rm -f "/etc/nginx/sites-available/$NGINX_NAME" "/etc/nginx/sites-enabled/$NGINX_NAME"
     [ -n "$DOMAIN" ] && "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
@@ -17955,10 +18010,11 @@ remove_cert() {
     read -p "确认移除 $REMOVE_DOMAIN？[y/n]: " CONFIRM
     [ "$CONFIRM" != "y" ] && return 0
 
+    validate_domain "$REMOVE_DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
+
     "$ACME" --remove -d "$REMOVE_DOMAIN" 2>/dev/null || true
 
-    FOLDER=$(echo "$REMOVE_DOMAIN" | cut -d'.' -f1)
-    [ -d "/root/domain/$FOLDER" ] && rm -rf "/root/domain/$FOLDER"
+    [ -d "/root/domain/$REMOVE_DOMAIN" ] && rm -rf "/root/domain/$REMOVE_DOMAIN"
 
     echo -e "${GREEN}证书移除完成！${NC}"
 }
@@ -18045,8 +18101,8 @@ remove_nginx_and_cert() {
     rm -f "/etc/nginx/sites-available/$CONF_NAME"
     rm -f "/etc/nginx/sites-enabled/$CONF_NAME"
 
-    # 删除证书目录
-    [ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"
+    # 仅允许删除受管证书目录，避免误删任意路径
+    case "$CERT_DIR" in /root/domain/*|/etc/letsencrypt/live/*) [ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR" ;; esac
 
     # 从 acme.sh 移除证书
     [ -n "$DOMAIN" ] && "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
@@ -18371,8 +18427,8 @@ issue_cert() {
 
     show_dns "$DOMAIN"
 
-    FOLDER=$(echo "$DOMAIN" | cut -d'.' -f1)
-    CERT_DIR="/root/domain/$FOLDER"
+    validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
+    CERT_DIR="/root/domain/$DOMAIN"
     mkdir -p "$CERT_DIR"
 
     if "$ACME" --list 2>/dev/null | grep -q "$DOMAIN"; then
@@ -18385,11 +18441,14 @@ issue_cert() {
     ensure_ufw_80
     stop_port_80_services || return 1
 
-    "$ACME" --issue -d "$DOMAIN" --standalone --server letsencrypt --force
+    if ! "$ACME" --issue -d "$DOMAIN" --standalone --server letsencrypt --force; then
+        echo -e "${RED}证书申请失败${NC}"; restart_nginx_if_needed; return 1
+    fi
 
     "$ACME" --install-cert -d "$DOMAIN" \
         --fullchain-file "$CERT_DIR/fullchain.pem" \
         --key-file "$CERT_DIR/privkey.pem" \
+        --reloadcmd "nginx -t && systemctl reload nginx" \
         --force
 
     if [ -s "$CERT_DIR/fullchain.pem" ] && [ -s "$CERT_DIR/privkey.pem" ]; then
@@ -18413,8 +18472,10 @@ config_nginx() {
     local NGINX_NAME="$2"
     local PORT="$3"
 
-    FOLDER=$(echo "$DOMAIN" | cut -d'.' -f1)
-    CERT_DIR="/root/domain/$FOLDER"
+    validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
+    validate_name "$NGINX_NAME" || { echo -e "${RED}配置名只能包含字母、数字、点、下划线和连字符${NC}"; return 1; }
+    validate_port "$PORT" || { echo -e "${RED}端口号不合法${NC}"; return 1; }
+    CERT_DIR="/root/domain/$DOMAIN"
 
     # 检查证书是否存在
     if [ ! -s "$CERT_DIR/fullchain.pem" ] || [ ! -s "$CERT_DIR/privkey.pem" ]; then
@@ -18511,11 +18572,11 @@ while true; do
     case $ACTION in
         1)
             read -p "请输入域名: " DOMAIN
-            [ -z "$DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && continue
+            validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; }
             read -p "请输入 nginx 配置文件名称: " NGINX_NAME
-            [ -z "$NGINX_NAME" ] && echo -e "${RED}名称不能为空${NC}" && continue
+            validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; }
             read -p "请输入代理端口号: " PORT
-            [ -z "$PORT" ] && echo -e "${RED}端口号不能为空${NC}" && continue
+            validate_port "$PORT" || { echo -e "${RED}端口号不合法${NC}"; continue; }
 
             if issue_cert "$DOMAIN"; then
                 restart_nginx_if_needed
@@ -18532,7 +18593,7 @@ while true; do
             ;;
         3)
             read -p "请输入域名: " DOMAIN
-            [ -z "$DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && continue
+            validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; }
             issue_cert "$DOMAIN"
             restart_nginx_if_needed
             ;;
@@ -18544,11 +18605,11 @@ while true; do
             ;;
         6)
             read -p "请输入域名: " DOMAIN
-            [ -z "$DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && continue
+            validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; }
             read -p "请输入 nginx 配置文件名称: " NGINX_NAME
-            [ -z "$NGINX_NAME" ] && echo -e "${RED}名称不能为空${NC}" && continue
+            validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; }
             read -p "请输入代理端口号: " PORT
-            [ -z "$PORT" ] && echo -e "${RED}端口号不能为空${NC}" && continue
+            validate_port "$PORT" || { echo -e "${RED}端口号不合法${NC}"; continue; }
             config_nginx "$DOMAIN" "$NGINX_NAME" "$PORT"
             ;;
         7)
