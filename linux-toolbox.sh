@@ -11275,14 +11275,28 @@ docker_compose_update_sanitize_name() {
 	echo "$1" | sed 's/[[:space:]\/\\:]/_/g; s/[^A-Za-z0-9_.-]/_/g'
 }
 
+docker_compose_update_project_id() {
+	local project="$1"
+	local workdir="$2"
+	local config_files="$3"
+	local digest
+	if command -v sha256sum >/dev/null 2>&1; then
+		digest=$(printf '%s\0%s\0%s' "$project" "$workdir" "$config_files" | sha256sum | awk '{print $1}')
+	else
+		digest=$(printf '%s\0%s\0%s' "$project" "$workdir" "$config_files" | cksum | awk '{print $1}')
+	fi
+	printf '%.12s\n' "$digest"
+}
+
 docker_compose_update_discover_projects() {
 	command -v docker >/dev/null 2>&1 || return 0
-	local containers name label_line project workdir config_files first_config key
-	local -A project_path_map project_containers_map
-	containers=$(docker ps -a --format '{{.Names}}' 2>/dev/null || true)
-	for name in $containers; do
-		label_line=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}|{{ index .Config.Labels "com.docker.compose.project.working_dir" }}|{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$name" 2>/dev/null || true)
-		IFS='|' read -r project workdir config_files <<< "$label_line"
+	local name project workdir config_files first_config key
+	local -A project_map
+	while IFS= read -r name; do
+		[ -n "$name" ] || continue
+		project=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' "$name" 2>/dev/null || true)
+		workdir=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.working_dir" }}' "$name" 2>/dev/null || true)
+		config_files=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project.config_files" }}' "$name" 2>/dev/null || true)
 		[ "$project" = "<no value>" ] && project=""
 		[ "$workdir" = "<no value>" ] && workdir=""
 		[ "$config_files" = "<no value>" ] && config_files=""
@@ -11293,20 +11307,25 @@ docker_compose_update_discover_projects() {
 		if [ -z "$project" ] || [ -z "$workdir" ]; then
 			continue
 		fi
-		key="${project}|${workdir}"
-		project_path_map["$key"]="$project|$workdir"
-		if [ -n "${project_containers_map[$key]}" ]; then
-			project_containers_map["$key"]="${project_containers_map[$key]},$name"
-		else
-			project_containers_map["$key"]="$name"
-		fi
-	done
-	for key in "${!project_path_map[@]}"; do
-		echo "${project_path_map[$key]}|${project_containers_map[$key]}"
+		key="${project}"$'\034'"${workdir}"$'\034'"${config_files}"
+		project_map["$key"]=$(printf '%s\t%s\t%s' "$project" "$workdir" "$config_files")
+	done < <(docker ps -a --format '{{.Names}}' 2>/dev/null || true)
+	for key in "${!project_map[@]}"; do
+		printf '%s\n' "${project_map[$key]}"
 	done | sort
 }
 
 docker_compose_update_script_file() {
+	local project="$1"
+	local workdir="$2"
+	local config_files="${3:-}"
+	local safe_project project_id
+	safe_project=$(docker_compose_update_sanitize_name "$project")
+	project_id=$(docker_compose_update_project_id "$project" "$workdir" "$config_files")
+	echo "$(docker_compose_update_script_dir)/compose_update_${safe_project}_${project_id}.sh"
+}
+
+docker_compose_update_legacy_script_file() {
 	local project="$1"
 	local workdir="$2"
 	local safe_project safe_path
@@ -11328,13 +11347,21 @@ docker_compose_update_cron_line() {
 
 docker_compose_update_status_text() {
 	local script_file="$1"
+	local legacy_script_file="$2"
+	local project_id="$3"
 	local cron_output=""
 	cron_output=$(crontab -l 2>/dev/null || true)
-	if [ -f "$script_file" ] && echo "$cron_output" | grep -Fq "$script_file"; then
-		echo -e "${gl_lv}已配置${gl_bai}"
+	if [ -f "$script_file" ] && printf '%s\n' "$cron_output" | grep -Fq "$script_file"; then
+		if bash -n "$script_file" 2>/dev/null && grep -Fqx "# compose-update-id: $project_id" "$script_file"; then
+			echo -e "${gl_lv}已配置${gl_bai}"
+		else
+			echo -e "${gl_hong}脚本异常，请重新安装${gl_bai}"
+		fi
+	elif [ "$legacy_script_file" != "$script_file" ] && { [ -f "$legacy_script_file" ] || printf '%s\n' "$cron_output" | grep -Fq "$legacy_script_file"; }; then
+		echo -e "${gl_huang}旧版任务，需重新安装${gl_bai}"
 	elif [ -f "$script_file" ]; then
 		echo -e "${gl_huang}脚本已存在，未加入定时${gl_bai}"
-	elif echo "$cron_output" | grep -Fq "$script_file"; then
+	elif printf '%s\n' "$cron_output" | grep -Fq "$script_file"; then
 		echo -e "${gl_huang}定时任务存在，脚本不存在${gl_bai}"
 	else
 		echo -e "${gl_hong}未配置${gl_bai}"
@@ -11342,17 +11369,19 @@ docker_compose_update_status_text() {
 }
 
 docker_compose_update_show_status() {
-	local idx=0 project workdir containers script_file
+	local idx=0 project workdir config_files script_file legacy_script_file project_id
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
 	echo "Docker Compose 项目列表"
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
-	while IFS='|' read -r project workdir containers; do
+	while IFS=$'\t' read -r project workdir config_files; do
 		[ -z "$project" ] && continue
 		idx=$((idx + 1))
-		script_file=$(docker_compose_update_script_file "$project" "$workdir")
-		printf "%2d. %-24s %-42s %b\n" "$idx" "$project" "$(docker_compose_update_status_text "$script_file")" ""
+		project_id=$(docker_compose_update_project_id "$project" "$workdir" "$config_files")
+		script_file=$(docker_compose_update_script_file "$project" "$workdir" "$config_files")
+		legacy_script_file=$(docker_compose_update_legacy_script_file "$project" "$workdir")
+		printf "%2d. %-24s %-42s %b\n" "$idx" "$project" "$(docker_compose_update_status_text "$script_file" "$legacy_script_file" "$project_id")" ""
 		echo "    路径: $workdir"
-		echo "    容器: $containers"
+		[ -n "$config_files" ] && echo "    配置: $config_files"
 	done < <(docker_compose_update_discover_projects)
 	if [ "$idx" -eq 0 ]; then
 		echo -e "${gl_huang}未检测到带 com.docker.compose.* 标签的 Docker Compose 项目。${gl_bai}"
@@ -11360,17 +11389,18 @@ docker_compose_update_show_status() {
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
 	echo "所有 Docker 容器"
 	docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' 2>/dev/null || true
+	docker_compose_update_show_orphans
 	echo -e "${gl_kjlan}------------------------${gl_bai}"
 }
 
 docker_compose_update_get_item_by_number() {
 	local target="$1"
-	local idx=0 project workdir containers
-	while IFS='|' read -r project workdir containers; do
+	local idx=0 project workdir config_files
+	while IFS=$'\t' read -r project workdir config_files; do
 		[ -z "$project" ] && continue
 		idx=$((idx + 1))
 		if [ "$idx" -eq "$target" ]; then
-			echo "$idx|$project|$workdir|$containers"
+			printf '%s\t%s\t%s\t%s\n' "$idx" "$project" "$workdir" "$config_files"
 			return 0
 		fi
 	done < <(docker_compose_update_discover_projects)
@@ -11378,8 +11408,8 @@ docker_compose_update_get_item_by_number() {
 }
 
 docker_compose_update_all_numbers() {
-	local idx=0 project workdir containers
-	while IFS='|' read -r project workdir containers; do
+	local idx=0 project workdir config_files
+	while IFS=$'\t' read -r project workdir config_files; do
 		[ -z "$project" ] && continue
 		idx=$((idx + 1))
 		printf "%s " "$idx"
@@ -11389,58 +11419,273 @@ docker_compose_update_all_numbers() {
 docker_compose_update_write_script() {
 	local project="$1"
 	local workdir="$2"
-	local containers="$3"
+	local config_files="$3"
 	local script_file="$4"
-	mkdir -p "$(dirname "$script_file")" "$(docker_compose_update_log_dir)"
-	cat > "$script_file" <<EOF
+	local project_id="$5"
+	local temp_file
+	mkdir -p "$(dirname "$script_file")" "$(docker_compose_update_log_dir)" || return 1
+	temp_file=$(mktemp "${script_file}.tmp.XXXXXX") || return 1
+	if ! {
+		cat <<'EOF'
 #!/bin/bash
-
-# Docker Compose 项目名称
-COMPOSE_PROJECT="$project"
-
-# Docker Compose 项目路径
-COMPOSE_PATH="$workdir"
-
-# 关联容器
-COMPOSE_CONTAINERS="$containers"
-
-echo "========================================"
-echo "开始执行 Docker Compose 更新: \$(date '+%Y-%m-%d %H:%M:%S')"
-echo "项目: \$COMPOSE_PROJECT"
-echo "路径: \$COMPOSE_PATH"
-echo "容器: \$COMPOSE_CONTAINERS"
-echo "========================================"
-
-cd "\$COMPOSE_PATH" || exit 1
-
-echo "正在停止容器..."
-docker compose down
-
-echo "正在拉取最新镜像..."
-docker compose pull
-
-echo "正在启动容器..."
-docker compose up -d
-
-echo "========================================"
-echo "更新完成: \$(date '+%Y-%m-%d %H:%M:%S')"
-echo "========================================"
+set -Eeuo pipefail
+umask 077
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
-	chmod +x "$script_file"
+		printf '# compose-update-id: %s\n' "$project_id"
+		printf 'COMPOSE_UPDATE_ID=%q\n' "$project_id"
+		printf 'COMPOSE_PROJECT=%q\n' "$project"
+		printf 'COMPOSE_PATH=%q\n' "$workdir"
+		printf 'COMPOSE_CONFIG_FILES=%q\n' "$config_files"
+		cat <<'EOF'
+WAIT_TIMEOUT="${COMPOSE_UPDATE_WAIT_TIMEOUT:-120}"
+LOCK_FILE="/run/lock/docker-compose-update-${COMPOSE_UPDATE_ID}.lock"
+LOCK_DIR="${LOCK_FILE}.d"
+COMPOSE_ARGS=(-p "$COMPOSE_PROJECT")
+TARGET_SERVICES=()
+declare -A PREVIOUS_IMAGES=()
+ROLLBACK_READY=true
+
+log() {
+	printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
+}
+
+fail() {
+	log "错误: $*"
+	exit 1
+}
+
+release_fallback_lock() {
+	[ "${USING_FALLBACK_LOCK:-false}" = "true" ] && rmdir "$LOCK_DIR" 2>/dev/null || true
+}
+
+run_compose() {
+	docker compose "${COMPOSE_ARGS[@]}" "$@"
+}
+
+restore_previous_images() {
+	local image failed=0
+	[ "$ROLLBACK_READY" = "true" ] || return 1
+	[ "${#PREVIOUS_IMAGES[@]}" -gt 0 ] || return 1
+	for image in "${!PREVIOUS_IMAGES[@]}"; do
+		if ! docker image tag "${PREVIOUS_IMAGES[$image]}" "$image" >/dev/null; then
+			failed=1
+		fi
+	done
+	return "$failed"
+}
+
+start_services() {
+	local recreate="${1:-false}"
+	local args=(up -d --wait --wait-timeout "$WAIT_TIMEOUT")
+	[ "$recreate" = "true" ] && args+=(--force-recreate)
+	[ "${#TARGET_SERVICES[@]}" -gt 0 ] && args+=("${TARGET_SERVICES[@]}")
+	run_compose "${args[@]}"
+}
+
+case "$WAIT_TIMEOUT" in
+	''|*[!0-9]*) fail "COMPOSE_UPDATE_WAIT_TIMEOUT 必须是正整数" ;;
+	0) fail "COMPOSE_UPDATE_WAIT_TIMEOUT 必须大于 0" ;;
+esac
+
+mkdir -p /run/lock || fail "无法创建锁目录"
+if command -v flock >/dev/null 2>&1; then
+	exec 9>"$LOCK_FILE" || fail "无法打开锁文件"
+	if ! flock -n 9; then
+		log "已有更新任务正在运行，本次跳过"
+		exit 0
+	fi
+else
+	if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+		log "已有更新任务正在运行，本次跳过"
+		exit 0
+	fi
+	USING_FALLBACK_LOCK=true
+	trap release_fallback_lock EXIT
+fi
+
+command -v docker >/dev/null 2>&1 || fail "未找到 docker 命令"
+docker compose version >/dev/null 2>&1 || fail "Docker Compose 插件不可用"
+run_compose up --help 2>/dev/null | grep -q -- '--wait' || fail "Docker Compose 版本过旧，不支持健康等待"
+[ -d "$COMPOSE_PATH" ] || fail "项目目录不存在: $COMPOSE_PATH"
+cd "$COMPOSE_PATH" || fail "无法进入项目目录: $COMPOSE_PATH"
+
+if [ -n "$COMPOSE_CONFIG_FILES" ]; then
+	IFS=',' read -r -a config_files <<< "$COMPOSE_CONFIG_FILES"
+	for config_file in "${config_files[@]}"; do
+		[ -f "$config_file" ] || fail "Compose 配置不存在: $config_file"
+		COMPOSE_ARGS+=(-f "$config_file")
+	done
+fi
+
+running_services=$(run_compose ps --services --status running 2>/dev/null) || fail "无法读取 Compose 项目状态"
+mapfile -t TARGET_SERVICES < <(printf '%s\n' "$running_services" | sed '/^[[:space:]]*$/d' | sort -u)
+log "开始更新项目: $COMPOSE_PROJECT"
+log "项目路径: $COMPOSE_PATH"
+[ -n "$COMPOSE_CONFIG_FILES" ] && log "配置文件: $COMPOSE_CONFIG_FILES"
+if [ "${#TARGET_SERVICES[@]}" -gt 0 ]; then
+	log "当前运行服务: ${TARGET_SERVICES[*]}"
+else
+	log "未检测到运行中的服务，将更新默认服务"
+fi
+
+config_command=(config --images)
+image_output=$(run_compose "${config_command[@]}" 2>/dev/null) || fail "无法解析 Compose 镜像配置"
+while IFS= read -r image; do
+	[ -n "$image" ] || continue
+	case "$image" in *@sha256:*) continue ;; esac
+	image_id=$(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null || true)
+	if [ -n "$image_id" ]; then
+		PREVIOUS_IMAGES["$image"]="$image_id"
+	else
+		ROLLBACK_READY=false
+	fi
+done < <(printf '%s\n' "$image_output" | sort -u)
+
+pull_command=(pull)
+run_compose pull --help 2>/dev/null | grep -q -- '--ignore-buildable' && pull_command+=(--ignore-buildable)
+[ "${#TARGET_SERVICES[@]}" -gt 0 ] && pull_command+=("${TARGET_SERVICES[@]}")
+log "正在拉取镜像"
+if ! run_compose "${pull_command[@]}"; then
+	restore_previous_images || log "警告: 部分旧镜像标签恢复失败"
+	fail "镜像拉取失败，现有容器保持运行"
+fi
+
+log "正在应用更新"
+if ! start_services false; then
+	log "更新启动或健康检查失败，开始恢复旧镜像"
+	if restore_previous_images && start_services true; then
+		fail "更新失败，已恢复到更新前镜像"
+	fi
+	fail "更新失败，自动恢复也未成功，请立即检查容器"
+fi
+
+log "更新成功"
+EOF
+	} > "$temp_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+	if ! bash -n "$temp_file" || ! chmod 700 "$temp_file" || ! mv -f "$temp_file" "$script_file"; then
+		rm -f "$temp_file"
+		return 1
+	fi
+}
+
+docker_compose_update_ensure_logrotate() {
+	local config_file="/etc/logrotate.d/docker-compose-update"
+	local temp_file
+	temp_file=$(mktemp "${config_file}.tmp.XXXXXX") || return 1
+	if ! cat > "$temp_file" <<'EOF'
+/var/log/docker-compose-update/*.log {
+    daily
+    rotate 14
+    maxsize 10M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0600 root root
+}
+EOF
+	then
+		rm -f "$temp_file"
+		return 1
+	fi
+	chmod 644 "$temp_file" && mv -f "$temp_file" "$config_file" || {
+		rm -f "$temp_file"
+		return 1
+	}
+}
+
+docker_compose_update_update_crontab() {
+	local action="$1"
+	local script_file="$2"
+	local legacy_script_file="$3"
+	local cron_line="${4:-}"
+	local lock_file="/run/lock/linux-daimon-crontab.lock"
+	local current_file current_error next_file lock_fd
+	mkdir -p /run/lock || return 1
+	exec {lock_fd}>"$lock_file" || return 1
+	if command -v flock >/dev/null 2>&1 && ! flock "$lock_fd"; then
+		exec {lock_fd}>&-
+		return 1
+	fi
+	current_file=$(mktemp) || { exec {lock_fd}>&-; return 1; }
+	current_error=$(mktemp) || { rm -f "$current_file"; exec {lock_fd}>&-; return 1; }
+	next_file=$(mktemp) || { rm -f "$current_file" "$current_error"; exec {lock_fd}>&-; return 1; }
+	if ! LC_ALL=C crontab -l > "$current_file" 2> "$current_error"; then
+		if grep -Fqi "no crontab for" "$current_error"; then
+			: > "$current_file"
+		else
+			rm -f "$current_file" "$current_error" "$next_file"
+			exec {lock_fd}>&-
+			return 1
+		fi
+	fi
+	awk -v current="$script_file" -v legacy="$legacy_script_file" '
+		index($0, current) == 0 && (legacy == current || index($0, legacy) == 0) { print }
+	' "$current_file" > "$next_file"
+	[ "$action" = "install" ] && printf '%s\n' "$cron_line" >> "$next_file"
+	if ! crontab "$next_file"; then
+		rm -f "$current_file" "$current_error" "$next_file"
+		exec {lock_fd}>&-
+		return 1
+	fi
+	rm -f "$current_file" "$current_error" "$next_file"
+	exec {lock_fd}>&-
 }
 
 docker_compose_update_install_one() {
 	local idx="$1"
 	local project="$2"
 	local workdir="$3"
-	local containers="$4"
-	local script_file cron_line
+	local config_files="$4"
+	local script_file legacy_script_file cron_line project_id config_file
+	local -a compose_config_files
 	root_use
 	check_crontab_installed
-	script_file=$(docker_compose_update_script_file "$project" "$workdir")
+	if ! docker compose version >/dev/null 2>&1; then
+		echo -e "${gl_hong}Docker Compose 插件不可用，无法配置自动更新。${gl_bai}"
+		return 1
+	fi
+	if ! docker compose up --help 2>/dev/null | grep -q -- '--wait'; then
+		echo -e "${gl_hong}Docker Compose 版本过旧，不支持健康等待，请先更新 Docker。${gl_bai}"
+		return 1
+	fi
+	if [ ! -d "$workdir" ]; then
+		echo -e "${gl_hong}项目目录不存在: $workdir${gl_bai}"
+		return 1
+	fi
+	if [ -n "$config_files" ]; then
+		IFS=',' read -r -a compose_config_files <<< "$config_files"
+		for config_file in "${compose_config_files[@]}"; do
+			if [ "${config_file#/}" = "$config_file" ]; then
+				config_file="$workdir/$config_file"
+			fi
+			if [ ! -f "$config_file" ]; then
+				echo -e "${gl_hong}Compose 配置不存在: $config_file${gl_bai}"
+				return 1
+			fi
+		done
+	fi
+	project_id=$(docker_compose_update_project_id "$project" "$workdir" "$config_files")
+	script_file=$(docker_compose_update_script_file "$project" "$workdir" "$config_files")
+	legacy_script_file=$(docker_compose_update_legacy_script_file "$project" "$workdir")
 	cron_line=$(docker_compose_update_cron_line "$script_file" "$idx")
-	docker_compose_update_write_script "$project" "$workdir" "$containers" "$script_file"
-	(crontab -l 2>/dev/null | grep -vF "$script_file"; echo "$cron_line") | crontab -
+	if ! docker_compose_update_write_script "$project" "$workdir" "$config_files" "$script_file" "$project_id"; then
+		echo -e "${gl_hong}自动更新脚本写入失败: $project${gl_bai}"
+		return 1
+	fi
+	if ! docker_compose_update_update_crontab install "$script_file" "$legacy_script_file" "$cron_line"; then
+		echo -e "${gl_hong}crontab 写入失败，脚本已保留但不会定时执行。${gl_bai}"
+		return 1
+	fi
+	[ "$legacy_script_file" != "$script_file" ] && rm -f "$legacy_script_file"
+	if ! docker_compose_update_ensure_logrotate; then
+		echo -e "${gl_huang}警告: 日志轮转配置失败，请检查 /etc/logrotate.d。${gl_bai}"
+	fi
 	echo -e "${gl_lv}已配置 Docker Compose 自动更新: $project${gl_bai}"
 	echo "脚本: $script_file"
 	echo "定时: $cron_line"
@@ -11449,18 +11694,102 @@ docker_compose_update_install_one() {
 docker_compose_update_remove_one() {
 	local project="$1"
 	local workdir="$2"
-	local script_file
+	local config_files="$3"
+	local script_file legacy_script_file
 	root_use
-	script_file=$(docker_compose_update_script_file "$project" "$workdir")
-	rm -f "$script_file"
-	crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+	script_file=$(docker_compose_update_script_file "$project" "$workdir" "$config_files")
+	legacy_script_file=$(docker_compose_update_legacy_script_file "$project" "$workdir")
+	if ! docker_compose_update_update_crontab remove "$script_file" "$legacy_script_file"; then
+		echo -e "${gl_hong}crontab 更新失败，未删除自动更新脚本。${gl_bai}"
+		return 1
+	fi
+	if ! rm -f "$script_file" "$legacy_script_file"; then
+		echo -e "${gl_hong}自动更新脚本删除失败: $project${gl_bai}"
+		return 1
+	fi
 	echo -e "${gl_lv}已卸载 Docker Compose 自动更新: $project${gl_bai}"
+}
+
+docker_compose_update_expected_files() {
+	local project workdir config_files
+	while IFS=$'\t' read -r project workdir config_files; do
+		[ -n "$project" ] || continue
+		docker_compose_update_script_file "$project" "$workdir" "$config_files"
+		docker_compose_update_legacy_script_file "$project" "$workdir"
+	done < <(docker_compose_update_discover_projects)
+}
+
+docker_compose_update_cron_script_files() {
+	local script_dir
+	script_dir=$(docker_compose_update_script_dir)
+	crontab -l 2>/dev/null | awk -v prefix="$script_dir/compose_update_" '
+		{
+			for (i = 1; i <= NF; i++) {
+				if (index($i, prefix) == 1 && $i ~ /\.sh$/) print $i
+			}
+		}
+	' | sort -u
+}
+
+docker_compose_update_orphan_files() {
+	local file
+	local -A expected
+	while IFS= read -r file; do
+		[ -n "$file" ] && expected["$file"]=1
+	done < <(docker_compose_update_expected_files)
+	{
+		find "$(docker_compose_update_script_dir)" -maxdepth 1 -type f -name 'compose_update_*.sh' -print 2>/dev/null
+		docker_compose_update_cron_script_files
+	} | sort -u | while IFS= read -r file; do
+		[ -n "$file" ] || continue
+		[ -n "${expected[$file]:-}" ] || printf '%s\n' "$file"
+	done
+}
+
+docker_compose_update_show_orphans() {
+	local file count=0
+	while IFS= read -r file; do
+		[ -n "$file" ] || continue
+		if [ "$count" -eq 0 ]; then
+			echo -e "${gl_huang}失效或已删除项目的自动更新任务:${gl_bai}"
+		fi
+		count=$((count + 1))
+		echo "    $file"
+	done < <(docker_compose_update_orphan_files)
+}
+
+docker_compose_update_cleanup_orphans() {
+	local file script_dir
+	local -a orphan_files=()
+	mapfile -t orphan_files < <(docker_compose_update_orphan_files)
+	if [ "${#orphan_files[@]}" -eq 0 ]; then
+		echo -e "${gl_lv}没有失效任务。${gl_bai}"
+		return 0
+	fi
+	read -e -p "确认删除以上 ${#orphan_files[@]} 个失效任务？(y/N): " confirm
+	if [ "$confirm" != "y" ] && [ "$confirm" != "Y" ]; then
+		echo "已取消"
+		return 0
+	fi
+	script_dir="$(docker_compose_update_script_dir)/"
+	for file in "${orphan_files[@]}"; do
+		case "$file" in
+			"${script_dir}"compose_update_*.sh) ;;
+			*) echo -e "${gl_hong}跳过非托管路径: $file${gl_bai}"; continue ;;
+		esac
+		if ! docker_compose_update_update_crontab remove "$file" "$file"; then
+			echo -e "${gl_hong}失效任务的 crontab 清理失败: $file${gl_bai}"
+			return 1
+		fi
+		rm -f "$file" || return 1
+	done
+	echo -e "${gl_lv}失效任务已清理。${gl_bai}"
 }
 
 docker_compose_update_handle_numbers() {
 	local action="$1"
 	local nums="$2"
-	local n item idx project workdir containers
+	local n item idx project workdir config_files
 	for n in $nums; do
 		if ! [[ "$n" =~ ^[0-9]+$ ]]; then
 			echo "跳过无效编号: $n"
@@ -11470,17 +11799,17 @@ docker_compose_update_handle_numbers() {
 			echo "跳过无效编号: $n"
 			continue
 		fi
-		IFS='|' read -r idx project workdir containers <<< "$item"
+		IFS=$'\t' read -r idx project workdir config_files <<< "$item"
 		if [ "$action" = "install" ]; then
-			docker_compose_update_install_one "$idx" "$project" "$workdir" "$containers"
+			docker_compose_update_install_one "$idx" "$project" "$workdir" "$config_files"
 		else
-			docker_compose_update_remove_one "$project" "$workdir"
+			docker_compose_update_remove_one "$project" "$workdir" "$config_files"
 		fi
 	done
 }
 
 docker_compose_auto_update_manager() {
-	if ! command -v docker >/dev/null 2>&1; then
+	if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
 		echo -e "${gl_hong}未检测到 Docker，请先安装 Docker。${gl_bai}"
 		return 1
 	fi
@@ -11494,6 +11823,7 @@ docker_compose_auto_update_manager() {
 		echo -e "${gl_kjlan}2.   ${gl_bai}卸载自动更新（支持多选，输入编号，如: 2 4）"
 		echo -e "${gl_kjlan}3.   ${gl_bai}一键安装（默认全选，可自行删除编号）"
 		echo -e "${gl_kjlan}4.   ${gl_bai}一键卸载（默认全选，可自行删除编号）"
+		echo -e "${gl_kjlan}5.   ${gl_bai}清理失效或已删除项目的任务"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回上一级菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
@@ -11523,6 +11853,7 @@ docker_compose_auto_update_manager() {
 					echo "已取消"
 				fi
 				;;
+			5) docker_compose_update_cleanup_orphans ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac

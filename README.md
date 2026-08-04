@@ -197,11 +197,13 @@ d
 | 7 | Docker 清理 | 清理无用 Docker 资源 |
 | 8 | 更换 Docker 源 | 配置默认 Docker 镜像源：`hub.333186.xyz`、`docker.m.daocloud.io`、`docker.1ms.run`、`docker.registry.cyou` |
 | 9 | 编辑 daemon.json 文件 | 编辑 Docker daemon 配置 |
-| 10 | Docker Compose 自动更新 | 自动检测 Compose 项目，配置定时 `docker compose pull/up -d` |
+| 10 | Docker Compose 自动更新 | 保留项目名和配置文件，定时拉取并健康检查；失败自动恢复旧镜像 |
 | 11 | 开启 Docker IPv6 访问 | 写入 Docker IPv6 配置 |
 | 12 | 关闭 Docker IPv6 访问 | 关闭 Docker IPv6 配置 |
 | 19 | 备份/迁移/还原 Docker 环境 | 备份、迁移和还原 Docker 项目 |
 | 20 | 卸载 Docker 环境 | 卸载 Docker |
+
+Compose 自动更新不会预先执行 `docker compose down`。每个任务使用独立锁，先拉取镜像，再通过原项目名、完整配置文件列表和当前运行服务执行 `up -d --wait`；拉取失败时现有容器保持运行，启动或健康检查失败且旧镜像完整可用时自动恢复。菜单可识别旧版脚本、损坏脚本以及项目删除后遗留的任务，并提供重新安装和清理入口。日志每天轮转，最多保留 14 份且单文件不超过 10 MB。
 
 ### SSH管理
 

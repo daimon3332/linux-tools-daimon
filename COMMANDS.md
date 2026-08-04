@@ -1143,38 +1143,24 @@ docker ps -a --format '{{.Names}}'
 docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}|{{ index .Config.Labels "com.docker.compose.project.working_dir" }}|{{ index .Config.Labels "com.docker.compose.project.config_files" }}' 容器名
 crontab -l
 ```
-解释：自动扫描所有 Docker 容器，读取 Docker Compose 标签，按 Compose 项目去重展示；同时检查自动更新脚本和 crontab 是否已配置。
+解释：自动扫描所有 Docker 容器，读取项目名、工作目录和完整 Compose 配置文件列表，按实际 Compose 项目去重展示；同时检查生成脚本的语法、任务标识和 crontab。旧版脚本会显示“需重新安装”，已删除项目残留的脚本或 cron 会单独列出。
 
 安装自动更新：
 
 ```bash
 mkdir -p /root/linux-daimon/docker-compose-update /var/log/docker-compose-update
-cat > /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh <<'EOF'
-#!/bin/bash
-COMPOSE_PATH="/root/CLIProxyAPI"
-echo "========================================"
-echo "开始执行 Docker Compose 更新: $(date '+%Y-%m-%d %H:%M:%S')"
-echo "========================================"
-cd "$COMPOSE_PATH" || exit 1
-docker compose down
-docker compose pull
-docker compose up -d
-echo "========================================"
-echo "更新完成: $(date '+%Y-%m-%d %H:%M:%S')"
-echo "========================================"
-EOF
-chmod +x /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh
-(crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh"; echo "错开的时间 /bin/bash /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh >> /var/log/docker-compose-update/cron_compose_update_项目名_路径.log 2>&1") | crontab -
+docker compose -p 项目名 -f /项目路径/docker-compose.yml pull --ignore-buildable
+docker compose -p 项目名 -f /项目路径/docker-compose.yml up -d --wait --wait-timeout 120
 ```
-解释：每个 Compose 项目生成一个独立更新脚本；脚本进入项目目录执行 `docker compose down && docker compose pull && docker compose up -d`，定时任务会按项目编号错开分钟，避免所有项目同一时间更新。
+解释：以上命令由脚本自动生成，不需要手工执行。任务文件名使用项目名和项目身份哈希，避免路径清理后的同名覆盖；项目名和全部 `-f` 配置会被保留。执行时使用独立锁并读取当前运行服务，先保存旧镜像 ID，再拉取和启动，不会预先停止容器。拉取失败时保持现有容器运行；启动或健康检查失败且旧镜像完整可用时自动恢复，并以非零状态退出。定时任务按项目编号错开执行，日志由 `/etc/logrotate.d/docker-compose-update` 每天轮转，保留 14 份，单文件上限 10 MB。
 
 卸载自动更新：
 
 ```bash
-rm -f /root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh
-crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/docker-compose-update/compose_update_项目名_路径.sh" | crontab -
+rm -f /root/linux-daimon/docker-compose-update/compose_update_项目名_项目哈希.sh
+crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/docker-compose-update/compose_update_项目名_项目哈希.sh" | crontab -
 ```
-解释：删除对应项目的自动更新脚本和 crontab 任务。
+解释：菜单卸载会先原子更新 crontab，再删除新版和对应旧版脚本；“清理失效任务”用于删除已经无法从 Docker 标签发现的项目残留任务。
 
 ### 8.11 开启 Docker IPv6 访问
 
