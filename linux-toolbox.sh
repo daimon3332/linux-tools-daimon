@@ -55,8 +55,8 @@ DAIMON_UPDATE_GITHUB_URL="https://raw.githubusercontent.com/daimon3332/linux-too
 DAIMON_UPDATE_GITHUB_PROXY_URL="https://gh-proxy.com/raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh"
 DAIMON_LOCAL_SCRIPT="$DAIMON_ROOT_DIR/linux-toolbox.sh"
 DAIMON_OLD_LOCAL_SCRIPT="$DAIMON_ROOT_DIR/daimon.sh"
-DAIMON_REPO_URL="https://github.com/daimon3332/daimon-linux-scripts"
-DAIMON_AGREEMENT_URL="https://github.com/daimon3332/daimon-linux-scripts/blob/master/USER_AGREEMENT.md"
+DAIMON_REPO_URL="https://github.com/daimon3332/linux-tools-daimon"
+DAIMON_AGREEMENT_URL="https://github.com/daimon3332/linux-tools-daimon/blob/master/USER_AGREEMENT.md"
 DAIMON_GITHUB_PROXY_PRIMARY="https://gh-proxy.com/"
 mkdir -p "$DAIMON_SCRIPT_DIR" "$DAIMON_BACKUP_DIR" "$DAIMON_BACKUP_SH_DIR" "$DAIMON_TOOLS_DIR" "$DAIMON_DOCKER_COMPOSE_UPDATE_DIR" >/dev/null 2>&1 || true
 
@@ -10391,7 +10391,7 @@ EOF
       if daimon_is_cn; then
         bash -c "$(curl -fsSL https://gitee.com/RubyMetric/nvm-cn/raw/main/install.sh)" || return 1
       else
-        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash || return 1
+        curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh | bash || return 1
       fi
     fi
 
@@ -18678,7 +18678,7 @@ common_one_click_scripts() {
 			8) daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H ;;
 			9) daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh" ;;
 			10) exec bash -c 'bash <(curl -sL kejilion.sh)' ;;
-			11) daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/master/sb.sh" "sing-box-daimon.sh" ;;
+			11) daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh" "sing-box-daimon.sh" ;;
 			12) daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh" "runTcpQuality.sh" ;;
 			0) return ;;
 			*) echo "无效的输入!"; break_end ;;

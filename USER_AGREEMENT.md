@@ -1,6 +1,6 @@
 # daimon脚本工具箱用户说明
 
-项目地址：https://github.com/daimon3332/daimon-linux-scripts
+项目地址：https://github.com/daimon3332/linux-tools-daimon
 
 daimon脚本工具箱是个人自用的 Linux 脚本工具箱，项目开源发布，按现状提供。
 

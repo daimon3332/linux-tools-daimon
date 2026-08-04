@@ -1,0 +1,14 @@
+plan.md
+.env
+.env.*
+!.env.example
+*.log
+*.tmp
+.tmp/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.pem
+*.key
+*.crt

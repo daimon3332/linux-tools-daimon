@@ -950,7 +950,7 @@ python3.12 --version
 python --version
 
 # npm / nodejs：国外使用官方 nvm，国内使用 nvm-cn，然后安装 LTS
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.4/install.sh | bash
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh | bash
 bash -c "$(curl -fsSL https://gitee.com/RubyMetric/nvm-cn/raw/main/install.sh)"
 . ~/.nvm/nvm.sh
 nvm install --lts
@@ -1872,7 +1872,7 @@ bash <(curl -sL kejilion.sh)
 ```bash
 bash /root/linux-daimon/daimon/sing-box-daimon.sh
 ```
-解释：sing-box 安装与管理脚本，来源 `https://raw.githubusercontent.com/daimon3332/sing-box-daimon/master/sb.sh`。
+解释：sing-box 安装与管理脚本，来源 `https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh`。
 
 ```bash
 bash /root/linux-daimon/daimon/runTcpQuality.sh
