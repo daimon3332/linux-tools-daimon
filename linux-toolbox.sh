@@ -19210,11 +19210,11 @@ bitwarden_rclone_conf_file() {
 }
 
 bitwarden_sync_script_file() {
-	echo "${DAIMON_BACKUP_SH_DIR:-/root/linux-daimon/backup-sh}/Vaultwarden_OneDrive_to_Infini.sh"
+	echo "${DAIMON_BACKUP_SH_DIR:-/root/linux-daimon/backup-sh}/Vaultwarden_OneDrive_to_Kissska1.sh"
 }
 
 bitwarden_sync_cron_line() {
-	echo "0 6 * * * /bin/bash $(bitwarden_sync_script_file) >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1"
+	echo "0 6 * * * /bin/bash $(bitwarden_sync_script_file) >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1"
 }
 
 bitwarden_rclone_config_status() {
@@ -19382,6 +19382,10 @@ bitwarden_configure_sync_script() {
 		return 1
 	fi
 	check_crontab_installed
+	if ! crontab_sync_remote_ready; then
+		echo -e "${gl_hong}kissska1 连接检查失败，未修改同步脚本。${gl_bai}"
+		return 1
+	fi
 
 	local script_dir="$DAIMON_BACKUP_SH_DIR"
 	local script_file cron_line
@@ -19394,7 +19398,7 @@ bitwarden_configure_sync_script() {
 
 # ========= 源与目标 =========
 SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"
-DEST_REMOTE="Infini-cloud:/BitwardenBackup"
+DEST_REMOTE="kissska1:/BitwardenBackup"
 
 # ========= 日志 =========
 LOG_DIR="/var/log/rclone"
@@ -19424,10 +19428,11 @@ EOF
 	echo "脚本路径: $script_file"
 	echo "定时任务: $cron_line"
 	echo "同步日志: /var/log/rclone/vaultwarden_backup_sync_日期.log"
-	echo "cron 日志: /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log"
+	echo "cron 日志: /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log"
 }
 
 bitwarden_manager() {
+	crontab_sync_reconcile_legacy || true
 	while true; do
 		clear
 		echo -e "Bitwarden管理"
@@ -19440,7 +19445,7 @@ bitwarden_manager() {
 		echo -e "${gl_kjlan}1.   ${gl_bai}配置 rclone.conf 文件"
 		echo -e "${gl_kjlan}2.   ${gl_bai}数据备份"
 		echo -e "${gl_kjlan}3.   ${gl_bai}数据还原"
-		echo -e "${gl_kjlan}4.   ${gl_bai}配置 Bitwarden 同步脚本（OneDrive -> Infini-cloud）"
+		echo -e "${gl_kjlan}4.   ${gl_bai}配置 Bitwarden 同步脚本（OneDrive -> kissska1）"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice
@@ -19465,11 +19470,29 @@ crontab_sync_log_dir() {
 	echo "/var/log/rclone"
 }
 
-crontab_sync_script_file_by_id() {
+crontab_sync_target_remote() {
+	echo "kissska1"
+}
+
+crontab_sync_remote_ready() {
+	local remote
+	remote=$(crontab_sync_target_remote)
+	command -v rclone >/dev/null 2>&1 || return 1
+	rclone lsd "${remote}:" --max-depth 1 >/dev/null 2>&1
+}
+
+crontab_sync_legacy_script_file_by_id() {
 	case "$1" in
 		bitwarden) echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Infini.sh" ;;
-		imagebed) echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh" ;;
 		via) echo "$(crontab_sync_backup_dir)/Via_Infini_to_OneDrive.sh" ;;
+	esac
+}
+
+crontab_sync_script_file_by_id() {
+	case "$1" in
+		bitwarden) echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Kissska1.sh" ;;
+		imagebed) echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh" ;;
+		via) echo "$(crontab_sync_backup_dir)/Via_OneDrive_to_Kissska1.sh" ;;
 		nginxdomain) echo "$(crontab_sync_backup_dir)/Nginx_Domain_Local_Backup.sh" ;;
 		custom) echo "$(crontab_sync_backup_dir)/$2" ;;
 	esac
@@ -19479,9 +19502,9 @@ crontab_sync_cron_line_by_id() {
 	local id="$1"
 	local script_file="$2"
 	case "$id" in
-		bitwarden) echo "0 6 * * * /bin/bash $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1" ;;
+		bitwarden) echo "0 6 * * * /bin/bash $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1" ;;
 		imagebed) echo "0 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1" ;;
-		via) echo "30 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1" ;;
+		via) echo "30 4 * * * /bin/bash $script_file >> /var/log/rclone/cron_Via_OneDrive_to_Kissska1.log 2>&1" ;;
 		nginxdomain) echo "0 5 * * * /bin/bash $script_file >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1" ;;
 		custom)
 			local script_base
@@ -19498,7 +19521,7 @@ crontab_sync_script_content_ok() {
 	case "$id" in
 		bitwarden)
 			grep -q 'SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"' "$script_file" 2>/dev/null \
-				&& grep -q 'DEST_REMOTE="Infini-cloud:/BitwardenBackup"' "$script_file" 2>/dev/null \
+				&& grep -q 'DEST_REMOTE="kissska1:/BitwardenBackup"' "$script_file" 2>/dev/null \
 				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
 			;;
 		imagebed)
@@ -19507,8 +19530,8 @@ crontab_sync_script_content_ok() {
 				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
 			;;
 		via)
-			grep -q '"Infini-cloud:Via"' "$script_file" 2>/dev/null \
-				&& grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \
+			grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \
+				&& grep -q '"kissska1:Via"' "$script_file" 2>/dev/null \
 				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
 			;;
 		nginxdomain)
@@ -19519,7 +19542,7 @@ crontab_sync_script_content_ok() {
 			;;
 		custom)
 			grep -q 'SRC1="/root"' "$script_file" 2>/dev/null \
-				&& grep -q 'DEST1="Infini-cloud:$SCRIPT_NAME"' "$script_file" 2>/dev/null \
+				&& grep -q 'DEST1="kissska1:$SCRIPT_NAME"' "$script_file" 2>/dev/null \
 				&& grep -q 'DEST2="qq3303338052@outlook:$SCRIPT_NAME"' "$script_file" 2>/dev/null \
 				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
 			;;
@@ -19578,8 +19601,10 @@ crontab_sync_custom_files() {
 	dir=$(crontab_sync_backup_dir)
 	[ -d "$dir" ] || return 0
 	find "$dir" -maxdepth 1 -type f -name '*.sh' \
+		! -name 'Vaultwarden_OneDrive_to_Kissska1.sh' \
 		! -name 'Vaultwarden_OneDrive_to_Infini.sh' \
 		! -name 'ImageBed_CloudFlare-R2_to_OneDrive.sh' \
+		! -name 'Via_OneDrive_to_Kissska1.sh' \
 		! -name 'Via_Infini_to_OneDrive.sh' \
 		! -name 'Nginx_Domain_Local_Backup.sh' \
 		-printf '%f\n' 2>/dev/null | sort
@@ -19596,7 +19621,7 @@ crontab_sync_write_script() {
 
 # ========= 源与目标 =========
 SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"
-DEST_REMOTE="Infini-cloud:/BitwardenBackup"
+DEST_REMOTE="kissska1:/BitwardenBackup"
 
 # ========= 日志 =========
 LOG_DIR="/var/log/rclone"
@@ -19644,13 +19669,13 @@ EOF
 #!/bin/bash
 
 LOG_DIR="/var/log/rclone"
-LOG_FILE="$LOG_DIR/infini_to_gdrive_via.log"
+LOG_FILE="$LOG_DIR/outlook_to_kissska1_via.log"
 
 mkdir -p "$LOG_DIR"
 
 rclone sync \
-  "Infini-cloud:Via" \
   "qq3303338052@outlook:Via" \
+  "kissska1:Via" \
   --transfers=8 \
   --checkers=16 \
   --progress \
@@ -19717,7 +19742,7 @@ SRC1="/root"
 
 SCRIPT_NAME=$(basename "$0" .sh)
 
-DEST1="Infini-cloud:$SCRIPT_NAME"
+DEST1="kissska1:$SCRIPT_NAME"
 DEST2="qq3303338052@outlook:$SCRIPT_NAME"
 
 LOG_DIR="/var/log/rclone"
@@ -19738,7 +19763,7 @@ rclone sync \
   --log-file="$LOG_FILE" \
   --log-level INFO
 
-# Infini-cloud
+# kissska1
 rclone sync \
   "$SRC1" "$DEST1" \
   --exclude "snap/**" \
@@ -19757,6 +19782,88 @@ EOF
 	chmod +x "$script_file"
 }
 
+crontab_sync_reconcile_legacy() {
+	[ "${CRONTAB_SYNC_RECONCILED:-false}" = "true" ] && return 0
+
+	local dir current_cron bit_old via_old bit_new via_new
+	local bit_old_line via_old_line bit_schedule via_schedule
+	local had_bit=false had_via=false legacy_found=false custom_file
+	dir=$(crontab_sync_backup_dir)
+	bit_old=$(crontab_sync_legacy_script_file_by_id bitwarden)
+	via_old=$(crontab_sync_legacy_script_file_by_id via)
+	bit_new=$(crontab_sync_script_file_by_id bitwarden)
+	via_new=$(crontab_sync_script_file_by_id via)
+	current_cron=$(crontab -l 2>/dev/null || true)
+	bit_old_line=$(printf '%s\n' "$current_cron" | grep -F "$bit_old" | head -n1 || true)
+	via_old_line=$(printf '%s\n' "$current_cron" | grep -F "$via_old" | head -n1 || true)
+
+	if [ -f "$bit_old" ] || [ -n "$bit_old_line" ]; then legacy_found=true; fi
+	if [ -f "$via_old" ] || [ -n "$via_old_line" ]; then legacy_found=true; fi
+	if [ -d "$dir" ] && grep -RIl 'Infini-cloud' "$dir"/*.sh >/dev/null 2>&1; then
+		legacy_found=true
+	fi
+	if ! $legacy_found; then
+		CRONTAB_SYNC_RECONCILED=true
+		return 0
+	fi
+
+	if ! crontab_sync_remote_ready; then
+		echo -e "${gl_hong}检测到旧 Infini-cloud 同步任务，但 kissska1 连接检查失败，已保留原任务。${gl_bai}"
+		return 1
+	fi
+
+	mkdir -p "$dir" "$(crontab_sync_log_dir)"
+	if [ -f "$bit_old" ] || [ -n "$bit_old_line" ]; then
+		crontab_sync_write_script bitwarden "$bit_new"
+		bash -n "$bit_new" || { rm -f "$bit_new"; return 1; }
+		[ -n "$bit_old_line" ] && had_bit=true
+	fi
+	if [ -f "$via_old" ] || [ -n "$via_old_line" ]; then
+		crontab_sync_write_script via "$via_new"
+		bash -n "$via_new" || { rm -f "$via_new"; return 1; }
+		[ -n "$via_old_line" ] && had_via=true
+	fi
+
+	for custom_file in "$dir"/*.sh; do
+		[ -f "$custom_file" ] || continue
+		case "$custom_file" in "$bit_old"|"$via_old") continue ;; esac
+		if grep -q 'Infini-cloud' "$custom_file" 2>/dev/null; then
+			sed -i 's/Infini-cloud/kissska1/g' "$custom_file"
+			bash -n "$custom_file" || { echo -e "${gl_hong}迁移后语法检查失败: $custom_file${gl_bai}"; return 1; }
+		fi
+	done
+
+	bit_schedule=$(printf '%s\n' "$bit_old_line" | awk '{print $1" "$2" "$3" "$4" "$5}')
+	via_schedule=$(printf '%s\n' "$via_old_line" | awk '{print $1" "$2" "$3" "$4" "$5}')
+	[ -z "$bit_schedule" ] && bit_schedule="0 6 * * *"
+	[ -z "$via_schedule" ] && via_schedule="30 4 * * *"
+
+	local cron_backup filtered_cron
+	cron_backup=$(mktemp) || return 1
+	printf '%s\n' "$current_cron" > "$cron_backup"
+	filtered_cron=$(printf '%s\n' "$current_cron" \
+		| grep -vF "$bit_old" \
+		| grep -vF "$via_old" \
+		| grep -vF 'Infini-cloud' || true)
+	if $had_bit; then
+		filtered_cron="$filtered_cron
+$bit_schedule /bin/bash $bit_new >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1"
+	fi
+	if $had_via; then
+		filtered_cron="$filtered_cron
+$via_schedule /bin/bash $via_new >> /var/log/rclone/cron_Via_OneDrive_to_Kissska1.log 2>&1"
+	fi
+	if ! printf '%s\n' "$filtered_cron" | sed '/^[[:space:]]*$/d' | crontab -; then
+		crontab "$cron_backup" 2>/dev/null || true
+		rm -f "$cron_backup"
+		echo -e "${gl_hong}crontab 迁移失败，已恢复原任务。${gl_bai}"
+		return 1
+	fi
+	rm -f "$cron_backup" "$bit_old" "$via_old"
+	CRONTAB_SYNC_RECONCILED=true
+	echo -e "${gl_lv}已将旧 Infini-cloud 同步任务迁移到 kissska1。${gl_bai}"
+}
+
 crontab_sync_install_one() {
 	local id="$1"
 	local script_file="$2"
@@ -19766,6 +19873,14 @@ crontab_sync_install_one() {
 		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
 		return 1
 	fi
+	case "$id" in
+		bitwarden|via|custom)
+			if ! crontab_sync_remote_ready; then
+				echo -e "${gl_hong}kissska1 连接检查失败，未修改脚本和定时任务。${gl_bai}"
+				return 1
+			fi
+			;;
+	esac
 	check_crontab_installed
 	crontab_sync_write_script "$id" "$script_file"
 	(crontab -l 2>/dev/null | grep -vF "$script_file"; echo "$cron_line") | crontab -
@@ -19886,6 +20001,10 @@ crontab_sync_create_custom() {
 		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
 		return 1
 	fi
+	if ! crontab_sync_remote_ready; then
+		echo -e "${gl_hong}kissska1 连接检查失败，未创建同步脚本。${gl_bai}"
+		return 1
+	fi
 	check_crontab_installed
 	crontab_sync_write_script custom "$file"
 	(crontab -l 2>/dev/null | grep -vF "$file"; echo "$cron_line") | crontab -
@@ -19895,6 +20014,7 @@ crontab_sync_create_custom() {
 }
 
 crontab_sync_manager() {
+	crontab_sync_reconcile_legacy || true
 	while true; do
 		clear
 		echo -e "crontab同步脚本管理"
@@ -20067,6 +20187,7 @@ kejilion_update() {
 
 
 kejilion_sh() {
+crontab_sync_reconcile_legacy || true
 while true; do
 clear
 echo -e "${gl_kjlan}"

@@ -281,7 +281,7 @@ d
 | 1 | 配置 rclone.conf 文件 | 从 `qq3303338052@outlook:/rclone.conf` 复制配置到 `vaultwarden-rclone-data` 卷，并验证 `[BitwardenBackup]` |
 | 2 | 数据备份 | 对运行中的 `vaultwarden-backup` 容器执行 `/app/backup.sh`，并检测上传成功字段 |
 | 3 | 数据还原 | 展示 `qq3303338052@outlook:/BitwardenBackup` 下的备份文件，按日期倒序选择后执行 restore |
-| 4 | 配置 Bitwarden 同步脚本 | 写入 `/root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh`，并添加每天 06:00 同步到 `Infini-cloud` 的 crontab |
+| 4 | 配置 Bitwarden 同步脚本 | 写入 `/root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh`，并添加每天 06:00 同步到 `kissska1` 的 crontab |
 | 0 | 返回主菜单 | 返回上一级菜单 |
 
 ### crontab同步脚本管理
@@ -290,10 +290,12 @@ d
 
 | 序号 | 名称 | 作用 |
 |---:|---|---|
-| 1 | Bitwarden 同步脚本 | 每天 06:00 同步 Bitwarden 备份到 `Infini-cloud` |
+| 1 | Bitwarden 同步脚本 | 每天 06:00 从 `qq3303338052@outlook` 同步 Bitwarden 备份到 `kissska1` |
 | 2 | 图床同步脚本 | 每天 04:00 同步图床数据 |
-| 3 | Via 同步脚本 | 每天 04:30 同步 Via 数据 |
+| 3 | Via 同步脚本 | 每天 04:30 从 `qq3303338052@outlook:Via` 同步到 `kissska1:Via` |
 | 4 | 域名和nginx配置备份脚本 | 每天 05:00 本地备份到 `/root/linux-daimon/backup/nginx-domain/auto_latest`，只保留 1 份，不使用 rclone |
+
+新版脚本启动或进入本菜单时，会先验证 `kissska1`，再自动删除旧 Infini-cloud 任务和脚本，保留原执行时间并生成对应的 kissska1 同步任务。
 
 | 序号 | 选项 | 作用 |
 |---:|---|---|

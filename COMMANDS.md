@@ -1718,12 +1718,12 @@ docker run --rm -it \
 
 ```bash
 mkdir -p /root/linux-daimon/backup-sh /var/log/rclone
-cat > /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh <<'EOF'
+cat > /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh <<'EOF'
 #!/bin/bash
 
 # ========= 源与目标 =========
 SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"
-DEST_REMOTE="Infini-cloud:/BitwardenBackup"
+DEST_REMOTE="kissska1:/BitwardenBackup"
 
 # ========= 日志 =========
 LOG_DIR="/var/log/rclone"
@@ -1745,10 +1745,10 @@ rclone sync \
 
 echo "===== $(date) Vaultwarden 备份同步完成（sync） =====" >> "$LOG_FILE"
 EOF
-chmod +x /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh
-(crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh"; echo "0 6 * * * /bin/bash /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1") | crontab -
+chmod +x /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh
+(crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh"; echo "0 6 * * * /bin/bash /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1") | crontab -
 ```
-解释：脚本会自动检测同步脚本和 crontab 是否已配置；配置后每天 06:00 使用 `rclone sync` 从 `qq3303338052@outlook:/BitwardenBackup` 同步到 `Infini-cloud:/BitwardenBackup`。
+解释：脚本会自动检测同步脚本和 crontab 是否已配置；配置后每天 06:00 使用 `rclone sync` 从 `qq3303338052@outlook:/BitwardenBackup` 同步到 `kissska1:/BitwardenBackup`。
 
 ## 17. crontab 同步脚本管理
 
@@ -1758,7 +1758,7 @@ chmod +x /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh
 ls -1 /root/linux-daimon/backup-sh/*.sh 2>/dev/null
 crontab -l
 ```
-解释：显示内置脚本和自定义脚本的安装状态；状态会同时检查脚本文件、脚本内容关键字段和 crontab 里的精确任务行。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
+解释：显示内置脚本和自定义脚本的安装状态；状态会同时检查脚本文件、脚本内容关键字段和 crontab 里的精确任务行。启动新版脚本或进入本菜单时，会在确认 `kissska1` 可访问后自动迁移旧 Infini-cloud 脚本和任务，并保留原执行时间。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
 
 内置脚本目录：
 
@@ -1780,9 +1780,9 @@ chmod +x /root/linux-daimon/backup-sh/脚本名.sh
 Bitwarden 同步脚本：
 
 ```bash
-0 6 * * * /bin/bash /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Infini.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Infini.log 2>&1
+0 6 * * * /bin/bash /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1
 ```
-解释：每天 06:00 同步 `qq3303338052@outlook:/BitwardenBackup` 到 `Infini-cloud:/BitwardenBackup`。
+解释：每天 06:00 同步 `qq3303338052@outlook:/BitwardenBackup` 到 `kissska1:/BitwardenBackup`。
 
 图床同步脚本：
 
@@ -1794,9 +1794,9 @@ Bitwarden 同步脚本：
 Via 同步脚本：
 
 ```bash
-30 4 * * * /bin/bash /root/linux-daimon/backup-sh/Via_Infini_to_OneDrive.sh >> /var/log/rclone/cron_Via_Infini_to_OneDrive.log 2>&1
+30 4 * * * /bin/bash /root/linux-daimon/backup-sh/Via_OneDrive_to_Kissska1.sh >> /var/log/rclone/cron_Via_OneDrive_to_Kissska1.log 2>&1
 ```
-解释：每天 04:30 同步 `Infini-cloud:Via` 到 `qq3303338052@outlook:Via`。
+解释：每天 04:30 同步 `qq3303338052@outlook:Via` 到 `kissska1:Via`。
 
 域名和 nginx 配置备份脚本：
 
@@ -1811,7 +1811,7 @@ Via 同步脚本：
 cat > /root/linux-daimon/backup-sh/自定义名称.sh
 45 4 * * * /bin/bash /root/linux-daimon/backup-sh/自定义名称.sh >> /var/log/rclone/cron_自定义名称.log 2>&1
 ```
-解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 同步到 `Infini-cloud:脚本名` 和 `qq3303338052@outlook:脚本名`，并排除 `/root` 第一层隐藏文件/目录和 `snap/**`，子目录里的 `.env` 等隐藏文件会同步。
+解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 同步到 `kissska1:脚本名` 和 `qq3303338052@outlook:脚本名`，并排除 `/root` 第一层隐藏文件/目录和 `snap/**`，子目录里的 `.env` 等隐藏文件会同步。
 
 ## 18. 常用的一键脚本
 
