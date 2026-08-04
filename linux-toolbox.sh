@@ -11526,7 +11526,8 @@ log "项目路径: $COMPOSE_PATH"
 if [ "${#TARGET_SERVICES[@]}" -gt 0 ]; then
 	log "当前运行服务: ${TARGET_SERVICES[*]}"
 else
-	log "未检测到运行中的服务，将更新默认服务"
+	log "未检测到运行中的服务，为保留停服状态，本次跳过"
+	exit 0
 fi
 
 config_command=(config --images)

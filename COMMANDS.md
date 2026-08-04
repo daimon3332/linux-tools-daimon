@@ -1152,7 +1152,7 @@ mkdir -p /root/linux-daimon/docker-compose-update /var/log/docker-compose-update
 docker compose -p 项目名 -f /项目路径/docker-compose.yml pull --ignore-buildable
 docker compose -p 项目名 -f /项目路径/docker-compose.yml up -d --wait --wait-timeout 120
 ```
-解释：以上命令由脚本自动生成，不需要手工执行。任务文件名使用项目名和项目身份哈希，避免路径清理后的同名覆盖；项目名和全部 `-f` 配置会被保留。执行时使用独立锁并读取当前运行服务，先保存旧镜像 ID，再拉取和启动，不会预先停止容器。拉取失败时保持现有容器运行；启动或健康检查失败且旧镜像完整可用时自动恢复，并以非零状态退出。定时任务按项目编号错开执行，日志由 `/etc/logrotate.d/docker-compose-update` 每天轮转，保留 14 份，单文件上限 10 MB。
+解释：以上命令由脚本自动生成，不需要手工执行。任务文件名使用项目名和项目身份哈希，避免路径清理后的同名覆盖；项目名和全部 `-f` 配置会被保留。执行时使用独立锁并读取当前运行服务；没有运行服务时跳过，避免重新启动用户主动停止的项目。任务先保存旧镜像 ID，再拉取和启动，不会预先停止容器。拉取失败时保持现有容器运行；启动或健康检查失败且旧镜像完整可用时自动恢复，并以非零状态退出。定时任务按项目编号错开执行，日志由 `/etc/logrotate.d/docker-compose-update` 每天轮转，保留 14 份，单文件上限 10 MB。
 
 卸载自动更新：
 
