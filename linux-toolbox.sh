@@ -11477,7 +11477,7 @@ restore_previous_images() {
 
 start_services() {
 	local recreate="${1:-false}"
-	local args=(up -d --wait --wait-timeout "$WAIT_TIMEOUT")
+	local args=(up -d --no-deps --wait --wait-timeout "$WAIT_TIMEOUT")
 	[ "$recreate" = "true" ] && args+=(--force-recreate)
 	[ "${#TARGET_SERVICES[@]}" -gt 0 ] && args+=("${TARGET_SERVICES[@]}")
 	run_compose "${args[@]}"
