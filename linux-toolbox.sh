@@ -18381,11 +18381,23 @@ nginx_domain_patch_challenge_file() {
     local src="$1" tmp
     tmp=$(mktemp "${src}.tmp.XXXXXX") || return 1
     awk '
-        BEGIN { inserted=0 }
+        BEGIN { inserted=0; depth=0; in_server=0 }
         {
             line=$0
-            print line
-            if (!inserted && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) {
+            if (line ~ /^[[:space:]]*server[[:space:]]*\{/) in_server=1
+            if (in_server && depth == 1 && line ~ /^[[:space:]]*return[[:space:]]+301[[:space:]]+.*;[[:space:]]*$/) {
+                indent=line
+                sub(/[^[:space:]].*$/, "", indent)
+                redirect=line
+                sub(/^[[:space:]]*return[[:space:]]+301[[:space:]]+/, "", redirect)
+                sub(/[[:space:]]*;[[:space:]]*$/, "", redirect)
+                print indent "if ($request_uri !~ ^/\\.well-known/acme-challenge/) {"
+                print indent "    return 301 " redirect ";"
+                print indent "}"
+            } else {
+                print line
+            }
+            if (!inserted && in_server && depth == 1 && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) {
                 print "    location ^~ /.well-known/acme-challenge/ {"
                 print "        root /var/www/acme-challenge;"
                 print "        default_type text/plain;"
@@ -18393,6 +18405,10 @@ nginx_domain_patch_challenge_file() {
                 print "    }"
                 inserted=1
             }
+            opens=line; gsub(/[^\{]/, "", opens)
+            closes=line; gsub(/[^\}]/, "", closes)
+            depth += length(opens) - length(closes)
+            if (in_server && depth == 0) in_server=0
         }
         END { exit(inserted ? 0 : 1) }
     ' "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
@@ -19110,7 +19126,9 @@ server {
         default_type text/plain;
         try_files \$uri =404;
     }
-    return 301 https://\$server_name\$request_uri;
+    if (\$request_uri !~ ^/\\.well-known/acme-challenge/) {
+        return 301 https://\$server_name\$request_uri;
+    }
 }
 
 server {
