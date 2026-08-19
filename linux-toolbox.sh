@@ -19252,6 +19252,12 @@ nginx_domain_migrate_existing_certs() {
 
 install_acme
 
+if [ "${1:-}" = "--install-renewal" ]; then
+    setup_cron
+    echo -e "${GREEN}Nginx + 域名续期脚本已安装${NC}"
+    exit 0
+fi
+
 show_menu() {
     echo ""
     echo -e "${GREEN}=========================================${NC}"
@@ -19362,8 +19368,12 @@ done
 DAIMON_CERT_NGINX_SCRIPT
 	chmod +x "$DAIMON_SCRIPT_DIR/cert_nginx.sh"
 	if [ "${DAIMON_UPDATE_CERT_HELPER_ONLY:-0}" = "1" ]; then
-		echo -e "${gl_lv}Nginx + 域名续期脚本已更新: $DAIMON_SCRIPT_DIR/cert_nginx.sh${gl_bai}"
-		return 0
+		if bash "$DAIMON_SCRIPT_DIR/cert_nginx.sh" --install-renewal; then
+			echo -e "${gl_lv}Nginx + 域名续期脚本已更新: $DAIMON_SCRIPT_DIR/cert_nginx.sh${gl_bai}"
+			return 0
+		fi
+		echo -e "${gl_hong}Nginx + 域名续期脚本更新失败${gl_bai}"
+		return 1
 	fi
 	bash "$DAIMON_SCRIPT_DIR/cert_nginx.sh"
 }

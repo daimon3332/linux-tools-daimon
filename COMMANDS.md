@@ -67,7 +67,7 @@ cp -f /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
 chmod +x /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
 ln -sf /usr/local/bin/d /usr/bin/d
 ```
-解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。替换前会选择“仅主脚本”或“同时更新 Nginx + 域名续期脚本”；选择同步时，新进程会原子重建 `/root/linux-daimon/daimon/cert_nginx.sh`。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
+解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。替换前会选择“仅主脚本”或“同时更新 Nginx + 域名续期脚本”；选择同步时，新进程会原子重建 `/root/linux-daimon/daimon/cert_nginx.sh`，并非交互安装新的续期包装脚本和 cron。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
 
 ## 1. 系统信息查询
 
