@@ -23,7 +23,7 @@ mkdir -p /root/linux-daimon/daimon
 
 ### 交互与备份约定
 
-- Nginx/域名菜单统一使用宿主机 Nginx + acme.sh；证书目录为 `/root/domain/<完整域名>`，证书续期会自动 reload Nginx。
+- Nginx/域名菜单统一使用宿主机 Nginx + acme.sh webroot；挑战目录为 `/var/www/acme-challenge`，证书目录为 `/root/domain/<完整域名>`，证书续期会自动 reload Nginx。
 - 申请证书不会杀死未知进程，若 80 端口被占用会提示处理；域名、配置名、端口输入非法时停留在当前菜单。
 - SSH/UFW 操作会先放行现有 sshd 端口；一键 SSH 配置必须粘贴有效公钥。
 - OpenClaw 项目还原前自动生成回滚包；Docker 备份删除需确认，备份目录仅接受 `/tmp/docker_backup_*`。
@@ -67,7 +67,7 @@ cp -f /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
 chmod +x /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
 ln -sf /usr/local/bin/d /usr/bin/d
 ```
-解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，备份旧脚本，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
+解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。替换前会选择“仅主脚本”或“同时更新 Nginx + 域名续期脚本”；选择同步时，新进程会原子重建 `/root/linux-daimon/daimon/cert_nginx.sh`。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
 
 ## 1. 系统信息查询
 
@@ -1387,31 +1387,29 @@ sh /root/linux-daimon/daimon/acme-install.sh email=asdad@163.com
 ```
 解释：安装依赖、安装 acme.sh，并设置默认 CA。
 
-默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx；11 备份域名+nginx 配置；12 恢复域名+nginx 配置。进入菜单只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启本地单份备份脚本。
+默认菜单：1 申请证书+配置 nginx；2 删除 nginx 配置+证书；3 申请证书；4 移除证书；5 查看证书列表；6 配置 nginx；7 删除 nginx 配置；8 创建测试页面；9 删除测试页面；10 安装 nginx；11 备份域名+nginx 配置；12 恢复域名+nginx 配置；13 迁移/修复现有证书（webroot）。进入菜单只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启本地单份备份脚本。
 
-申请证书：
+申请证书（webroot 模式，不停止 Nginx）：
 
 ```bash
 dig +short example.com A
 dig +short example.com AAAA
 ufw allow 80/tcp
 ufw allow 443/tcp
-systemctl stop nginx
-systemctl stop apache2
-systemctl stop httpd
-systemctl stop caddy
-lsof -t -iTCP:80 -sTCP:LISTEN | xargs kill -9
-~/.acme.sh/acme.sh --issue -d example.com --standalone --server letsencrypt --force
-~/.acme.sh/acme.sh --install-cert -d example.com --fullchain-file /root/domain/example/fullchain.pem --key-file /root/domain/example/privkey.pem --force
+mkdir -p /var/www/acme-challenge/.well-known/acme-challenge
+~/.acme.sh/acme.sh --issue -d example.com -w /var/www/acme-challenge --server letsencrypt --force
+~/.acme.sh/acme.sh --install-cert -d example.com --fullchain-file /root/domain/example/fullchain.pem --key-file /root/domain/example/privkey.pem --reloadcmd "nginx -t && systemctl reload nginx" --force
 ```
-解释：检查 DNS、释放 80 端口、申请并安装证书。
+解释：检查 DNS、确保 Nginx 的 `/.well-known/acme-challenge/` 指向 webroot、申请并安装证书；不会停止 Nginx 或杀死端口占用进程。
 
 自动续期：
 
 ```bash
-(crontab -l 2>/dev/null | grep -v "$HOME/.acme.sh/acme.sh --cron" ; echo "0 3 * * * $HOME/.acme.sh/acme.sh --cron --home $HOME/.acme.sh >/dev/null 2>&1") | crontab -
+(crontab -l 2>/dev/null | grep -vF 'acme.sh --cron' | grep -vF '/root/linux-daimon/cert-renew.sh' ; echo "0 3 * * * /bin/bash /root/linux-daimon/cert-renew.sh >> /var/log/acme.sh/renew.log 2>&1") | crontab -
 ```
-解释：每天凌晨 3 点自动续期。
+解释：每天凌晨 3 点执行带锁的 webroot 续期包装脚本，日志保留在 `/var/log/acme.sh/renew.log`；失败会记录到系统日志并返回非零状态。
+
+迁移现有证书时，脚本先备份 `/root/.acme.sh`、`/root/domain` 和 Nginx 站点配置，再为每个域名加入并实际验证 challenge 路径。重新签发成功后仍安装到当前 Nginx 正在读取的证书目录，不会因为历史目录使用域名前缀而切换到错误路径；通配符、无效域名或无法安全修改的自定义配置会跳过。
 
 配置 Nginx：
 
@@ -1423,7 +1421,7 @@ cat > /etc/nginx/sites-available/配置名
 ln -sf /etc/nginx/sites-available/配置名 /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 ```
-解释：生成 Nginx 配置并重载。配置核心包括 `listen 80` 跳转 HTTPS、`listen 443 ssl http2`、`ssl_certificate`、`proxy_pass http://127.0.0.1:端口`。申请证书 + 配置 nginx 如果失败，会自动删除本次生成的证书目录、acme 记录和 nginx 配置。
+解释：生成 Nginx 配置并重载。HTTP 配置会先放行 `/.well-known/acme-challenge/` 到 `/var/www/acme-challenge`，再跳转 HTTPS；HTTPS 配置包括 `listen 443 ssl http2`、`ssl_certificate`、`proxy_pass http://127.0.0.1:端口`。申请证书 + 配置 nginx 如果失败，会自动删除本次生成的证书目录、acme 记录和 nginx 配置。
 
 删除 nginx 配置 + 证书：
 

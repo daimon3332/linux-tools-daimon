@@ -58,6 +58,7 @@ DAIMON_OLD_LOCAL_SCRIPT="$DAIMON_ROOT_DIR/daimon.sh"
 DAIMON_REPO_URL="https://github.com/daimon3332/linux-tools-daimon"
 DAIMON_AGREEMENT_URL="https://github.com/daimon3332/linux-tools-daimon/blob/master/USER_AGREEMENT.md"
 DAIMON_GITHUB_PROXY_PRIMARY="https://gh-proxy.com/"
+DAIMON_CERT_HELPER_MARKER="$DAIMON_ROOT_DIR/.update-cert-helper"
 mkdir -p "$DAIMON_SCRIPT_DIR" "$DAIMON_BACKUP_DIR" "$DAIMON_BACKUP_SH_DIR" "$DAIMON_TOOLS_DIR" "$DAIMON_DOCKER_COMPOSE_UPDATE_DIR" >/dev/null 2>&1 || true
 
 daimon_migrate_path() {
@@ -1999,21 +2000,83 @@ install_ldnmp() {
 }
 
 
+write_certbot_renewal_script() {
+	local script_file="$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh"
+	mkdir -p "$DAIMON_SCRIPT_DIR" /var/log/certbot
+	cat > "$script_file" <<'EOF'
+#!/bin/bash
+set -u
+CERT_DIR="/home/web/certs"
+WEBROOT="/home/web/letsencrypt"
+LOG_FILE="/var/log/certbot/renew.log"
+LOCK_DIR="/run/lock/daimon-certbot-renew.lock.d"
+mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_DIR")"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then exit 0; fi
+trap 'rm -rf "$LOCK_DIR"' EXIT
+status=0
+{
+    for cert_file in "$CERT_DIR"/*_cert.pem; do
+        [ -f "$cert_file" ] || continue
+        domain=$(basename "$cert_file" _cert.pem)
+        expiry=$(openssl x509 -enddate -noout -in "$cert_file" 2>/dev/null | cut -d= -f2- || true)
+        expiry_ts=$(date -d "$expiry" +%s 2>/dev/null || echo 0)
+        days_left=$(( (expiry_ts - $(date +%s)) / 86400 ))
+        [ "$days_left" -gt 15 ] && continue
+        if ! docker inspect nginx >/dev/null 2>&1 || [ "$(docker inspect nginx --format '{{.State.Running}}' 2>/dev/null)" != true ]; then
+            echo "$domain: nginx is not running; skipped without starting it"
+            status=1
+            continue
+        fi
+        if [ ! -d "$WEBROOT" ] || ! docker exec nginx sh -c "grep -Rqs letsencrypt /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null"; then
+            echo "$domain: webroot challenge configuration is missing; skipped"
+            status=1
+            continue
+        fi
+        if ! docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v "$WEBROOT:/var/www/letsencrypt" certbot/certbot certonly --webroot -w /var/www/letsencrypt -d "$domain" --email your@email.com --agree-tos --no-eff-email --key-type ecdsa; then
+            echo "$domain: certbot webroot renewal failed"
+            status=1
+            continue
+        fi
+        cp "/etc/letsencrypt/live/$domain/fullchain.pem" "$CERT_DIR/${domain}_cert.pem"
+        cp "/etc/letsencrypt/live/$domain/privkey.pem" "$CERT_DIR/${domain}_key.pem"
+        if ! docker exec nginx nginx -t || ! docker exec nginx nginx -s reload; then
+            echo "$domain: nginx reload failed"
+            status=1
+        fi
+    done
+} >> "$LOG_FILE" 2>&1
+exit "$status"
+EOF
+	chmod 700 "$script_file"
+	cat > /etc/logrotate.d/daimon-certbot-renew <<'EOF'
+/var/log/certbot/renew.log {
+    daily
+    rotate 30
+    size 10M
+    missingok
+    notifempty
+    compress
+    copytruncate
+}
+EOF
+}
+
 install_certbot() {
-
-	daimon_download "${gh_proxy}raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh" "auto_cert_renewal.sh"
-
+	write_certbot_renewal_script
 	check_crontab_installed
-	local cron_job="0 0 * * * bash $DAIMON_SCRIPT_DIR/auto_cert_renewal.sh"
-	crontab -l 2>/dev/null | grep -vF "$cron_job" | crontab -
+	local cron_job="0 0 * * * /bin/bash $DAIMON_SCRIPT_DIR/auto_cert_renewal.sh >> /var/log/certbot/renew.log 2>&1"
+	crontab -l 2>/dev/null | grep -vF "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" | crontab -
 	(crontab -l 2>/dev/null; echo "$cron_job") | crontab -
-	echo "续签任务已更新"
+	echo "已配置 Docker Nginx webroot 续签任务"
 }
 
 
 install_ssltls() {
-	  docker stop nginx > /dev/null 2>&1
-	  cd ~
+	  mkdir -p /home/web/letsencrypt/.well-known/acme-challenge /home/web/certs
+	  if ! docker inspect nginx >/dev/null 2>&1 || [ "$(docker inspect nginx --format '{{.State.Running}}' 2>/dev/null)" != true ]; then
+		  echo "Docker nginx 未运行，不会自动启动；请先配置并启动 webroot 站点。"
+		  return 1
+	  fi
 
 	  local file_path="/etc/letsencrypt/live/$yuming/fullchain.pem"
 	  if [ ! -f "$file_path" ]; then
@@ -2028,14 +2091,18 @@ install_ssltls() {
 					openssl req -x509 -key /etc/letsencrypt/live/$yuming/privkey.pem -out /etc/letsencrypt/live/$yuming/fullchain.pem -days 5475 -subj "/C=US/ST=State/L=City/O=Organization/OU=Organizational Unit/CN=Common Name"
 				fi
 			else
-				docker run --rm -p 80:80 -v /etc/letsencrypt/:/etc/letsencrypt certbot/certbot certonly --standalone -d "$yuming" --email your@email.com --agree-tos --no-eff-email --force-renewal --key-type ecdsa
+				if ! docker exec nginx sh -c "grep -Rqs letsencrypt /etc/nginx/conf.d /etc/nginx/sites-enabled 2>/dev/null"; then
+					echo "未检测到 Docker nginx 的 webroot challenge 配置，未执行签发。"
+					return 1
+				fi
+				docker run --rm -v /etc/letsencrypt:/etc/letsencrypt -v /home/web/letsencrypt:/var/www/letsencrypt certbot/certbot certonly --webroot -w /var/www/letsencrypt -d "$yuming" --email your@email.com --agree-tos --no-eff-email --key-type ecdsa
 			fi
 	  fi
 	  mkdir -p /home/web/certs/
 	  cp /etc/letsencrypt/live/$yuming/fullchain.pem /home/web/certs/${yuming}_cert.pem > /dev/null 2>&1
 	  cp /etc/letsencrypt/live/$yuming/privkey.pem /home/web/certs/${yuming}_key.pem > /dev/null 2>&1
 
-	  docker start nginx > /dev/null 2>&1
+	  docker exec nginx nginx -t && docker exec nginx nginx -s reload
 }
 
 
@@ -18168,6 +18235,11 @@ validate_name() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$1" != "." ] && [ "$1" !
 
 ACME="$HOME/.acme.sh/acme.sh"
 NGINX_WAS_RUNNING=false
+ACME_WEBROOT="/var/www/acme-challenge"
+ACME_RENEW_SCRIPT="/root/linux-daimon/cert-renew.sh"
+ACME_RENEW_LOG="/var/log/acme.sh/renew.log"
+ACME_RENEW_LOCK="/run/lock/daimon-acme-renew.lock"
+CERT_EXISTED_BEFORE=false
 
 install_deps() {
     if command -v apt >/dev/null 2>&1; then
@@ -18219,38 +18291,176 @@ ensure_ufw_80() {
     fi
 }
 
+nginx_domain_write_renew_script() {
+    mkdir -p "$(dirname "$ACME_RENEW_SCRIPT")" "$(dirname "$ACME_RENEW_LOG")" "$(dirname "$ACME_RENEW_LOCK")"
+    cat > "$ACME_RENEW_SCRIPT" <<'EOF'
+#!/bin/bash
+set -u
+ACME="${HOME}/.acme.sh/acme.sh"
+LOG_FILE="/var/log/acme.sh/renew.log"
+LOCK_DIR="/run/lock/daimon-acme-renew.lock.d"
+mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$LOCK_DIR")"
+if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+    exit 0
+fi
+trap 'rm -rf "$LOCK_DIR"' EXIT
+status=0
+{
+    printf '[%s] acme.sh renewal started\n' "$(date '+%Y-%m-%d %H:%M:%S')"
+    if ! "$ACME" --cron --home "${HOME}/.acme.sh"; then
+        status=1
+        logger -t daimon-acme-renew "acme.sh renewal failed"
+    fi
+    if ! nginx -t; then
+        status=1
+        logger -t daimon-acme-renew "nginx config test failed after certificate renewal"
+    elif ! systemctl reload nginx; then
+        status=1
+        logger -t daimon-acme-renew "nginx reload failed after certificate renewal"
+    fi
+    printf '[%s] acme.sh renewal finished status=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$status"
+} >> "$LOG_FILE" 2>&1
+exit "$status"
+EOF
+    chmod 700 "$ACME_RENEW_SCRIPT"
+    cat > /etc/logrotate.d/daimon-acme-renew <<EOF
+$ACME_RENEW_LOG {
+    daily
+    rotate 30
+    size 10M
+    missingok
+    notifempty
+    compress
+    copytruncate
+}
+EOF
+}
+
+nginx_domain_ensure_renew_cron() {
+    nginx_domain_write_renew_script
+    nginx_domain_ensure_crontab || return 1
+    local cron_line="0 3 * * * /bin/bash $ACME_RENEW_SCRIPT >> $ACME_RENEW_LOG 2>&1"
+    (crontab -l 2>/dev/null | grep -vF 'acme.sh --cron' | grep -vF "$ACME_RENEW_SCRIPT" || true; echo "$cron_line") | crontab -
+}
+
+nginx_domain_config_matches() {
+    local domain="$1" conf="$2"
+    awk -v domain="$domain" '
+        $1 == "server_name" {
+            for (i=2; i<=NF; i++) {
+                value=$i; gsub(/;/, "", value)
+                if (value == domain) found=1
+            }
+        }
+        END { exit(found ? 0 : 1) }
+    ' "$conf"
+}
+
+nginx_domain_config_has_challenge() {
+    local domain="$1" conf
+    for conf in /etc/nginx/sites-available/* /etc/nginx/conf.d/*.conf; do
+        [ -f "$conf" ] || continue
+        nginx_domain_config_matches "$domain" "$conf" || continue
+        grep -Eq 'listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)' "$conf" 2>/dev/null || continue
+        grep -Fq 'location ^~ /.well-known/acme-challenge/' "$conf" && return 0
+    done
+    return 1
+}
+
+nginx_domain_config_exists() {
+    local domain="$1" conf
+    for conf in /etc/nginx/sites-available/* /etc/nginx/conf.d/*.conf; do
+        [ -f "$conf" ] || continue
+        nginx_domain_config_matches "$domain" "$conf" || continue
+        grep -Eq 'listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)' "$conf" 2>/dev/null && return 0
+    done
+    return 1
+}
+
+nginx_domain_patch_challenge_file() {
+    local src="$1" tmp
+    tmp=$(mktemp "${src}.tmp.XXXXXX") || return 1
+    awk '
+        BEGIN { inserted=0 }
+        {
+            line=$0
+            print line
+            if (!inserted && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) {
+                print "    location ^~ /.well-known/acme-challenge/ {"
+                print "        root /var/www/acme-challenge;"
+                print "        default_type text/plain;"
+                print "        try_files $uri =404;"
+                print "    }"
+                inserted=1
+            }
+        }
+        END { exit(inserted ? 0 : 1) }
+    ' "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
+    mv -f "$tmp" "$src"
+}
+
+nginx_domain_ensure_challenge_route() {
+    local domain="$1" conf patched=0
+    nginx_domain_config_has_challenge "$domain" && return 0
+    for conf in /etc/nginx/sites-available/*; do
+        [ -f "$conf" ] || continue
+        nginx_domain_config_matches "$domain" "$conf" || continue
+        grep -Eq 'listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)' "$conf" 2>/dev/null || continue
+        nginx_domain_patch_challenge_file "$conf" || return 1
+        patched=1
+    done
+    [ "$patched" -eq 1 ] && nginx -t && systemctl reload nginx
+    [ "$patched" -eq 1 ]
+}
+
+nginx_domain_temp_challenge_server() {
+    local domain="$1" id file
+    id=$(printf '%s' "$domain" | sha256sum | awk '{print substr($1,1,16)}')
+    file="/etc/nginx/conf.d/daimon-acme-${id}.conf"
+    mkdir -p /etc/nginx/conf.d
+    cat > "$file" <<EOF
+server {
+    listen 80;
+    server_name $domain;
+    location ^~ /.well-known/acme-challenge/ {
+        root $ACME_WEBROOT;
+        default_type text/plain;
+        try_files \$uri =404;
+    }
+}
+EOF
+    if nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1; then
+        printf '%s\n' "$file"
+    else
+        rm -f "$file"
+        return 1
+    fi
+}
+
+nginx_domain_remove_temp_challenge_server() {
+    local file="$1"
+    [ -f "$file" ] || return 0
+    rm -f "$file"
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1 || true
+}
+
+nginx_domain_verify_challenge() {
+    local domain="$1" token token_file response
+    token="daimon-acme-$RANDOM-$$-$(date +%s)"
+    token_file="$ACME_WEBROOT/.well-known/acme-challenge/$token"
+    mkdir -p "$(dirname "$token_file")"
+    printf '%s' "$token" > "$token_file"
+    response=$(curl -fsS --max-time 8 -H "Host: $domain" "http://127.0.0.1/.well-known/acme-challenge/$token" 2>/dev/null || true)
+    rm -f "$token_file"
+    [ "$response" = "$token" ]
+}
+
 show_dns() {
     local d="$1"
     if command -v dig >/dev/null 2>&1; then
         echo -e "${YELLOW}DNS A 记录: $(dig +short "$d" A | tr '\n' ' ')${NC}"
         echo -e "${YELLOW}DNS AAAA记录: $(dig +short "$d" AAAA | tr '\n' ' ')${NC}"
     fi
-}
-
-stop_port_80_services() {
-    if systemctl is-active nginx >/dev/null 2>&1; then
-        echo -e "${YELLOW}检测到 nginx 正在运行，正在停止...${NC}"
-        systemctl stop nginx
-        NGINX_WAS_RUNNING=true
-    fi
-    for svc in apache2 httpd caddy; do
-        if systemctl is-active "$svc" >/dev/null 2>&1; then
-            echo -e "${YELLOW}检测到 $svc 占用 Web 端口，请先手动停止后重试${NC}"
-            return 1
-        fi
-    done
-    sleep 1
-
-    if lsof -iTCP:80 -sTCP:LISTEN >/dev/null 2>&1; then
-        local PIDS=$(lsof -t -iTCP:80 -sTCP:LISTEN 2>/dev/null | tr '\n' ' ')
-        [ -n "$PIDS" ] && echo -e "${RED}80 端口由进程 $PIDS 占用，请停止占用进程后重试${NC}" && return 1
-    fi
-
-    if lsof -iTCP:80 -sTCP:LISTEN >/dev/null 2>&1; then
-        echo -e "${RED}80端口仍被占用${NC}"
-        return 1
-    fi
-    echo -e "${GREEN}80端口已空闲${NC}"
 }
 
 restart_nginx_if_needed() {
@@ -18314,11 +18524,24 @@ show_existing_nginx_and_certs() {
     echo "---"
 }
 
+nginx_domain_cert_dir_for_domain() {
+    local domain="$1" conf cert_path
+    for conf in /etc/nginx/sites-available/* /etc/nginx/conf.d/*.conf; do
+        [ -f "$conf" ] || continue
+        nginx_domain_config_matches "$domain" "$conf" || continue
+        cert_path=$(awk '$1 == "ssl_certificate" { gsub(/;/, "", $2); print $2; exit }' "$conf")
+        case "$cert_path" in
+            /root/domain/*/fullchain.pem) dirname "$cert_path"; return 0 ;;
+        esac
+    done
+    echo "/root/domain/$domain"
+}
+
 cleanup_nginx_and_cert() {
     local DOMAIN="$1"
     local NGINX_NAME="$2"
     local FOLDER CERT_DIR
-    CERT_DIR="/root/domain/$DOMAIN"
+    CERT_DIR=$(nginx_domain_cert_dir_for_domain "$DOMAIN")
 
     [ -n "$NGINX_NAME" ] && rm -f "/etc/nginx/sites-available/$NGINX_NAME" "/etc/nginx/sites-enabled/$NGINX_NAME"
     [ -n "$DOMAIN" ] && "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
@@ -18329,6 +18552,17 @@ cleanup_nginx_and_cert() {
         nginx -t >/dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
     fi
     echo -e "${YELLOW}已清理失败残留：nginx 配置和证书${NC}"
+}
+
+cleanup_failed_cert_request() {
+    local domain="$1" nginx_name="$2"
+    if [ "$CERT_EXISTED_BEFORE" = true ]; then
+        [ -n "$nginx_name" ] && rm -f "/etc/nginx/sites-available/$nginx_name" "/etc/nginx/sites-enabled/$nginx_name"
+        nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1 || true
+        echo -e "${YELLOW}申请失败，已有证书和 acme.sh 记录已保留${NC}"
+    else
+        cleanup_nginx_and_cert "$domain" "$nginx_name"
+    fi
 }
 
 remove_cert() {
@@ -18346,7 +18580,9 @@ remove_cert() {
 
     "$ACME" --remove -d "$REMOVE_DOMAIN" 2>/dev/null || true
 
-    [ -d "/root/domain/$REMOVE_DOMAIN" ] && rm -rf "/root/domain/$REMOVE_DOMAIN"
+    local cert_dir
+    cert_dir=$(nginx_domain_cert_dir_for_domain "$REMOVE_DOMAIN")
+    case "$cert_dir" in /root/domain/*) [ -d "$cert_dir" ] && rm -rf "$cert_dir" ;; esac
 
     echo -e "${GREEN}证书移除完成！${NC}"
 }
@@ -18748,40 +18984,67 @@ restore_nginx_domain() {
 }
 
 setup_cron() {
-    CRON_LINE="0 3 * * * $ACME --cron --home $HOME/.acme.sh >/dev/null 2>&1"
-    ( crontab -l 2>/dev/null | grep -v "$ACME --cron" || true; echo "$CRON_LINE" ) | crontab -
-    echo -e "${GREEN}已配置自动续期（每天凌晨3点）${NC}"
+    nginx_domain_ensure_renew_cron
+    echo -e "${GREEN}已配置 webroot 自动续期（每天凌晨3点）${NC}"
 }
 
 # 申请证书
 issue_cert() {
-    local DOMAIN="$1"
+    local DOMAIN="$1" temp_challenge="" existing_conf="" keylength=""
+    local -a issue_args install_args
 
     show_dns "$DOMAIN"
 
     validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
-    CERT_DIR="/root/domain/$DOMAIN"
+    CERT_DIR=$(nginx_domain_cert_dir_for_domain "$DOMAIN")
     mkdir -p "$CERT_DIR"
 
-    if "$ACME" --list 2>/dev/null | grep -q "$DOMAIN"; then
-        echo -e "${YELLOW}检测到已有证书，将强制重新申请...${NC}"
-        "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
-        rm -rf "$HOME/.acme.sh/${DOMAIN}_ecc" 2>/dev/null || true
-        rm -rf "$HOME/.acme.sh/$DOMAIN" 2>/dev/null || true
+    CERT_EXISTED_BEFORE=false
+    if "$ACME" --list 2>/dev/null | grep -Fq "$DOMAIN" || [ -s "$CERT_DIR/fullchain.pem" ]; then
+        CERT_EXISTED_BEFORE=true
+        echo -e "${YELLOW}检测到已有证书，将使用 webroot 强制更新，不删除旧证书...${NC}"
     fi
 
     ensure_ufw_80
-    stop_port_80_services || return 1
-
-    if ! "$ACME" --issue -d "$DOMAIN" --standalone --server letsencrypt --force; then
-        echo -e "${RED}证书申请失败${NC}"; restart_nginx_if_needed; return 1
+    mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
+    if ! command -v nginx >/dev/null 2>&1 || ! systemctl is-active nginx >/dev/null 2>&1; then
+        install_nginx
+    fi
+    if ! nginx_domain_ensure_challenge_route "$DOMAIN"; then
+        if nginx_domain_config_exists "$DOMAIN"; then
+            echo -e "${RED}$DOMAIN 已有 HTTP 配置，但无法安全加入 ACME challenge 路径，请检查对应 Nginx 配置${NC}"
+            return 1
+        fi
+        if ! temp_challenge=$(nginx_domain_temp_challenge_server "$DOMAIN"); then
+            echo -e "${RED}无法为 $DOMAIN 配置 ACME webroot 验证路径${NC}"
+            return 1
+        fi
+    fi
+    if ! nginx_domain_verify_challenge "$DOMAIN"; then
+        echo -e "${RED}$DOMAIN 的 webroot challenge 本机验证失败，未向 CA 发起申请${NC}"
+        nginx_domain_remove_temp_challenge_server "$temp_challenge"
+        return 1
     fi
 
-    "$ACME" --install-cert -d "$DOMAIN" \
-        --fullchain-file "$CERT_DIR/fullchain.pem" \
-        --key-file "$CERT_DIR/privkey.pem" \
-        --reloadcmd "nginx -t && systemctl reload nginx" \
-        --force
+    issue_args=(-d "$DOMAIN" -w "$ACME_WEBROOT" --server letsencrypt --force)
+    existing_conf=$(find "$HOME/.acme.sh/${DOMAIN}_ecc" "$HOME/.acme.sh/$DOMAIN" -maxdepth 1 -type f -name '*.conf' -print -quit 2>/dev/null || true)
+    [ -n "$existing_conf" ] && keylength=$(nginx_domain_acme_conf_value "$existing_conf" Le_Keylength)
+    [ -n "$keylength" ] && [ "$keylength" != "no" ] && issue_args+=(--keylength "$keylength")
+    if ! "$ACME" --issue "${issue_args[@]}"; then
+        echo -e "${RED}证书申请失败${NC}"
+        nginx_domain_remove_temp_challenge_server "$temp_challenge"
+        return 1
+    fi
+
+    install_args=(--fullchain-file "$CERT_DIR/fullchain.pem" --key-file "$CERT_DIR/privkey.pem" --reloadcmd "nginx -t && systemctl reload nginx" --force)
+    [ -d "$HOME/.acme.sh/${DOMAIN}_ecc" ] && install_args+=(--ecc)
+    if ! "$ACME" --install-cert -d "$DOMAIN" "${install_args[@]}"; then
+        echo -e "${RED}证书安装失败${NC}"
+        nginx_domain_remove_temp_challenge_server "$temp_challenge"
+        return 1
+    fi
+
+    nginx_domain_remove_temp_challenge_server "$temp_challenge"
 
     if [ -s "$CERT_DIR/fullchain.pem" ] && [ -s "$CERT_DIR/privkey.pem" ]; then
         echo -e "${GREEN}=========================================${NC}"
@@ -18824,6 +19087,11 @@ config_nginx() {
 server {
     listen 80;
     server_name $DOMAIN;
+    location ^~ /.well-known/acme-challenge/ {
+        root $ACME_WEBROOT;
+        default_type text/plain;
+        try_files \$uri =404;
+    }
     return 301 https://\$server_name\$request_uri;
 }
 
@@ -18869,6 +19137,117 @@ EOF
     fi
 }
 
+nginx_domain_acme_conf_value() {
+    local conf="$1" key="$2"
+    awk -F= -v key="$key" '
+        $1 == key {
+            value=substr($0, index($0, "=") + 1)
+            gsub(/^[[:space:]]+|[[:space:]]+$/, "", value)
+            first=substr(value, 1, 1); last=substr(value, length(value), 1)
+            if ((first == "\"" && last == "\"") || (first == "\047" && last == "\047")) value=substr(value, 2, length(value) - 2)
+            print value
+            exit
+        }
+    ' "$conf"
+}
+
+nginx_domain_migrate_existing_certs() {
+    local backup_root backup_dir conf domain alt keylength challenge_domain temp_challenge route_failed unsupported_alt cert_dir
+    local confirm
+    local success=0 failed=0 skipped=0
+    local -a alt_args issue_args install_args challenge_domains temp_challenges
+    [ "$(id -u)" -eq 0 ] || { echo -e "${RED}请使用 root 运行${NC}"; return 1; }
+    [ -x "$ACME" ] || { echo -e "${RED}未检测到 acme.sh，请先申请或安装证书${NC}"; return 1; }
+    echo -e "${YELLOW}将备份现有配置并逐个强制重新签发可迁移证书，可能触发 CA 频率限制。${NC}"
+    read -p "确认开始迁移？[y/N]: " confirm
+    [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return 0; }
+    install_nginx
+    mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
+    backup_root="/root/linux-daimon/backup/nginx-domain"
+    backup_dir="$backup_root/migration_$(date +%Y%m%d_%H%M%S)"
+    mkdir -p "$backup_dir"
+    cp -a /etc/nginx/sites-available "$backup_dir/" 2>/dev/null || true
+    cp -a /etc/nginx/sites-enabled "$backup_dir/" 2>/dev/null || true
+    cp -a /root/domain "$backup_dir/" 2>/dev/null || true
+    cp -a "$HOME/.acme.sh" "$backup_dir/acme.sh" 2>/dev/null || true
+    echo -e "${YELLOW}迁移备份已保存: $backup_dir${NC}"
+
+    while IFS= read -r conf; do
+        domain=$(nginx_domain_acme_conf_value "$conf" Le_Domain)
+        [ -n "$domain" ] || continue
+        if [[ "$domain" == \** ]] || ! validate_domain "$domain"; then
+            echo -e "${YELLOW}跳过不支持 webroot 的域名: $domain${NC}"
+            skipped=$((skipped + 1))
+            continue
+        fi
+        alt_args=()
+        challenge_domains=("$domain")
+        unsupported_alt=false
+        alt=$(nginx_domain_acme_conf_value "$conf" Le_Alt)
+        [ "$alt" = "no" ] && alt=""
+        while IFS= read -r alt; do
+            [ -n "$alt" ] || continue
+            if [[ "$alt" == \** ]] || ! validate_domain "$alt"; then
+                unsupported_alt=true
+                break
+            fi
+            alt_args+=(-d "$alt")
+            challenge_domains+=("$alt")
+        done < <(printf '%s' "$alt" | tr ',' '\n')
+        if [ "$unsupported_alt" = true ]; then
+            echo -e "${YELLOW}跳过包含通配符或不支持 SAN 的证书: $domain${NC}"
+            skipped=$((skipped + 1))
+            continue
+        fi
+        keylength=$(nginx_domain_acme_conf_value "$conf" Le_Keylength)
+        [ "$keylength" = "no" ] && keylength=""
+        issue_args=(-d "$domain" "${alt_args[@]}" -w "$ACME_WEBROOT" --server letsencrypt --force)
+        temp_challenges=()
+        route_failed=false
+        for challenge_domain in "${challenge_domains[@]}"; do
+            if ! nginx_domain_ensure_challenge_route "$challenge_domain"; then
+                if nginx_domain_config_exists "$challenge_domain"; then
+                    route_failed=true
+                    break
+                fi
+                temp_challenge=$(nginx_domain_temp_challenge_server "$challenge_domain" 2>/dev/null || true)
+                [ -n "$temp_challenge" ] && temp_challenges+=("$temp_challenge") || { route_failed=true; break; }
+            fi
+            nginx_domain_verify_challenge "$challenge_domain" || { route_failed=true; break; }
+        done
+        if [ "$route_failed" = true ]; then
+            for temp_challenge in "${temp_challenges[@]}"; do nginx_domain_remove_temp_challenge_server "$temp_challenge"; done
+            echo -e "${RED}$domain 或其 SAN 没有可用的 ACME challenge 路径，已跳过${NC}"
+            skipped=$((skipped + 1))
+            continue
+        fi
+        [ -n "$keylength" ] && issue_args+=(--keylength "$keylength")
+        echo -e "${YELLOW}正在迁移证书: $domain${NC}"
+        if ! "$ACME" --issue "${issue_args[@]}"; then
+            echo -e "${RED}$domain webroot 重新签发失败，保留旧证书${NC}"
+            failed=$((failed + 1))
+            for temp_challenge in "${temp_challenges[@]}"; do nginx_domain_remove_temp_challenge_server "$temp_challenge"; done
+            continue
+        fi
+        cert_dir=$(nginx_domain_cert_dir_for_domain "$domain")
+        mkdir -p "$cert_dir"
+        install_args=(--fullchain-file "$cert_dir/fullchain.pem" --key-file "$cert_dir/privkey.pem" --reloadcmd "nginx -t && systemctl reload nginx" --force)
+        [[ "$(dirname "$conf")" == *_ecc ]] && install_args+=(--ecc)
+        if "$ACME" --install-cert -d "$domain" "${install_args[@]}"; then
+            echo -e "${GREEN}$domain 迁移成功${NC}"
+            success=$((success + 1))
+        else
+            echo -e "${RED}$domain 证书安装失败，保留旧证书${NC}"
+            failed=$((failed + 1))
+        fi
+        for temp_challenge in "${temp_challenges[@]}"; do nginx_domain_remove_temp_challenge_server "$temp_challenge"; done
+    done < <(find "$HOME/.acme.sh" -mindepth 2 -maxdepth 2 -type f -name '*.conf' -print 2>/dev/null | sort)
+    setup_cron || true
+    nginx -t && systemctl reload nginx || true
+    echo -e "${GREEN}迁移完成：成功 $success，失败 $failed，跳过 $skipped${NC}"
+    [ "$failed" -eq 0 ]
+}
+
 # -------------------- 主流程 --------------------
 
 install_acme
@@ -18883,7 +19262,7 @@ show_menu() {
     show_existing_nginx_and_certs
     echo "1) 申请证书 + 配置 nginx"
     echo "2) 删除 nginx 配置 + 证书"
-    echo "3) 申请证书 (standalone 模式)"
+    echo "3) 申请证书 (webroot 模式)"
     echo "4) 移除证书"
     echo "5) 查看证书列表"
     echo "6) 配置 nginx"
@@ -18893,13 +19272,14 @@ show_menu() {
     echo "10) 安装 nginx"
     echo "11) 备份域名 + nginx 配置"
     echo "12) 恢复域名 + nginx 配置"
+    echo "13) 迁移/修复现有证书（webroot）"
     echo "0) 返回上一级菜单"
     echo -e "${GREEN}=========================================${NC}"
 }
 
 while true; do
     show_menu
-    read -p "请选择操作 [0-12]: " ACTION
+    read -p "请选择操作 [0-13]: " ACTION
 
     case $ACTION in
         1)
@@ -18913,11 +19293,11 @@ while true; do
             if issue_cert "$DOMAIN"; then
                 restart_nginx_if_needed
                 if ! config_nginx "$DOMAIN" "$NGINX_NAME" "$PORT"; then
-                    cleanup_nginx_and_cert "$DOMAIN" "$NGINX_NAME"
+                    cleanup_failed_cert_request "$DOMAIN" "$NGINX_NAME"
                 fi
             else
                 restart_nginx_if_needed
-                cleanup_nginx_and_cert "$DOMAIN" "$NGINX_NAME"
+                cleanup_failed_cert_request "$DOMAIN" "$NGINX_NAME"
             fi
             ;;
         2)
@@ -18964,6 +19344,9 @@ while true; do
         12)
             restore_nginx_domain
             ;;
+        13)
+            nginx_domain_migrate_existing_certs
+            ;;
         0)
             echo -e "${GREEN}返回上一级菜单${NC}"
             exit 0
@@ -18978,6 +19361,10 @@ while true; do
 done
 DAIMON_CERT_NGINX_SCRIPT
 	chmod +x "$DAIMON_SCRIPT_DIR/cert_nginx.sh"
+	if [ "${DAIMON_UPDATE_CERT_HELPER_ONLY:-0}" = "1" ]; then
+		echo -e "${gl_lv}Nginx + 域名续期脚本已更新: $DAIMON_SCRIPT_DIR/cert_nginx.sh${gl_bai}"
+		return 0
+	fi
 	bash "$DAIMON_SCRIPT_DIR/cert_nginx.sh"
 }
 common_one_click_scripts() {
@@ -20456,7 +20843,7 @@ kejilion_update() {
 	echo "linux-tools-daimon 脚本更新"
 	echo "------------------------"
 
-	local tmp_file rollback_file keep_permission="false" keep_canshu="" keep_stats=""
+	local tmp_file rollback_file keep_permission="false" keep_canshu="" keep_stats="" cert_helper_choice="1"
 	tmp_file=$(mktemp /tmp/daimon_tmp.XXXXXX) || { echo -e "${gl_hong}创建临时文件失败${gl_bai}"; break_end; return 1; }
 	rollback_file=$(mktemp /tmp/daimon_rollback.XXXXXX) || rollback_file=""
 
@@ -20473,10 +20860,22 @@ kejilion_update() {
 	keep_canshu=$(grep -h '^canshu=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 	keep_stats=$(grep -h '^ENABLE_STATS=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 
+	read -e -p "更新 Nginx + 域名续期脚本？(1=仅主脚本，2=同时更新，0=取消): " cert_helper_choice
+	case "$cert_helper_choice" in
+		2) : > "$DAIMON_CERT_HELPER_MARKER" ;;
+		1|"") rm -f "$DAIMON_CERT_HELPER_MARKER" 2>/dev/null || true ;;
+		0|*)
+			rm -f "$tmp_file" "$rollback_file"
+			echo "已取消更新"
+			break_end
+			return 0
+			;;
+	esac
+
 	[ -n "$rollback_file" ] && [ -f "$DAIMON_LOCAL_SCRIPT" ] && cp -f "$DAIMON_LOCAL_SCRIPT" "$rollback_file" 2>/dev/null || true
 	chmod +x "$tmp_file"
 	if ! mv -f "$tmp_file" "$DAIMON_LOCAL_SCRIPT"; then
-		rm -f "$tmp_file" "$rollback_file"
+		rm -f "$tmp_file" "$rollback_file" "$DAIMON_CERT_HELPER_MARKER"
 		echo -e "${gl_hong}更新失败：无法写入 $DAIMON_LOCAL_SCRIPT${gl_bai}"
 		break_end
 		return 1
@@ -20484,7 +20883,7 @@ kejilion_update() {
 	if ! cp -f "$DAIMON_LOCAL_SCRIPT" /usr/local/bin/d; then
 		echo -e "${gl_hong}更新失败：无法写入 /usr/local/bin/d${gl_bai}"
 		[ -n "$rollback_file" ] && [ -f "$rollback_file" ] && cp -f "$rollback_file" "$DAIMON_LOCAL_SCRIPT" 2>/dev/null || true
-		rm -f "$rollback_file" 2>/dev/null || true
+		rm -f "$rollback_file" "$DAIMON_CERT_HELPER_MARKER" 2>/dev/null || true
 		break_end
 		return 1
 	fi
@@ -20520,6 +20919,10 @@ kejilion_update() {
 
 kejilion_sh() {
 crontab_sync_reconcile_legacy || true
+if [ -f "$DAIMON_CERT_HELPER_MARKER" ]; then
+	 rm -f "$DAIMON_CERT_HELPER_MARKER"
+	 DAIMON_UPDATE_CERT_HELPER_ONLY=1 ssl_nginx_manager
+fi
 while true; do
 clear
 echo -e "${gl_kjlan}"

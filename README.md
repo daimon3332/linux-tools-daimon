@@ -52,8 +52,8 @@ d
 ### Nginx 与域名管理（统一流程）
 
 - 菜单 11 使用宿主机 Nginx + acme.sh，证书按完整域名隔离在 `/root/domain/<完整域名>`，不再按首段共享目录。
-- 申请证书前会检测 80 端口占用，不会强制 `kill -9` 其他服务；申请失败会恢复已停止的 Nginx。
-- 证书安装包含 Nginx reload hook，续期后自动加载新证书；域名、配置名和端口均进行格式校验。
+- 证书申请和续期统一使用 `/var/www/acme-challenge` webroot，Nginx 不会因证书操作被停止，也不会强制 `kill -9` 其他服务。
+- 证书安装包含 Nginx reload hook；续期包装脚本写入 `/var/log/acme.sh/renew.log`，失败会写入系统日志。
 - 删除操作仅清理反代配置和证书，不会删除站点数据库；自动备份位于 `/root/linux-daimon/backup/nginx-domain`。
 
 ### SSH 与 UFW
@@ -242,8 +242,9 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 | 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
 | 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/linux-daimon/backup/nginx-domain/auto_latest` |
 | 12 | 恢复域名 + nginx 配置 | 从 `/root/linux-daimon/backup/nginx-domain/auto_latest` 合并恢复 `sites-available` 和 `/root/domain`，并重建 `sites-enabled` 软链接；同名文件保留本机版本 |
+| 13 | 迁移/修复现有证书 | 备份现有配置后，将 acme.sh 证书迁移到 webroot 模式并保留当前 Nginx 证书路径；逐域名报告成功、失败和跳过 |
 
-进入 Nginx + 域名管理时只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启每天 05:00 的本地备份脚本。脚本运行时检测 `/root/domain/*/fullchain.pem`，有域名才刷新 `auto_latest`，无域名则跳过且保留已有备份。恢复时合并备份内容，同名冲突以本机现有文件为准。
+进入 Nginx + 域名管理时只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启每天 05:00 的本地备份脚本。证书续期任务为每天 03:00 的 `/root/linux-daimon/cert-renew.sh`，日志位于 `/var/log/acme.sh/renew.log`。脚本运行时检测 `/root/domain/*/fullchain.pem`，有域名才刷新 `auto_latest`，无域名则跳过且保留已有备份。恢复时合并备份内容，同名冲突以本机现有文件为准。主脚本更新时可选择是否同步 Nginx + 域名续期脚本。
 
 ### fail2ban管理
 
@@ -342,7 +343,7 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 | WARP 管理 | fscarmen WARP 菜单脚本 | `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh` | WARP 安装、管理和彻底删除 |
 | rclone 管理 | rclone 官方安装脚本 | `https://rclone.org/install.sh` | 安装 rclone |
 | SSL/Nginx | acme.sh 官方安装脚本 | `https://get.acme.sh` | 安装 acme.sh，用于申请和续期证书 |
-| LDNMP/网站管理 | kejilion 证书自动续期脚本 | `https://raw.githubusercontent.com/kejilion/sh/main/auto_cert_renewal.sh` | 配置证书自动续期 |
+| LDNMP/网站管理 | 内置 certbot webroot 续期脚本 | `/root/linux-daimon/daimon/auto_cert_renewal.sh` | 仅续期正在运行且已配置 challenge 路径的 Docker Nginx 站点 |
 | Cloudflare | kejilion CF Under Attack 脚本 | `https://raw.githubusercontent.com/kejilion/sh/main/CF-Under-Attack.sh` | Cloudflare 防护模式相关操作 |
 | 第三方工具 | starship 官方安装脚本 | `https://starship.rs/install.sh` | 国外机器安装 starship |
 | 第三方工具 | fzf 源码仓库 | `https://github.com/junegunn/fzf.git` | git clone 安装 fzf |
