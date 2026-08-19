@@ -18400,17 +18400,35 @@ nginx_domain_patch_challenge_file() {
 }
 
 nginx_domain_ensure_challenge_route() {
-    local domain="$1" conf patched=0
+    local domain="$1" conf backup patched=0 idx
+    local -a patched_files backup_files
     nginx_domain_config_has_challenge "$domain" && return 0
     for conf in /etc/nginx/sites-available/*; do
         [ -f "$conf" ] || continue
         nginx_domain_config_matches "$domain" "$conf" || continue
         grep -Eq 'listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)' "$conf" 2>/dev/null || continue
-        nginx_domain_patch_challenge_file "$conf" || return 1
+        backup=$(mktemp /tmp/daimon-nginx-conf.XXXXXX) || return 1
+        cp -a "$conf" "$backup" || { rm -f "$backup"; return 1; }
+        if ! nginx_domain_patch_challenge_file "$conf"; then
+            cp -a "$backup" "$conf"
+            rm -f "$backup"
+            return 1
+        fi
+        patched_files+=("$conf")
+        backup_files+=("$backup")
         patched=1
     done
-    [ "$patched" -eq 1 ] && nginx -t && systemctl reload nginx
-    [ "$patched" -eq 1 ]
+    [ "$patched" -eq 1 ] || return 1
+    if nginx -t && systemctl reload nginx; then
+        rm -f "${backup_files[@]}"
+        return 0
+    fi
+    for idx in "${!patched_files[@]}"; do
+        cp -a "${backup_files[$idx]}" "${patched_files[$idx]}"
+    done
+    rm -f "${backup_files[@]}"
+    nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1 || true
+    return 1
 }
 
 nginx_domain_temp_challenge_server() {
