@@ -18512,9 +18512,13 @@ nginx_domain_verify_challenge() {
     token_file="$ACME_WEBROOT/.well-known/acme-challenge/$token"
     mkdir -p "$(dirname "$token_file")"
     printf '%s' "$token" > "$token_file"
-    response=$(curl -fsS --max-time 8 -H "Host: $domain" "http://127.0.0.1/.well-known/acme-challenge/$token" 2>/dev/null || true)
+    for _ in $(seq 1 10); do
+        response=$(curl -fsS --max-time 8 -H "Host: $domain" "http://127.0.0.1/.well-known/acme-challenge/$token" 2>/dev/null || true)
+        [ "$response" = "$token" ] && { rm -f "$token_file"; return 0; }
+        sleep 0.5
+    done
     rm -f "$token_file"
-    [ "$response" = "$token" ]
+    return 1
 }
 
 show_dns() {
