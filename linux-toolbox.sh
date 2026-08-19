@@ -18361,8 +18361,24 @@ nginx_domain_config_has_challenge() {
     for conf in /etc/nginx/sites-available/* /etc/nginx/conf.d/*.conf; do
         [ -f "$conf" ] || continue
         nginx_domain_config_matches "$domain" "$conf" || continue
-        grep -Eq 'listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)' "$conf" 2>/dev/null || continue
-        grep -Fq 'location ^~ /.well-known/acme-challenge/' "$conf" && return 0
+        awk '
+            BEGIN { depth=0; in_server=0; listen80=0; has_location=0; bad_return=0 }
+            {
+                line=$0
+                if (line ~ /^[[:space:]]*server[[:space:]]*\{/) in_server=1
+                if (in_server && depth == 1 && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) listen80=1
+                if (in_server && depth == 1 && line ~ /location[[:space:]]+\^~[[:space:]]+\/\.well-known\/acme-challenge\//) has_location=1
+                if (in_server && depth == 1 && line ~ /^[[:space:]]*return[[:space:]]+301[[:space:]]+/) bad_return=1
+                opens=line; gsub(/[^\{]/, "", opens)
+                closes=line; gsub(/[^\}]/, "", closes)
+                depth += length(opens) - length(closes)
+                if (in_server && depth == 0) {
+                    if (listen80 && has_location && !bad_return) found=1
+                    in_server=0; listen80=0; has_location=0; bad_return=0
+                }
+            }
+            END { exit(found ? 0 : 1) }
+        ' "$conf" && return 0
     done
     return 1
 }
@@ -18381,10 +18397,11 @@ nginx_domain_patch_challenge_file() {
     local src="$1" tmp
     tmp=$(mktemp "${src}.tmp.XXXXXX") || return 1
     awk '
-        BEGIN { inserted=0; depth=0; in_server=0 }
+        BEGIN { inserted=0; has_location=0; depth=0; in_server=0 }
         {
             line=$0
             if (line ~ /^[[:space:]]*server[[:space:]]*\{/) in_server=1
+            if (in_server && depth == 1 && line ~ /location[[:space:]]+\^~[[:space:]]+\/\.well-known\/acme-challenge\//) has_location=1
             if (in_server && depth == 1 && line ~ /^[[:space:]]*return[[:space:]]+301[[:space:]]+.*;[[:space:]]*$/) {
                 indent=line
                 sub(/[^[:space:]].*$/, "", indent)
@@ -18397,7 +18414,7 @@ nginx_domain_patch_challenge_file() {
             } else {
                 print line
             }
-            if (!inserted && in_server && depth == 1 && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) {
+            if (!inserted && !has_location && in_server && depth == 1 && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) {
                 print "    location ^~ /.well-known/acme-challenge/ {"
                 print "        root /var/www/acme-challenge;"
                 print "        default_type text/plain;"
@@ -18410,7 +18427,7 @@ nginx_domain_patch_challenge_file() {
             depth += length(opens) - length(closes)
             if (in_server && depth == 0) in_server=0
         }
-        END { exit(inserted ? 0 : 1) }
+        END { exit((inserted || has_location) ? 0 : 1) }
     ' "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
     mv -f "$tmp" "$src"
 }
