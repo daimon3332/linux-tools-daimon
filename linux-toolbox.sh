@@ -18397,37 +18397,48 @@ nginx_domain_patch_challenge_file() {
     local src="$1" tmp
     tmp=$(mktemp "${src}.tmp.XXXXXX") || return 1
     awk '
-        BEGIN { inserted=0; has_location=0; depth=0; in_server=0 }
+        BEGIN { has_location=0; depth=0; in_server=0 }
         {
             line=$0
+            lines[NR]=line
             if (line ~ /^[[:space:]]*server[[:space:]]*\{/) in_server=1
-            if (in_server && depth == 1 && line ~ /location[[:space:]]+\^~[[:space:]]+\/\.well-known\/acme-challenge\//) has_location=1
+            if (line ~ /location[[:space:]]+\^~[[:space:]]+\/\.well-known\/acme-challenge\//) has_location=1
             if (in_server && depth == 1 && line ~ /^[[:space:]]*return[[:space:]]+301[[:space:]]+.*;[[:space:]]*$/) {
                 indent=line
                 sub(/[^[:space:]].*$/, "", indent)
                 redirect=line
                 sub(/^[[:space:]]*return[[:space:]]+301[[:space:]]+/, "", redirect)
                 sub(/[[:space:]]*;[[:space:]]*$/, "", redirect)
-                print indent "if ($request_uri !~ ^/\\.well-known/acme-challenge/) {"
-                print indent "    return 301 " redirect ";"
-                print indent "}"
-            } else {
-                print line
+                redirect_indent[NR]=indent
+                redirect_value[NR]=redirect
             }
-            if (!inserted && !has_location && in_server && depth == 1 && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) {
-                print "    location ^~ /.well-known/acme-challenge/ {"
-                print "        root /var/www/acme-challenge;"
-                print "        default_type text/plain;"
-                print "        try_files $uri =404;"
-                print "    }"
-                inserted=1
-            }
+            if (in_server && depth == 1 && line ~ /^[[:space:]]*listen[[:space:]]+((\[::\]:)?80)([[:space:];]|$)/) listen80[NR]=1
             opens=line; gsub(/[^\{]/, "", opens)
             closes=line; gsub(/[^\}]/, "", closes)
             depth += length(opens) - length(closes)
             if (in_server && depth == 0) in_server=0
         }
-        END { exit((inserted || has_location) ? 0 : 1) }
+        END {
+            inserted=0
+            for (i=1; i<=NR; i++) {
+                if (redirect_value[i] != "") {
+                    print redirect_indent[i] "if ($request_uri !~ ^/\\.well-known/acme-challenge/) {"
+                    print redirect_indent[i] "    return 301 " redirect_value[i] ";"
+                    print redirect_indent[i] "}"
+                } else {
+                    print lines[i]
+                }
+                if (!has_location && !inserted && listen80[i]) {
+                    print "    location ^~ /.well-known/acme-challenge/ {"
+                    print "        root /var/www/acme-challenge;"
+                    print "        default_type text/plain;"
+                    print "        try_files $uri =404;"
+                    print "    }"
+                    inserted=1
+                }
+            }
+            exit((inserted || has_location) ? 0 : 1)
+        }
     ' "$src" > "$tmp" || { rm -f "$tmp"; return 1; }
     mv -f "$tmp" "$src"
 }
