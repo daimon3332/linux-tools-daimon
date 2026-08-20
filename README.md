@@ -242,7 +242,7 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 | 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
 | 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/linux-daimon/backup/nginx-domain/auto_latest` |
 | 12 | 恢复域名 + nginx 配置 | 从 `/root/linux-daimon/backup/nginx-domain/auto_latest` 合并恢复 `sites-available` 和 `/root/domain`，并重建 `sites-enabled` 软链接；同名文件保留本机版本 |
-| 13 | 迁移/修复现有证书 | 备份现有配置后，将 acme.sh 证书迁移到 webroot 模式并保留当前 Nginx 证书路径；逐域名报告成功、失败和跳过 |
+| 13 | 迁移/修复现有证书 | 将 acme.sh 证书迁移到 webroot 模式并保留当前 Nginx 证书路径；可选择是否创建迁移备份，逐域名报告成功、失败和跳过 |
 
 进入 Nginx + 域名管理时只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启每天 05:00 的本地备份脚本。证书续期任务为每天 03:00 的 `/root/linux-daimon/cert-renew.sh`，日志位于 `/var/log/acme.sh/renew.log`。脚本运行时检测 `/root/domain/*/fullchain.pem`，有域名才刷新 `auto_latest`，无域名则跳过且保留已有备份。恢复时合并备份内容，同名冲突以本机现有文件为准。主脚本更新时可选择是否同步 Nginx + 域名续期脚本。
 

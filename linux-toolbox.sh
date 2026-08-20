@@ -19221,7 +19221,7 @@ nginx_domain_acme_conf_value() {
 
 nginx_domain_migrate_existing_certs() {
     local backup_root backup_dir conf domain alt keylength challenge_domain temp_challenge route_failed unsupported_alt cert_dir
-    local confirm
+    local confirm backup_confirm backup_dir=""
     local success=0 failed=0 skipped=0
     local -a alt_args issue_args install_args challenge_domains temp_challenges
     [ "$(id -u)" -eq 0 ] || { echo -e "${RED}请使用 root 运行${NC}"; return 1; }
@@ -19229,16 +19229,21 @@ nginx_domain_migrate_existing_certs() {
     echo -e "${YELLOW}将备份现有配置并逐个强制重新签发可迁移证书，可能触发 CA 频率限制。${NC}"
     read -p "确认开始迁移？[y/N]: " confirm
     [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return 0; }
+    read -p "是否创建迁移备份？[y/N]: " backup_confirm
     install_nginx
     mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
-    backup_root="/root/linux-daimon/backup/nginx-domain"
-    backup_dir="$backup_root/migration_$(date +%Y%m%d_%H%M%S)"
-    mkdir -p "$backup_dir"
-    cp -a /etc/nginx/sites-available "$backup_dir/" 2>/dev/null || true
-    cp -a /etc/nginx/sites-enabled "$backup_dir/" 2>/dev/null || true
-    cp -a /root/domain "$backup_dir/" 2>/dev/null || true
-    cp -a "$HOME/.acme.sh" "$backup_dir/acme.sh" 2>/dev/null || true
-    echo -e "${YELLOW}迁移备份已保存: $backup_dir${NC}"
+    if [ "$backup_confirm" = "y" ] || [ "$backup_confirm" = "Y" ]; then
+        backup_root="/root/linux-daimon/backup/nginx-domain"
+        backup_dir="$backup_root/migration_$(date +%Y%m%d_%H%M%S)"
+        mkdir -p "$backup_dir"
+        cp -a /etc/nginx/sites-available "$backup_dir/" 2>/dev/null || true
+        cp -a /etc/nginx/sites-enabled "$backup_dir/" 2>/dev/null || true
+        cp -a /root/domain "$backup_dir/" 2>/dev/null || true
+        cp -a "$HOME/.acme.sh" "$backup_dir/acme.sh" 2>/dev/null || true
+        echo -e "${YELLOW}迁移备份已保存: $backup_dir${NC}"
+    else
+        echo -e "${YELLOW}已跳过迁移备份${NC}"
+    fi
 
     while IFS= read -r conf; do
         domain=$(nginx_domain_acme_conf_value "$conf" Le_Domain)
