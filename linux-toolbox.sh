@@ -8334,20 +8334,96 @@ linux_info() {
 
 
 
-one_click_enable_bbr_fq() {
-	root_use
-	local conf="/etc/sysctl.d/99-daimon-bbr-fq.conf"
+DAIMON_BBR_FQ_CONF="/etc/sysctl.d/99-daimon-bbr-fq.conf"
+DAIMON_NETWORK_OPTIMIZE_CONF="/etc/sysctl.d/99-daimon-network-optimize.conf"
+DAIMON_NETWORK_LEGACY_CONF="/etc/sysctl.d/99-network-optimize.conf"
+
+daimon_network_bbr_supported() {
 	modprobe tcp_bbr 2>/dev/null || true
-	if ! sysctl net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -q bbr; then
-		echo -e "${gl_hong}当前内核不支持 BBR，请先升级内核。${gl_bai}"
-		return 1
+	sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr
+}
+
+daimon_network_verify_bbr_fq() {
+	[ "$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" = "bbr" ] &&
+		[ "$(sysctl -n net.core.default_qdisc 2>/dev/null)" = "fq" ]
+}
+
+daimon_network_verify_sysctl_file() {
+	local file="$1" line key expected actual failed=0
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in ''|'#'*) continue ;; esac
+		key=${line%%=*}
+		expected=${line#*=}
+		key=$(printf '%s' "$key" | xargs)
+		expected=$(printf '%s' "$expected" | xargs)
+		actual=$(sysctl -n "$key" 2>/dev/null | xargs)
+		if [ "$actual" != "$expected" ]; then
+			echo -e "${gl_hong}参数验证失败: $key，期望 $expected，实际 ${actual:-不可用}${gl_bai}"
+			failed=1
+		fi
+	done < "$file"
+	[ "$failed" -eq 0 ]
+}
+
+daimon_network_show_other_bbr_configs() {
+	local found
+	found=$(grep -HnE '^[[:space:]]*net\.(ipv4\.tcp_congestion_control|core\.default_qdisc)[[:space:]]*=' \
+		/etc/sysctl.conf /etc/sysctl.d/*.conf 2>/dev/null | grep -vF "$DAIMON_BBR_FQ_CONF:" || true)
+	if [ -n "$found" ]; then
+		echo -e "${gl_huang}检测到其他 BBR/队列配置来源，请确认没有冲突：${gl_bai}"
+		printf '%s\n' "$found"
 	fi
-	cat > "$conf" <<'EOF'
+}
+
+daimon_network_enable_bbr_fq() {
+	local tmp old_conf="" old_cc old_qdisc
+	if ! daimon_network_bbr_supported; then
+		echo -e "${gl_hong}当前内核不支持 BBR，未写入任何 BBR/FQ 配置。${gl_bai}"
+		echo "请进入主菜单 13 的 BBR 管理，明确选择并安装适合当前系统的内核。"
+		return 2
+	fi
+
+	old_cc=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || true)
+	old_qdisc=$(sysctl -n net.core.default_qdisc 2>/dev/null || true)
+	mkdir -p /etc/sysctl.d /etc/modules-load.d
+	tmp=$(mktemp) || return 1
+	if [ -f "$DAIMON_BBR_FQ_CONF" ]; then
+		old_conf=$(mktemp) || { rm -f "$tmp"; return 1; }
+		cp -a "$DAIMON_BBR_FQ_CONF" "$old_conf"
+	fi
+	cat > "$tmp" <<'EOF'
+# linux-tools-daimon BBR + FQ
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
-	grep -qxF 'tcp_bbr' /etc/modules-load.d/bbr.conf 2>/dev/null || echo 'tcp_bbr' > /etc/modules-load.d/bbr.conf
-	sysctl -p "$conf"
+	install -m 644 "$tmp" "$DAIMON_BBR_FQ_CONF"
+	rm -f "$tmp"
+	printf '%s\n' tcp_bbr > /etc/modules-load.d/bbr.conf
+
+	if sysctl -p "$DAIMON_BBR_FQ_CONF" >/dev/null 2>&1 && daimon_network_verify_bbr_fq; then
+		rm -f "$old_conf"
+		return 0
+	fi
+
+	if [ -n "$old_conf" ]; then
+		cp -a "$old_conf" "$DAIMON_BBR_FQ_CONF"
+	else
+		rm -f "$DAIMON_BBR_FQ_CONF"
+	fi
+	rm -f "$old_conf"
+	[ -n "$old_qdisc" ] && sysctl -w "net.core.default_qdisc=$old_qdisc" >/dev/null 2>&1 || true
+	[ -n "$old_cc" ] && sysctl -w "net.ipv4.tcp_congestion_control=$old_cc" >/dev/null 2>&1 || true
+	echo -e "${gl_hong}BBR + FQ 应用后验证失败，已恢复原配置。${gl_bai}"
+	daimon_network_show_other_bbr_configs
+	return 1
+}
+
+one_click_enable_bbr_fq() {
+	root_use
+	local status
+	daimon_network_enable_bbr_fq
+	status=$?
+	[ "$status" -eq 0 ] || return "$status"
 	echo -e "${gl_lv}已开启 BBR + FQ 加速${gl_bai}"
 	sysctl net.ipv4.tcp_congestion_control net.core.default_qdisc 2>/dev/null || true
 }
@@ -8468,8 +8544,6 @@ EOF
 	install_add_docker_cn
 }
 
-DAIMON_NETWORK_OPTIMIZE_CONF="/etc/sysctl.d/99-network-optimize.conf"
-
 daimon_network_cleanup_old_qdisc_service() {
 	if command -v systemctl >/dev/null 2>&1; then
 		systemctl disable --now daimon-network-optimize.service >/dev/null 2>&1 || true
@@ -8481,41 +8555,76 @@ daimon_network_cleanup_old_qdisc_service() {
 
 daimon_network_apply_custom_optimize() {
 	root_use
-	local available_cc
-	available_cc=$(sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null || true)
-	if ! echo "$available_cc" | grep -qw bbr; then
-		echo -e "${gl_huang}当前内核未检测到 bbr，可先升级内核或安装支持 BBR 的内核。${gl_bai}"
-	fi
+	local tmp old_conf="" key value unsupported=0 status
+	daimon_network_enable_bbr_fq
+	status=$?
+	[ "$status" -eq 0 ] || return "$status"
 	daimon_network_cleanup_old_qdisc_service
-	cat > "$DAIMON_NETWORK_OPTIMIZE_CONF" <<'EOF'
+	tmp=$(mktemp) || return 1
+	if [ -f "$DAIMON_NETWORK_OPTIMIZE_CONF" ]; then
+		old_conf=$(mktemp) || { rm -f "$tmp"; return 1; }
+		cp -a "$DAIMON_NETWORK_OPTIMIZE_CONF" "$old_conf"
+	fi
+	cat > "$tmp" <<'EOF'
 # linux-tools-daimon custom network optimization
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-net.core.rmem_max=134217728
-net.core.wmem_max=134217728
-net.core.netdev_max_backlog=300000
-net.ipv4.tcp_rmem=4096 131072 134217728
-net.ipv4.tcp_wmem=4096 131072 134217728
-fs.file-max=2097152
-net.ipv4.tcp_tw_reuse=1
-net.ipv4.tcp_fastopen=3
-net.ipv4.tcp_window_scaling=1
-net.ipv4.tcp_max_syn_backlog=262144
-net.core.somaxconn=65535
-net.ipv4.tcp_low_latency=1
-net.ipv4.ip_local_port_range=1024 65535
-vm.swappiness=10
-net.ipv4.tcp_slow_start_after_idle=0
-net.ipv4.tcp_limit_output_bytes=4194304
-net.ipv4.tcp_mtu_probing=1
 EOF
-	sysctl -e -p "$DAIMON_NETWORK_OPTIMIZE_CONF"
+	while IFS='|' read -r key value; do
+		[ -n "$key" ] || continue
+		if sysctl -n "$key" >/dev/null 2>&1; then
+			printf '%s=%s\n' "$key" "$value" >> "$tmp"
+		else
+			echo -e "${gl_huang}跳过当前内核不支持的参数: $key${gl_bai}"
+			unsupported=$((unsupported + 1))
+		fi
+	done <<'EOF'
+net.core.rmem_max|134217728
+net.core.wmem_max|134217728
+net.core.netdev_max_backlog|300000
+net.ipv4.tcp_rmem|4096 131072 134217728
+net.ipv4.tcp_wmem|4096 131072 134217728
+fs.file-max|2097152
+net.ipv4.tcp_tw_reuse|1
+net.ipv4.tcp_fastopen|3
+net.ipv4.tcp_window_scaling|1
+net.ipv4.tcp_max_syn_backlog|262144
+net.core.somaxconn|65535
+net.ipv4.tcp_low_latency|1
+net.ipv4.ip_local_port_range|1024 65535
+vm.swappiness|10
+net.ipv4.tcp_slow_start_after_idle|0
+net.ipv4.tcp_limit_output_bytes|4194304
+net.ipv4.tcp_mtu_probing|1
+EOF
+	install -m 644 "$tmp" "$DAIMON_NETWORK_OPTIMIZE_CONF"
+	rm -f "$tmp"
+
+	if ! sysctl -p "$DAIMON_NETWORK_OPTIMIZE_CONF" >/dev/null ||
+		! daimon_network_verify_sysctl_file "$DAIMON_NETWORK_OPTIMIZE_CONF" ||
+		! daimon_network_verify_bbr_fq; then
+		if [ -n "$old_conf" ]; then
+			cp -a "$old_conf" "$DAIMON_NETWORK_OPTIMIZE_CONF"
+		else
+			rm -f "$DAIMON_NETWORK_OPTIMIZE_CONF"
+		fi
+		rm -f "$old_conf"
+		sysctl --system >/dev/null 2>&1 || true
+		echo -e "${gl_hong}网络优化应用或 BBR/FQ 验证失败，已恢复原配置。${gl_bai}"
+		return 1
+	fi
+	rm -f "$old_conf" "$DAIMON_NETWORK_LEGACY_CONF"
 	echo -e "${gl_lv}自定义网络优化已应用。只写入 sysctl 参数，配置文件: $DAIMON_NETWORK_OPTIMIZE_CONF${gl_bai}"
+	[ "$unsupported" -gt 0 ] && echo -e "${gl_huang}已自适应跳过 $unsupported 个不受支持的参数。${gl_bai}"
 	send_stats "自定义网络优化"
 }
 
 daimon_network_show_custom_status() {
 	local key
+	echo "内核版本: $(uname -r)"
+	if daimon_network_bbr_supported; then
+		echo -e "BBR 内核支持: ${gl_lv}支持${gl_bai}"
+	else
+		echo -e "BBR 内核支持: ${gl_hong}不支持${gl_bai}"
+	fi
 	echo "sysctl 配置："
 	for key in \
 		net.core.default_qdisc \
@@ -8544,19 +8653,25 @@ daimon_network_show_custom_status() {
 	echo "BBR 模块信息："
 	modinfo tcp_bbr 2>/dev/null | grep -E '^(filename|version|description):' || echo "  未检测到 tcp_bbr 模块信息"
 	echo "------------------------------------------------"
+	if [ -f "$DAIMON_BBR_FQ_CONF" ]; then
+		echo -e "BBR/FQ 配置: ${gl_lv}已安装${gl_bai} ($DAIMON_BBR_FQ_CONF)"
+	else
+		echo -e "BBR/FQ 配置: ${gl_hui}未由 daimon 管理${gl_bai}"
+	fi
 	if [ -f "$DAIMON_NETWORK_OPTIMIZE_CONF" ]; then
 		echo -e "自定义优化配置: ${gl_lv}已安装${gl_bai} ($DAIMON_NETWORK_OPTIMIZE_CONF)"
 	else
 		echo -e "自定义优化配置: ${gl_hui}未安装${gl_bai}"
 	fi
+	daimon_network_show_other_bbr_configs
 }
 
 daimon_network_clear_custom_optimize() {
 	root_use
 	daimon_network_cleanup_old_qdisc_service
-	rm -f "$DAIMON_NETWORK_OPTIMIZE_CONF"
+	rm -f "$DAIMON_NETWORK_OPTIMIZE_CONF" "$DAIMON_NETWORK_LEGACY_CONF"
 	sysctl --system >/dev/null 2>&1 || true
-	echo "已清除自定义网络优化配置。部分运行态参数需要重启后完全恢复系统默认值。"
+	echo "已清除自定义网络优化配置，BBR/FQ 保持不变；其他运行态参数可能需要重启后恢复系统默认值。"
 	send_stats "清除自定义网络优化"
 }
 
@@ -9015,19 +9130,27 @@ EOF
 
 system_network_auto_optimize() {
 	root_use
+	local status open_bbr
 	while true; do
 		clear
 		echo "系统网络自适应优化"
 		echo "------------------------------------------------"
+		echo -e "当前内核版本: ${gl_huang}$(uname -r)${gl_bai}"
 		echo -e "当前拥塞算法: ${gl_huang}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 未知)${gl_bai}"
 		echo -e "当前队列算法: ${gl_huang}$(sysctl -n net.core.default_qdisc 2>/dev/null || echo 未知)${gl_bai}"
+		if daimon_network_bbr_supported; then
+			echo -e "BBR 内核支持: ${gl_lv}支持，无需安装新内核${gl_bai}"
+		else
+			echo -e "BBR 内核支持: ${gl_hong}不支持，需要通过 BBR 管理安装兼容内核${gl_bai}"
+		fi
 		if [ -f "$DAIMON_NETWORK_OPTIMIZE_CONF" ]; then
 			echo -e "自定义优化配置: ${gl_lv}已安装${gl_bai} ($DAIMON_NETWORK_OPTIMIZE_CONF)"
 		else
 			echo -e "自定义优化配置: ${gl_hui}未安装${gl_bai}"
 		fi
 		echo "------------------------------------------------"
-		echo "说明：使用内置自定义参数，不换内核；只写入 /etc/sysctl.d/99-network-optimize.conf，不创建 qdisc 服务。"
+		echo "说明：优先使用当前内核；支持 BBR 时无需换内核，不支持时可进入 BBR 管理选择内核。"
+		echo "参数配置: $DAIMON_NETWORK_OPTIMIZE_CONF"
 		echo "------------------------------------------------"
 		echo "1. 应用自定义网络优化"
 		echo "2. 查看当前网络优化状态"
@@ -9036,7 +9159,14 @@ system_network_auto_optimize() {
 		echo "------------------------------------------------"
 		read -e -p "请输入你的选择: " choice
 		case "$choice" in
-			1) daimon_network_apply_custom_optimize ;;
+			1)
+				daimon_network_apply_custom_optimize
+				status=$?
+				if [ "$status" -eq 2 ]; then
+					read -e -p "是否进入 BBR 管理选择兼容内核？[y/N]: " open_bbr
+					case "$open_bbr" in [Yy]) linux_bbr ;; esac
+				fi
+				;;
 			2) daimon_network_show_custom_status ;;
 			3) daimon_network_clear_custom_optimize ;;
 			0) return ;;
@@ -10982,10 +11112,20 @@ linux_bbr() {
 	send_stats "bbr管理"
 	install wget curl
 	mkdir -p "$DAIMON_SCRIPT_DIR"
-	local tcpx="$DAIMON_SCRIPT_DIR/tcpx.sh"
+	local tcpx="$DAIMON_SCRIPT_DIR/tcpx.sh" tmp
 	local tcpx_url="https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh"
-	if [ ! -s "$tcpx" ]; then
-		daimon_download_to "$tcpx_url" "$tcpx" || return 1
+	tmp=$(mktemp "$DAIMON_SCRIPT_DIR/tcpx.sh.tmp.XXXXXX") || return 1
+	if daimon_download_to "$tcpx_url" "$tmp" && [ -s "$tmp" ] && bash -n "$tmp"; then
+		chmod +x "$tmp"
+		mv -f "$tmp" "$tcpx"
+		echo -e "${gl_lv}BBR 管理脚本已更新到上游最新版${gl_bai}"
+	else
+		rm -f "$tmp"
+		if [ ! -s "$tcpx" ] || ! bash -n "$tcpx"; then
+			echo -e "${gl_hong}BBR 管理脚本下载失败，且没有可用缓存${gl_bai}"
+			return 1
+		fi
+		echo -e "${gl_huang}上游更新失败，继续使用本地缓存: $tcpx${gl_bai}"
 	fi
 	chmod +x "$tcpx"
 	bash "$tcpx"
