@@ -8365,6 +8365,36 @@ daimon_network_verify_sysctl_file() {
 	[ "$failed" -eq 0 ]
 }
 
+daimon_network_show_conflicting_sysctl_configs() {
+	local managed_file="$1" line key expected key_pattern match source rest line_number definition other found=0
+	[ -f "$managed_file" ] || return 0
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in ''|'#'*) continue ;; esac
+		key=${line%%=*}
+		expected=${line#*=}
+		key=$(printf '%s' "$key" | xargs)
+		expected=$(printf '%s' "$expected" | xargs)
+		key_pattern=${key//./\\.}
+		while IFS= read -r match; do
+			source=${match%%:*}
+			[ "$source" = "$managed_file" ] && continue
+			rest=${match#*:}
+			line_number=${rest%%:*}
+			definition=${rest#*:}
+			other=${definition#*=}
+			other=$(printf '%s' "$other" | xargs)
+			[ "$other" = "$expected" ] && continue
+			if [ "$found" -eq 0 ]; then
+				echo -e "${gl_huang}检测到其他 sysctl 配置定义了不同值：${gl_bai}"
+			fi
+			printf '  %s:%s: %s=%s（本模块=%s）\n' "$source" "$line_number" "$key" "$other" "$expected"
+			found=1
+		done < <(grep -HnE "^[[:space:]]*${key_pattern}[[:space:]]*=" \
+			/etc/sysctl.conf /etc/sysctl.d/*.conf 2>/dev/null || true)
+	done < "$managed_file"
+	[ "$found" -eq 0 ] || echo -e "${gl_huang}上述文件可能在重启或全量重载时覆盖本模块参数；脚本不会自动修改它们。${gl_bai}"
+}
+
 daimon_network_show_other_bbr_configs() {
 	local found
 	found=$(grep -HnE '^[[:space:]]*net\.(ipv4\.tcp_congestion_control|core\.default_qdisc)[[:space:]]*=' \
@@ -8614,6 +8644,7 @@ EOF
 	rm -f "$old_conf" "$DAIMON_NETWORK_LEGACY_CONF"
 	echo -e "${gl_lv}自定义网络优化已应用。只写入 sysctl 参数，配置文件: $DAIMON_NETWORK_OPTIMIZE_CONF${gl_bai}"
 	[ "$unsupported" -gt 0 ] && echo -e "${gl_huang}已自适应跳过 $unsupported 个不受支持的参数。${gl_bai}"
+	daimon_network_show_conflicting_sysctl_configs "$DAIMON_NETWORK_OPTIMIZE_CONF"
 	send_stats "自定义网络优化"
 }
 
@@ -8664,6 +8695,7 @@ daimon_network_show_custom_status() {
 		echo -e "自定义优化配置: ${gl_hui}未安装${gl_bai}"
 	fi
 	daimon_network_show_other_bbr_configs
+	daimon_network_show_conflicting_sysctl_configs "$DAIMON_NETWORK_OPTIMIZE_CONF"
 }
 
 daimon_network_clear_custom_optimize() {

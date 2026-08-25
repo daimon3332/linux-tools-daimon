@@ -121,7 +121,7 @@ d
 
 #### 系统网络自适应优化参数
 
-现代发行版内核通常已经包含标准 BBR，此时直接加载模块并启用，无需安装新内核。BBR/FQ 配置写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他网络参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`；清除自定义网络优化时保留 BBR/FQ。当前内核不支持 BBR 时不会写入配置或显示成功，可选择进入主菜单 13 安装兼容内核。
+现代发行版内核通常已经包含标准 BBR，此时直接加载模块并启用，无需安装新内核。BBR/FQ 配置写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他网络参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`；清除自定义网络优化时保留 BBR/FQ。当前内核不支持 BBR 时不会写入配置或显示成功，可选择进入主菜单 13 安装兼容内核。其他 sysctl 文件定义不同值时只报告覆盖风险，不自动修改用户配置。
 
 | 参数 | 参数的含义 | 调优的参数值 | 调优之后的效果 |
 |---|---|---|---|
