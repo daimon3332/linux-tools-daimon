@@ -5264,7 +5264,14 @@ yt_menu_pro() {
 			9)
 				send_stats "删除视频"
 				read -e -p "请输入删除视频名称: " rmdir
-				rm -rf "$VIDEO_DIR/$rmdir"
+				if [ -z "$rmdir" ] || [ "$rmdir" = "." ] || [ "$rmdir" = ".." ] || [[ "$rmdir" == */* ]]; then
+					echo -e "${gl_hong}名称无效，未删除任何内容。${gl_bai}"
+				elif [ ! -e "$VIDEO_DIR/$rmdir" ]; then
+					echo -e "${gl_huang}未找到 $rmdir，未删除任何内容。${gl_bai}"
+				else
+					rm -rf "$VIDEO_DIR/$rmdir"
+					echo -e "${gl_lv}已删除 $rmdir${gl_bai}"
+				fi
 				;;
 			*)
 				break ;;
@@ -5549,7 +5556,7 @@ done
 
 
 restart_ssh() {
-	restart sshd ssh > /dev/null 2>&1
+	systemctl restart sshd > /dev/null 2>&1 || systemctl restart ssh > /dev/null 2>&1
 
 }
 
@@ -8426,7 +8433,7 @@ daimon_network_enable_bbr_fq() {
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
-	install -m 644 "$tmp" "$DAIMON_BBR_FQ_CONF"
+	command install -m 644 "$tmp" "$DAIMON_BBR_FQ_CONF"
 	rm -f "$tmp"
 	printf '%s\n' tcp_bbr > /etc/modules-load.d/bbr.conf
 
@@ -8576,11 +8583,11 @@ EOF
 
 daimon_network_cleanup_old_qdisc_service() {
 	if command -v systemctl >/dev/null 2>&1; then
-		systemctl disable --now daimon-network-optimize.service >/dev/null 2>&1 || true
+		command systemctl disable --now daimon-network-optimize.service >/dev/null 2>&1 || true
 	fi
 	rm -f /etc/systemd/system/daimon-network-optimize.service /usr/local/bin/daimon-network-optimize-apply.sh
 	rm -f /etc/sysctl.d/99-network-restore-before-daimon.conf
-	command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload >/dev/null 2>&1 || true
+	command -v systemctl >/dev/null 2>&1 && command systemctl daemon-reload >/dev/null 2>&1 || true
 }
 
 daimon_network_apply_custom_optimize() {
@@ -8625,7 +8632,7 @@ net.ipv4.tcp_slow_start_after_idle|0
 net.ipv4.tcp_limit_output_bytes|4194304
 net.ipv4.tcp_mtu_probing|1
 EOF
-	install -m 644 "$tmp" "$DAIMON_NETWORK_OPTIMIZE_CONF"
+	command install -m 644 "$tmp" "$DAIMON_NETWORK_OPTIMIZE_CONF"
 	rm -f "$tmp"
 
 	if ! sysctl -p "$DAIMON_NETWORK_OPTIMIZE_CONF" >/dev/null ||
@@ -17997,11 +18004,11 @@ ssh_config_manager() {
 			echo -e "${gl_hong}SSH 配置语法错误，未重启 SSH。请检查 $SSH_CONFIG${gl_bai}"
 			return 1
 		fi
-		systemctl stop ssh.socket sshd.socket 2>/dev/null || true
-		systemctl disable ssh.socket sshd.socket 2>/dev/null || true
-		if systemctl list-unit-files 2>/dev/null | grep -q '^sshd\.service'; then
+		command systemctl stop ssh.socket sshd.socket 2>/dev/null || true
+		command systemctl disable ssh.socket sshd.socket 2>/dev/null || true
+		if command systemctl list-unit-files 2>/dev/null | grep -q '^sshd\.service'; then
 			systemctl restart sshd
-		elif systemctl list-unit-files 2>/dev/null | grep -q '^ssh\.service'; then
+		elif command systemctl list-unit-files 2>/dev/null | grep -q '^ssh\.service'; then
 			systemctl restart ssh
 		else
 			service sshd restart 2>/dev/null || service ssh restart 2>/dev/null || true
