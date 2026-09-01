@@ -635,66 +635,92 @@ remove() {
 # 通用 systemctl 函数，适用于各种发行版
 systemctl() {
 	local COMMAND="$1"
-	local SERVICE_NAME="$2"
+	shift
 
 	if command -v apk &>/dev/null; then
-		service "$SERVICE_NAME" "$COMMAND"
+		if [ "$#" -eq 0 ]; then
+			service "$COMMAND"
+		else
+			local SERVICE_NAME
+			for SERVICE_NAME in "$@"; do
+				service "$SERVICE_NAME" "$COMMAND" || return $?
+			done
+		fi
 	else
-		/bin/systemctl "$COMMAND" "$SERVICE_NAME"
+		/bin/systemctl "$COMMAND" "$@"
 	fi
 }
 
 
 # 重启服务
 restart() {
-	systemctl restart "$1"
-	if [ $? -eq 0 ]; then
+	local RC
+	systemctl restart "$@"
+	RC=$?
+	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务已重启。"
 	else
 		echo "错误：重启 $1 服务失败。"
 	fi
+	return "$RC"
 }
 
 # 启动服务
 start() {
-	systemctl start "$1"
-	if [ $? -eq 0 ]; then
+	local RC
+	systemctl start "$@"
+	RC=$?
+	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务已启动。"
 	else
 		echo "错误：启动 $1 服务失败。"
 	fi
+	return "$RC"
 }
 
 # 停止服务
 stop() {
-	systemctl stop "$1"
-	if [ $? -eq 0 ]; then
+	local RC
+	systemctl stop "$@"
+	RC=$?
+	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务已停止。"
 	else
 		echo "错误：停止 $1 服务失败。"
 	fi
+	return "$RC"
 }
 
 # 查看服务状态
 status() {
-	systemctl status "$1"
-	if [ $? -eq 0 ]; then
+	local RC
+	systemctl status "$@"
+	RC=$?
+	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务状态已显示。"
 	else
 		echo "错误：无法显示 $1 服务状态。"
 	fi
+	return "$RC"
 }
 
 
 enable() {
 	local SERVICE_NAME="$1"
+	local RC
 	if command -v apk &>/dev/null; then
 		rc-update add "$SERVICE_NAME" default
 	else
 	   /bin/systemctl enable "$SERVICE_NAME"
 	fi
+	RC=$?
 
-	echo "$SERVICE_NAME 已设置为开机自启。"
+	if [ "$RC" -eq 0 ]; then
+		echo "$SERVICE_NAME 已设置为开机自启。"
+	else
+		echo "错误：设置 $SERVICE_NAME 开机自启失败。"
+	fi
+	return "$RC"
 }
 
 
