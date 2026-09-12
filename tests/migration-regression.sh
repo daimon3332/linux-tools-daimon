@@ -736,9 +736,13 @@ PY
     DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script root "$fixture/tasks/Server-A.sh" || return 1
     DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script emby "$fixture/tasks/Emby_Root_Backup.sh" || return 1
     sed -i 's/DAIMON_CHAIN_BACKUP_VERSION=1/DAIMON_CHAIN_BACKUP_VERSION=0/' "$fixture/tasks/Server-A.sh" "$fixture/tasks/Emby_Root_Backup.sh"
-    cp "$fixture/tasks/Server-A.sh" "$fixture/tasks/Root_Backup.sh"
     printf '#!/bin/bash\necho unrelated\n' > "$fixture/tasks/unrelated.sh"
-    printf '# preserved\n25 4 * * * /bin/bash %s/tasks/Root_Backup.sh\n45 4 * * * /bin/bash %s/tasks/Server-A.sh\n7 2 * * * echo unrelated\n' "$fixture" "$fixture" > "$fixture/cron"
+    if [ "$mode" = custom-id ]; then
+        printf '# preserved\n45 4 * * * /bin/bash %s/tasks/.rclone-runner.sh custom:Server-A %s/tasks/Server-A.sh\n7 2 * * * echo unrelated\n' "$fixture" "$fixture" > "$fixture/cron"
+    else
+        cp "$fixture/tasks/Server-A.sh" "$fixture/tasks/Root_Backup.sh"
+        printf '# preserved\n25 4 * * * /bin/bash %s/tasks/Root_Backup.sh\n45 4 * * * /bin/bash %s/tasks/Server-A.sh\n7 2 * * * echo unrelated\n' "$fixture" "$fixture" > "$fixture/cron"
+    fi
     if [ "$mode" = ambiguous ]; then cp "$fixture/tasks/Server-A.sh" "$fixture/tasks/Server-B.sh"; fi
     if [ "$mode" = unknown ]; then printf '#!/bin/bash\necho custom\n' > "$fixture/tasks/Root_Backup.sh"; fi
     if [ "$mode" = symlink ]; then mv "$fixture/tasks/Root_Backup.sh" "$fixture/linked.sh"; ln -s "$fixture/linked.sh" "$fixture/tasks/Root_Backup.sh"; fi
@@ -753,14 +757,19 @@ PY
     local rc=0
     crontab_sync_upgrade_installed > "$fixture/output" 2>&1 || rc=$?
     cat "$fixture/output"
-    if [ "$mode" = success ]; then
+    if [ "$mode" = success ] || [ "$mode" = custom-id ]; then
         [ "$rc" = 0 ] || return 1
         [ "$(cat "$fixture/tasks/.root-backup-name")" = Server-A ] || return 1
         [ ! -e "$fixture/tasks/Root_Backup.sh" ] || return 1
         [ "$(grep -c 'Server-A.sh' "$fixture/cron")" = 1 ] || return 1
-        grep -q '^25 4 ' "$fixture/cron" || return 1
         grep -q '^# preserved$' "$fixture/cron" || return 1
         grep -q '^7 2 ' "$fixture/cron" || return 1
+        if [ "$mode" = success ]; then
+            grep -q '^25 4 ' "$fixture/cron" || return 1
+        else
+            grep -q '^45 4 .*\.rclone-runner\.sh root .*Server-A\.sh' "$fixture/cron" || return 1
+            ! grep -q 'custom:Server-A' "$fixture/cron" || return 1
+        fi
         crontab_sync_upgrade_installed > "$fixture/output" 2>&1 || return 1
         grep -q 'BACKUP_UPGRADE current' "$fixture/output" || return 1
     else
@@ -1188,7 +1197,7 @@ check 'generated Emby backup rejects case collisions before sync' test_generated
 for mode in root-mounts generation-failure primary-mutation replication-mutation secondary-sync-failure secondary-check-failure success bandwidth-override info-failure inspect-failure stop-failure sync-failure check-failure start-failure term int runner-term timeout duplicate check-duplicate auto-restart check-auto-restart parent-mount readonly missing-source empty-source pending-recovery same-lock shared-lock excluded-collision; do
     check "generated Emby lifecycle $mode" test_emby_lifecycle "$mode"
 done
-for mode in success ambiguous unknown symlink lock cron-failure; do
+for mode in success custom-id ambiguous unknown symlink lock cron-failure; do
     check "chain upgrade $mode" test_chain_upgrade "$mode"
 done
 check 'generated root backup freezes bind-mounted Docker services' test_generated_root_backup_policy

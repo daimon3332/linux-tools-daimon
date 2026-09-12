@@ -21983,6 +21983,7 @@ for line in lines:
         if seen_root: continue
         seen_root = True
         line = re.sub(re.escape(str(old)) + r'(?=\s|$)', lambda _: str(canonical), line)
+        line = re.sub(r'(\.rclone-runner\.sh\s+)(?:custom:[^\s]+|root)(\s+)', r'\1root\2', line)
     after_lines.append(line)
 after = ''.join(after_lines).encode()
 changes = {p: data for p, data in desired.items() if not p.exists() or p.read_bytes() != data}
@@ -22689,9 +22690,9 @@ crontab_sync_show_status() {
 
 	mapfile -t custom_files < <(crontab_sync_custom_files)
 	if [ "${#custom_files[@]}" -eq 0 ]; then
-		echo -e "自定义脚本: ${gl_hui}无${gl_bai}"
+		echo -e "其他脚本: ${gl_hui}无${gl_bai}"
 	else
-		echo "自定义脚本:"
+		echo "其他脚本:"
 		for file_name in "${custom_files[@]}"; do
 			custom_count=$((custom_count + 1))
 			file="$(crontab_sync_script_file_by_id custom "$file_name")"
@@ -22759,38 +22760,6 @@ crontab_sync_all_numbers() {
 	seq 1 "$count" | tr '\n' ' '
 }
 
-crontab_sync_create_custom() {
-	root_use
-	local name file cron_expr cron_line runner
-	read -e -p "请输入自定义脚本名称（自动补全 .sh 后缀）: " name || return 1
-	[ -z "$name" ] && { echo "名称不能为空"; return 1; }
-	name=$(basename "$name")
-	name=$(echo "$name" | sed 's/[[:space:]]/_/g; s/[^A-Za-z0-9_.-]/_/g')
-	[ -z "${name//_/}" ] && { echo "名称无效"; return 1; }
-	[[ "$name" == *.sh ]] || name="${name}.sh"
-	[ "$name" != "Root_Backup.sh" ] || { echo "Root_Backup.sh 是内置任务，请使用 /root Docker 一致性备份脚本。"; return 1; }
-	file=$(crontab_sync_script_file_by_id custom "$name")
-	read -e -i "45 4 * * *" -p "请输入上海时间定时规则（固定时分，每天或每周，默认 45 4 * * *）: " cron_expr || return 1
-	cron_expr="${cron_expr:-45 4 * * *}"
-	runner=$(crontab_sync_runner_file)
-	cron_line=$(crontab_sync_cron_entry "$cron_expr /bin/bash $runner custom:${name%.sh} $file >> /var/log/rclone/cron_${name%.sh}.log 2>&1") || { echo "仅支持固定时分的每天/每周规则，例如 45 4 * * * 或 45 4 * * 0。"; return 1; }
-
-	if ! command -v rclone >/dev/null 2>&1; then
-		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
-		return 1
-	fi
-	if ! crontab_sync_remote_ready; then
-		echo -e "${gl_hong}kissska1 连接检查失败，未创建同步脚本。${gl_bai}"
-		return 1
-	fi
-	check_crontab_installed
-	crontab_sync_write_script custom "$file" || return 1
-	(crontab -l 2>/dev/null | grep -vF "$file" || true; echo "$cron_line") | crontab - || return 1
-	echo -e "${gl_lv}自定义同步脚本已创建${gl_bai}"
-	echo "脚本路径: $file"
-	echo "定时任务: $cron_line"
-}
-
 crontab_sync_run_root_once() {
 	root_use
 	local file confirm
@@ -22814,8 +22783,7 @@ crontab_sync_manager() {
 		echo -e "${gl_kjlan}2.   ${gl_bai}卸载脚本（支持多选，输入编号，如: 2 4）"
 		echo -e "${gl_kjlan}3.   ${gl_bai}一键安装（默认全选，可自行删除编号）"
 		echo -e "${gl_kjlan}4.   ${gl_bai}一键卸载（默认全选，可自行删除编号）"
-		echo -e "${gl_kjlan}5.   ${gl_bai}自定义脚本"
-		echo -e "${gl_kjlan}6.   ${gl_bai}立即执行一次 /root Docker 一致性备份"
+		echo -e "${gl_kjlan}5.   ${gl_bai}立即执行一次 /root Docker 一致性备份"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice || return 1
@@ -22845,8 +22813,7 @@ crontab_sync_manager() {
 					echo "已取消"
 				fi
 				;;
-			5) crontab_sync_create_custom ;;
-			6) crontab_sync_run_root_once ;;
+			5) crontab_sync_run_root_once ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac

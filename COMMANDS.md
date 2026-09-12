@@ -1686,7 +1686,7 @@ chmod +x /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh
 ls -1 /root/linux-daimon/backup-sh/*.sh 2>/dev/null
 crontab -l
 ```
-解释：显示内置脚本和自定义脚本的安装状态；状态会同时检查脚本文件、脚本内容关键字段和 crontab 里的精确任务行。启动新版脚本或进入本菜单时，会在确认 `kissska1` 可访问后自动迁移旧 Infini-cloud 脚本和任务，并保留原执行时间。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
+解释：显示内置脚本和已有其他脚本的安装状态；状态会检查脚本文件和对应 crontab 路径。启动新版脚本或进入本菜单时，会在确认 `kissska1` 可访问后自动迁移旧 Infini-cloud 脚本和任务，并保留原执行时间。旧版服务器命名的 `/root` 自定义脚本会统一迁移为 `root` 任务，不再单列成另一套脚本。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
 
 内置脚本目录：
 
@@ -1695,15 +1695,7 @@ mkdir -p /root/linux-daimon/backup-sh /var/log/rclone
 ```
 解释：所有同步脚本都放在 `/root/linux-daimon/backup-sh`，日志默认放在 `/var/log/rclone`。定时任务统一经过 `.rclone-runner.sh`，状态缓存为 `/var/cache/daimon/rclone-sync-status.tsv`，运行日志为 `/var/log/rclone/runs`。
 
-安装/卸载脚本：
-
-```bash
-crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/backup-sh/脚本名.sh" | crontab -
-cat > /root/linux-daimon/backup-sh/脚本名.sh
-chmod +x /root/linux-daimon/backup-sh/脚本名.sh
-(crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/backup-sh/脚本名.sh"; echo "错开的时间 /bin/bash /root/linux-daimon/backup-sh/.rclone-runner.sh custom:脚本名 /root/linux-daimon/backup-sh/脚本名.sh >> /var/log/rclone/cron_脚本名.log 2>&1") | crontab -
-```
-解释：安装时写入脚本并添加定时任务；卸载时删除脚本文件，并删除 crontab 中包含该脚本路径的任务行。
+安装或卸载时，按当前编号对应的脚本路径操作；`/root` 一致性备份的运行标识固定为 `root`。
 
 菜单中的“自动同步记录”读取本地缓存，默认展示最近 15 次；记录保留 30 天，状态包括执行中、成功、失败、被锁跳过和中断/未知。失败原因包含退出码并经过脱敏，完整日志可查看、通过 OSC 52/cpcat 复制，或导出到 `/root/linux-daimon/rclone-logs`。
 
@@ -1734,14 +1726,6 @@ Via 同步脚本：
 * * * * * [ "$(TZ=Asia/Shanghai date +\%H:\%M)" = "04:00" ] && /bin/bash /root/linux-daimon/backup-sh/.rclone-runner.sh nginxdomain /root/linux-daimon/backup-sh/Nginx_Domain_Local_Backup.sh >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1
 ```
 解释：每天上海时间 04:00 在服务器本地备份 `sites-available`、enabled 站点名称和 `/root/domain` 到 `/root/linux-daimon/backup/nginx-domain/auto_latest`；每次覆盖旧备份，只保留 1 份，不使用 rclone。未检测到 `/root/domain/*/fullchain.pem` 时跳过备份并保留已有 `auto_latest`。
-
-自定义脚本：
-
-```bash
-cat > /root/linux-daimon/backup-sh/自定义名称.sh
-* * * * * [ "$(TZ=Asia/Shanghai date +\%H:\%M)" = "04:45" ] && /bin/bash /root/linux-daimon/backup-sh/.rclone-runner.sh custom:自定义名称 /root/linux-daimon/backup-sh/自定义名称.sh >> /var/log/rclone/cron_自定义名称.log 2>&1
-```
-解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 低速同步到 `kissska1:脚本名`，排除 `.cache`、`.npm`、`.nvm`、`node_modules`、日志、迁移回滚、临时文件和 `/root/emby`。脚本带并发锁、失败传播和成功标记。
 
 Emby 目录备份脚本：
 

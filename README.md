@@ -46,7 +46,7 @@ d
 | 14 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
 | 15 | rclone管理 | 安装 rclone、修改配置文件、卸载 rclone |
 | 16 | Bitwarden管理 | 配置 vaultwarden-backup 的 rclone.conf、执行备份和还原 |
-| 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via、域名和 Nginx 配置备份、自定义同步脚本 |
+| 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via、域名和 Nginx 配置备份、服务器命名 `/root` 一致性备份 |
 | 18 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
 | 19 | 服务器退役 | 只读检测并按选择停止 Compose、删除托管 Nginx 配置/证书目录和自动任务脚本 |
 
@@ -324,18 +324,17 @@ Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停�
 
 正常失败或 INT/TERM 会先等待传输退出，再恢复容器。恢复失败时保留 `/run/lock/daimon-emby/containers.pending`，核对并恢复清单中的容器后才能移除清单重试；强杀或主机故障不能依靠 shell trap 自动恢复。运行器会保留真正存活的长任务状态，重复路径警告不显示为完整成功。
 
-更新、启动或进入本菜单会检测已安装的受管理 `/root`、Emby 脚本；识别旧版本后原子替换，保留服务器名称和已有时间，合并重复 `/root` 任务。任务运行、身份歧义或未知自定义模板会明确阻止升级。未安装任务的服务器不会自动创建任务。`/root` 与自定义服务器脚本使用相同的一致性模板：`qq3303338052@outlook:<服务器名>` → `kissska1:<服务器名>`；Emby 独立使用两边的 `Emby`，Nginx 本地包仍包含在服务器目录的 `linux-daimon/backup/nginx-domain/auto_latest`。
+更新、启动或进入本菜单会检测已安装的受管理 `/root`、Emby 脚本；识别旧版本后原子替换，保留服务器名称和已有时间，合并重复 `/root` 任务，并把旧版 `custom:<服务器名>` 运行标识统一迁移为 `root`。任务运行、身份歧义或未知脚本模板会明确阻止升级。未安装任务的服务器不会自动创建任务。`/root` 备份只有统一的服务器命名入口：`qq3303338052@outlook:<服务器名>` → `kissska1:<服务器名>`；Emby 独立使用两边的 `Emby`，Nginx 本地包仍包含在服务器目录的 `linux-daimon/backup/nginx-domain/auto_latest`。
 
 新版脚本启动或进入本菜单时，会先验证 `kissska1`，再自动删除旧 Infini-cloud 任务和脚本，保留原执行时间并生成对应的 kissska1 同步任务。
 
 | 序号 | 选项 | 作用 |
 |---:|---|---|
-| 1 | 安装脚本 | 支持多选安装 Bitwarden、图床、Via、域名和 Nginx、`/root`、Emby 备份或已有自定义脚本 |
+| 1 | 安装脚本 | 支持多选安装 Bitwarden、图床、Via、域名和 Nginx、`/root`、Emby 备份或已有其他脚本 |
 | 2 | 卸载脚本 | 支持多选删除脚本文件和对应 crontab |
 | 3 | 一键安装 | 默认预填所有脚本编号，用户可自行删除编号 |
 | 4 | 一键卸载 | 默认预填所有脚本编号，用户可自行删除编号 |
-| 5 | 自定义脚本 | 输入脚本名称，自动补全 `.sh`，写入通用 `/root` 备份模板；所有自带定时规则按上海时间执行 |
-| 6 | 立即执行一次 `/root` 备份 | 需要确认口令，执行结果也记录到自动同步记录 |
+| 5 | 立即执行一次 `/root` 备份 | 需要确认口令，执行结果也记录到自动同步记录 |
 | 0 | 返回主菜单 | 返回上一级菜单 |
 
 

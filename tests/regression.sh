@@ -774,6 +774,18 @@ test_update_refreshes_cert_helper() {
         grep -Fq 'exec' "$trace" &&
         ! grep -Fq '更新 Nginx + 域名续期脚本' "$trace"
 }
+test_crontab_menu_has_no_custom_creation() {
+    load_function crontab_sync_manager || return 1
+    local output
+    crontab_sync_upgrade_installed() { :; }
+    crontab_sync_reconcile_legacy() { :; }
+    crontab_sync_show_status() { :; }
+    crontab_sync_all_numbers() { :; }
+    read() { printf -v "${@: -1}" 0; }
+    output=$(crontab_sync_manager)
+    [[ "$output" != *'自定义脚本'* ]] &&
+        [[ "$output" == *'5.   立即执行一次 /root Docker 一致性备份'* ]]
+}
 test_ufw_unknown_ports() {
     local trace="$WORK/ufw.trace" SSH_CONNECTION=''
     : > "$trace"
@@ -922,6 +934,7 @@ check 'third-party documentation numbering matches the menu' test_tool_documenta
 check 'Bitwarden config validation never prints credentials' test_bitwarden_config_privacy
 check 'main menu stops safely on EOF' test_main_eof
 check 'script update always refreshes the Nginx cert helper' test_update_refreshes_cert_helper
+check 'crontab menu has no separate custom-script creation' test_crontab_menu_has_no_custom_creation
 check 'UFW cannot enable with unknown SSH ports' test_ufw_unknown_ports
 check 'UFW cannot enable after allow-rule failure' test_ufw_allow_failure
 check 'mq with fq leaf queues passes verification' test_active_qdisc good
