@@ -21894,6 +21894,25 @@ PY
     printf '%s\n' "$name"
 }
 
+crontab_sync_prompt_root_name() {
+    local dir name
+    if name=$(crontab_sync_root_name 2>/dev/null); then
+        printf '%s\n' "$name"
+        return 0
+    fi
+    read -e -p "请输入此服务器的 /root 备份名称（例如 Oracle-GuLai-4C24G）: " name || return 1
+    name=$(basename "$name")
+    name=$(printf '%s' "$name" | sed 's/[[:space:]]/_/g; s/[^A-Za-z0-9_.-]/_/g')
+    [ -n "$name" ] && [ "$name" != Root_Backup ] && [ "$name" != Emby ] && [ "$name" != Emby_Root_Backup ] || {
+        echo -e "${gl_hong}服务器备份名称无效${gl_bai}"
+        return 1
+    }
+    dir=$(crontab_sync_backup_dir)
+    mkdir -p "$dir" || return 1
+    printf '%s\n' "$name" > "$dir/.root-backup-name" || return 1
+    printf '%s\n' "$name"
+}
+
 crontab_sync_upgrade_installed() (
     set -euo pipefail
     umask 077
@@ -22683,7 +22702,11 @@ crontab_sync_show_status() {
 	for n in 1 2 3 4 5 6; do
 		id=$(crontab_sync_builtin_id_by_number "$n")
 		name=$(crontab_sync_builtin_name_by_id "$id")
-		file=$(crontab_sync_script_file_by_id "$id")
+		file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null || true)
+		if [ "$id" = root ] && [ -z "$file" ]; then
+			printf "%2d. %-20s %-58s %b\n" "$n" "$name" "" "${gl_huang}未安装（安装时设置服务器名称）${gl_bai}"
+			continue
+		fi
 		cron_line=$(crontab_sync_cron_line_by_id "$id" "$file")
 		printf "%2d. %-20s %-58s %b\n" "$n" "$name" "$file" "$(crontab_sync_status_text "$id" "$file" "$cron_line")"
 	done
@@ -22704,12 +22727,20 @@ crontab_sync_show_status() {
 }
 
 crontab_sync_get_item_by_number() {
-	local num="$1"
+	local num="$1" action="${2:-install}"
 	local id file cron_line
 	case "$num" in
 		1|2|3|4|5|6)
 			id=$(crontab_sync_builtin_id_by_number "$num")
-			file=$(crontab_sync_script_file_by_id "$id")
+			if [ "$id" = root ]; then
+				if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then
+					[ "$action" = install ] || return 1
+					crontab_sync_prompt_root_name >/dev/null || return 1
+					file=$(crontab_sync_script_file_by_id "$id") || return 1
+				fi
+			else
+				file=$(crontab_sync_script_file_by_id "$id")
+			fi
 			cron_line=$(crontab_sync_cron_line_by_id "$id" "$file")
 			echo "$id|$file|$cron_line"
 			return 0
@@ -22739,7 +22770,7 @@ crontab_sync_handle_numbers() {
 			echo "跳过无效编号: $n"
 			continue
 		fi
-		if ! item=$(crontab_sync_get_item_by_number "$n"); then
+		if ! item=$(crontab_sync_get_item_by_number "$n" "$action"); then
 			echo "跳过无效编号: $n"
 			continue
 		fi

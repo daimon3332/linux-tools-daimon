@@ -786,6 +786,19 @@ test_crontab_menu_has_no_custom_creation() {
     [[ "$output" != *'自定义脚本'* ]] &&
         [[ "$output" == *'5.   立即执行一次 /root Docker 一致性备份'* ]]
 }
+test_root_backup_name_prompt() {
+    load_function crontab_sync_backup_dir &&
+        load_function crontab_sync_root_name &&
+        load_function crontab_sync_prompt_root_name || return 1
+    local dir="$WORK/root-name" name
+    mkdir -p "$dir"
+    DAIMON_BACKUP_SH_DIR="$dir"
+    read() { printf -v "${@: -1}" 'Server-New'; }
+    name=$(crontab_sync_prompt_root_name) || return 1
+    [ "$name" = Server-New ] &&
+        [ "$(cat "$dir/.root-backup-name")" = Server-New ] &&
+        [ "$(crontab_sync_prompt_root_name)" = Server-New ]
+}
 test_ufw_unknown_ports() {
     local trace="$WORK/ufw.trace" SSH_CONNECTION=''
     : > "$trace"
@@ -935,6 +948,7 @@ check 'Bitwarden config validation never prints credentials' test_bitwarden_conf
 check 'main menu stops safely on EOF' test_main_eof
 check 'script update always refreshes the Nginx cert helper' test_update_refreshes_cert_helper
 check 'crontab menu has no separate custom-script creation' test_crontab_menu_has_no_custom_creation
+check 'root backup name prompt persists the server identity' test_root_backup_name_prompt
 check 'UFW cannot enable with unknown SSH ports' test_ufw_unknown_ports
 check 'UFW cannot enable after allow-rule failure' test_ufw_allow_failure
 check 'mq with fq leaf queues passes verification' test_active_qdisc good
