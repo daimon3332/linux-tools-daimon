@@ -9751,7 +9751,7 @@ linux_Settings() {
 linux_tools() {
   local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi ncdu nexttrace iperf3)
   local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "ncdu" "NextTrace" "iperf3")
-  local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "系统概览" "磁盘占用" "路由追踪" "网络性能测试")
+  local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "磁盘占用" "路由追踪" "网络性能测试")
 
   local programming_ids=(python npm nodejs bun uv git claude codex)
   local programming_names=("python" "npm" "nodejs" "bun" "uv" "git" "ClaudeCode" "Codex")
@@ -19144,7 +19144,9 @@ nginx_domain_write_auto_backup_script() {
 nginx_domain_ensure_crontab() {
     if ! command -v crontab >/dev/null 2>&1; then
         if command -v apt >/dev/null 2>&1; then
-            apt update -y || return 1
+            if ! apt update -y; then
+                echo -e "${YELLOW}存在失效的软件源，继续使用现有软件包索引安装 cron；不修改该软件源。${NC}"
+            fi
             apt install -y cron || return 1
         fi
     fi
@@ -19314,11 +19316,12 @@ config_nginx() {
     local DOMAIN="$1"
     local NGINX_NAME="$2"
     local PORT="$3"
+    local CERT_DIR
 
     validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
     validate_name "$NGINX_NAME" || { echo -e "${RED}配置名只能包含字母、数字、点、下划线和连字符${NC}"; return 1; }
     validate_port "$PORT" || { echo -e "${RED}端口号不合法${NC}"; return 1; }
-    CERT_DIR="/root/domain/$DOMAIN"
+    CERT_DIR=$(nginx_domain_cert_dir_for_domain "$DOMAIN")
 
     # 检查证书是否存在
     if [ ! -s "$CERT_DIR/fullchain.pem" ] || [ ! -s "$CERT_DIR/privkey.pem" ]; then

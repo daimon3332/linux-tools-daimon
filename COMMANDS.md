@@ -718,9 +718,9 @@ rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
 10. fzf
 11. ble.sh
 12. yazi
-14. ncdu
-15. NextTrace
-16. iperf3
+13. ncdu
+14. NextTrace
+15. iperf3
 
 ```bash
 command -v 工具名

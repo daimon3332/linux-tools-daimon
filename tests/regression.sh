@@ -338,11 +338,14 @@ test_nginx_menu_no_install() {
 }
 test_nginx_dependency_failure() {
     load_nginx_functions || return 1
-    local manager="$1" calls=0
+    local manager="$1"
     command() {
         if [ "${1:-}" = -v ]; then [ "$2" = "$manager" ]; else builtin command "$@"; fi
     }
-    apt() { calls=$((calls + 1)); [ "$calls" -gt 1 ]; }
+    apt() {
+        [ "${1:-}" = install ] && return 1
+        return 0
+    }
     dnf() { return 1; }
     yum() { return 1; }
     ! install_deps
@@ -389,6 +392,96 @@ test_nginx_config_install_failure() {
     systemctl() { :; }
     ! config_nginx example.com fixture 8080 || return 1
     [ ! -e "$WORK/nginx/sites-available/fixture" ]
+}
+nginx_isolated_path_functions() {
+    local base="$1" body
+    body=$(declare -f nginx_domain_cert_dir_for_domain)
+    body=${body//\/root\/domain/$base/domain}
+    body=${body//\/etc\/nginx/$base/etc}
+    eval "$body" || return 1
+    body=$(declare -f config_nginx)
+    body=${body//\/root\/domain/$base/domain}
+    body=${body//\/etc\/nginx/$base/etc}
+    body=${body//\/var\/www/$base/www}
+    eval "$body"
+}
+test_nginx_subdomain_cert_path() {
+    load_nginx_functions || return 1
+    local base="$WORK/nginx-subdomain" conf="$WORK/nginx-subdomain/etc/sites-available/fixture"
+    mkdir -p "$base/domain/www" "$base/etc/sites-available" "$base/etc/sites-enabled"
+    printf fixture > "$base/domain/www/fullchain.pem"
+    printf fixture > "$base/domain/www/privkey.pem"
+    nginx_isolated_path_functions "$base" || return 1
+    install_nginx() { return 0; }
+    nginx() { return 0; }
+    systemctl() { return 0; }
+    ln() { return 0; }
+    config_nginx www.example.com fixture 8080 || return 1
+    grep -Fq "ssl_certificate $base/domain/www/fullchain.pem;" "$conf"
+}
+test_nginx_existing_full_domain_cert_path() {
+    load_nginx_functions || return 1
+    local base="$WORK/nginx-legacy-path" conf="$WORK/nginx-legacy-path/etc/sites-available/fixture"
+    mkdir -p "$base/domain/www.example.com" "$base/etc/sites-available" "$base/etc/sites-enabled"
+    printf fixture > "$base/domain/www.example.com/fullchain.pem"
+    printf fixture > "$base/domain/www.example.com/privkey.pem"
+    cat > "$base/etc/sites-available/legacy" <<EOF
+server {
+    server_name www.example.com;
+    ssl_certificate $base/domain/www.example.com/fullchain.pem;
+}
+EOF
+    nginx_isolated_path_functions "$base" || return 1
+    install_nginx() { return 0; }
+    nginx() { return 0; }
+    systemctl() { return 0; }
+    ln() { return 0; }
+    config_nginx www.example.com fixture 8080 || return 1
+    grep -Fq "ssl_certificate $base/domain/www.example.com/fullchain.pem;" "$conf"
+}
+test_nginx_cron_broken_apt_source() {
+    load_nginx_functions || return 1
+    local marker="$WORK/cron-installed" trace="$WORK/cron-apt.trace"
+    : > "$trace"
+    rm -f "$marker"
+    command() {
+        if [ "${1:-}" = -v ] && [ "${2:-}" = apt ]; then return 0; fi
+        if [ "${1:-}" = -v ] && [ "${2:-}" = crontab ]; then [ -f "$marker" ]; return; fi
+        builtin command "$@"
+    }
+    apt() {
+        printf '%s\n' "$*" >> "$trace"
+        [ "${1:-}" = update ] && return 100
+        [ "${1:-}" = install ] && touch "$marker"
+    }
+    systemctl() { return 0; }
+    nginx_domain_ensure_crontab || return 1
+    grep -Fxq 'update -y' "$trace" && grep -Fxq 'install -y cron' "$trace"
+}
+test_nginx_apt_update_warning() {
+    load_nginx_functions || return 1
+    local base="$WORK/nginx-apt-warning" marker trace
+    mkdir -p "$base"
+    marker="$base/nginx-installed"
+    trace="$base/apt.trace"
+    : > "$trace"
+    command() {
+        if [ "${1:-}" = -v ] && [ "${2:-}" = apt ]; then return 0; fi
+        if [ "${1:-}" = -v ] && [ "${2:-}" = nginx ]; then [ -f "$marker" ]; return; fi
+        builtin command "$@"
+    }
+    apt() {
+        printf '%s\n' "$*" >> "$trace"
+        [ "${1:-}" = update ] && return 100
+        [ "${1:-}" = install ] && touch "$marker"
+    }
+    systemctl() { return 0; }
+    nginx_domain_enable_auto_backup() { return 0; }
+    install_nginx || return 1
+    if ! grep -Fxq 'update -y' "$trace" || ! grep -Fxq 'install -y nginx' "$trace"; then
+        cat "$trace"
+        return 1
+    fi
 }
 test_acme_download_failure() {
     load_nginx_functions || return 1
@@ -609,6 +702,26 @@ test_tool_numbers() {
             ;;
     esac
 }
+test_tool_metadata_alignment() {
+    local fixture="$WORK/tool-arrays.sh"
+    sed -n 's/^  local thirdparty_ids=(\(.*\))$/ids=(\1)/p
+            s/^  local thirdparty_names=(\(.*\))$/names=(\1)/p
+            s/^  local thirdparty_desc=(\(.*\))$/desc=(\1)/p' "$SOURCE" > "$fixture" || return 1
+    source "$fixture" || return 1
+    [ "${#ids[@]}" -eq "${#names[@]}" ] &&
+        [ "${#ids[@]}" -eq "${#desc[@]}" ] &&
+        [ "${ids[12]}" = ncdu ] && [ "${desc[12]}" = '磁盘占用' ] &&
+        [ "${ids[13]}" = nexttrace ] && [ "${desc[13]}" = '路由追踪' ] &&
+        [ "${ids[14]}" = iperf3 ] && [ "${desc[14]}" = '网络性能测试' ]
+}
+test_tool_documentation_numbering() {
+    grep -Fxq '| 13 | ncdu | 交互式磁盘占用分析工具 |' "$ROOT/README.md" &&
+        grep -Fxq '| 14 | NextTrace | 可视化路由追踪工具，通过官方 apt 源安装 |' "$ROOT/README.md" &&
+        grep -Fxq '| 15 | iperf3 | 网络性能测试工具 |' "$ROOT/README.md" &&
+        grep -Fxq '13. ncdu' "$ROOT/COMMANDS.md" &&
+        grep -Fxq '14. NextTrace' "$ROOT/COMMANDS.md" &&
+        grep -Fxq '15. iperf3' "$ROOT/COMMANDS.md"
+}
 test_bitwarden_config_privacy() {
     local output
     bitwarden_check_requirements() { :; }
@@ -746,6 +859,10 @@ check 'Nginx enable failure cannot report installation success' test_nginx_servi
 check 'Nginx inactive service cannot report installation success' test_nginx_service_failure is-active
 check 'Nginx renewal failure reaches the caller' test_nginx_renewal_failure
 check 'Nginx config is not written after installation failure' test_nginx_config_install_failure
+check 'Nginx subdomain cert path matches issued directory' test_nginx_subdomain_cert_path
+check 'Nginx preserves an existing full-domain cert path' test_nginx_existing_full_domain_cert_path
+check 'Nginx cron install tolerates an unrelated apt failure' test_nginx_cron_broken_apt_source
+check 'Nginx install tolerates an unrelated apt update failure' test_nginx_apt_update_warning
 check 'Nginx acme download failure is not hidden by the installer' test_acme_download_failure
 check 'Nginx test page rejects traversal before installation' test_nginx_page_input ../protected 8080
 check 'Nginx test page rejects injected port before installation' test_nginx_page_input fixture '8080;include bad;'
@@ -767,6 +884,8 @@ check 'network failure restores runtime values and both config files' test_netwo
 check 'all 15 third-party tool IDs are reachable' test_tool_numbers all
 check 'tool index 08 is decimal, not invalid octal' test_tool_numbers leading-zero
 check 'batch tool failure propagates to its caller' test_tool_numbers failed
+check 'third-party tool metadata remains aligned' test_tool_metadata_alignment
+check 'third-party documentation numbering matches the menu' test_tool_documentation_numbering
 check 'Bitwarden config validation never prints credentials' test_bitwarden_config_privacy
 check 'main menu stops safely on EOF' test_main_eof
 check 'UFW cannot enable with unknown SSH ports' test_ufw_unknown_ports
