@@ -18516,8 +18516,10 @@ CERT_EXISTED_BEFORE=false
 
 install_deps() {
     if command -v apt >/dev/null 2>&1; then
-        apt update -y || return 1
-        apt install -y curl socat lsof dnsutils ufw openssl
+        if ! apt update -y; then
+            echo -e "${YELLOW}存在失效的软件源，继续使用现有软件包索引；不修改该软件源。${NC}"
+        fi
+        apt install -y curl socat lsof dnsutils ufw openssl || return 1
     elif command -v dnf >/dev/null 2>&1; then
         dnf install -y curl socat lsof bind-utils ufw openssl
     elif command -v yum >/dev/null 2>&1; then
@@ -18554,7 +18556,9 @@ install_nginx() {
     if ! command -v nginx >/dev/null 2>&1; then
         echo -e "${YELLOW}正在安装 nginx...${NC}"
         command -v apt >/dev/null 2>&1 || { echo -e "${RED}当前 Nginx 自动安装仅支持 apt${NC}"; return 1; }
-        apt update -y || return 1
+        if ! apt update -y; then
+            echo -e "${YELLOW}存在失效的软件源，继续使用现有软件包索引安装 Nginx；不修改该软件源。${NC}"
+        fi
         apt install -y nginx || return 1
         command -v nginx >/dev/null 2>&1 || return 1
     fi
