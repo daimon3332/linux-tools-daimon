@@ -22124,9 +22124,11 @@ crontab_sync_status_text() {
 
 	[ -f "$script_file" ] && has_file=true
 	cron_output=$(crontab -l 2>/dev/null || true)
-	if echo "$cron_output" | grep -Fxq "$cron_line"; then
-		has_cron=true
-	fi
+    # Status is path based: legacy entries may use a different time, runner, or timezone wrapper.
+    # Ignore comments and require the managed script path as a standalone shell argument.
+    if printf '%s\n' "$cron_output" | sed '/^[[:space:]]*#/d' | grep -Eq "(^|[[:space:]])$(printf '%s' "$script_file" | sed 's/[.[\\^$*+?(){|]/\\&/g')([[:space:]]|$)"; then
+        has_cron=true
+    fi
 	crontab_sync_script_content_ok "$id" "$script_file" && content_ok=true
 
 	if $has_file && $content_ok && $has_cron; then
