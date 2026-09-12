@@ -1752,13 +1752,13 @@ cat > /root/linux-daimon/backup-sh/自定义名称.sh
 ```
 解释：脚本名称会自动补全 `.sh` 后缀；脚本内使用文件名作为远端目录名，把 `/root` 低速同步到 `kissska1:脚本名`，排除 `.cache`、`.npm`、`.nvm`、`node_modules`、日志、迁移回滚、临时文件和 `/root/emby`。脚本带并发锁、失败传播和成功标记。
 
-Emby 目录低速备份脚本：
+Emby 目录备份脚本：
 
 ```bash
 * * * * * [ "$(TZ=Asia/Shanghai date +\%H:\%M)" = "05:45" ] && [ "$(TZ=Asia/Shanghai date +\%w)" = "0" ] && /bin/bash /root/linux-daimon/backup-sh/.rclone-runner.sh emby /root/linux-daimon/backup-sh/Emby_Root_Backup.sh >> /var/log/rclone/cron_Emby_Root_Backup.log 2>&1
 ```
 
-解释：每周日上海时间 05:45 获得共享锁后，使用同一组过滤规则检查实际同步范围；空源或 OneDrive 大小写冲突会直接失败。随后停止对 `/root/emby` 有可写挂载的原运行容器（含父目录挂载），单并发低速同步到 `kissska1:Emby`，保持停机直到 `rclone check` 完成，再恢复容器并验证运行状态；全部成功才写成功标记。不创建快照，排除根层及嵌套日志和迁移回滚目录，但保留数据库 WAL/journal。
+解释：每周日上海时间 05:45 获得共享锁后，使用同一组过滤规则检查实际同步范围；空源或 OneDrive 大小写冲突会直接失败。随后停止对 `/root/emby` 有可写挂载的原运行容器（含父目录挂载），单并发同步到唯一目标 `kissska1:Emby`，默认不限速（`DAIMON_EMBY_BWLIMIT` 默认为 `0`，可显式覆盖），保持停机直到 `rclone check` 完成，再恢复容器并验证运行状态；全部成功才写成功标记。不创建快照，排除根层及嵌套日志和迁移回滚目录，但保留数据库 WAL/journal。
 
 `sync` 可能删除目标中的旧文件，首次执行应先核对相同过滤规则的 dry-run，不能用 `--delete-excluded` 清理旧日志。INT/TERM 会先终止并等待传输退出，再恢复原运行容器；强杀和主机故障不保证自动恢复。恢复失败时保留 `/run/lock/daimon-emby/containers.pending` 并拒绝下次备份，需人工核对恢复。只读挂载、不相关容器和原已停止容器不受影响。
 

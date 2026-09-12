@@ -318,7 +318,7 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 | 2 | 图床同步脚本 | 每天上海时间 04:10 同步图床数据 |
 | 3 | Via 同步脚本 | 每天上海时间 04:15 从 `qq3303338052@outlook:Via` 同步到 `kissska1:Via` |
 | 4 | 域名和nginx配置备份脚本 | 每天上海时间 04:00 本地备份到 `/root/linux-daimon/backup/nginx-domain/auto_latest`，只保留 1 份，不使用 rclone |
-| 5 | Emby目录低速备份脚本 | 每周日上海时间 05:45 停止使用 `/root/emby` 的运行中容器，完成一致性同步后恢复；不创建快照 |
+| 5 | Emby目录备份脚本 | 每周日上海时间 05:45 停止使用 `/root/emby` 的运行中容器，默认不限速，完成一致性同步后恢复；不创建快照 |
 | 6 | `/root` Docker 一致性备份脚本 | 每天上海时间 04:25 停止运行中的 Docker 容器，同步 `/root` 后自动恢复容器 |
 
 Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停止对 `/root/emby` 有可写挂载的原运行容器（包括父目录挂载）；同步及 `rclone check` 期间保持停止。空源、Docker 检查失败、路径冲突、同步或容器恢复失败均不能标记成功。日志和迁移回滚目录不参与备份，SQLite 的 WAL/journal 不作为普通日志排除。`sync` 会删除目标中不再存在的文件，不等于历史版本备份；不创建快照。

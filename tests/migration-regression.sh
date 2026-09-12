@@ -435,11 +435,12 @@ test_generated_backup_policies() {
     [[ "$root_script" == *'--exclude '\''/emby/**'\'''* ]] || return 1
     [[ "$root_script" == *'DEST1="kissska1:$SCRIPT_NAME"'* ]] || return 1
     [[ "$root_script" != *'DEST2='* ]] || return 1
+    [[ "$root_script" == *'--bwlimit="${DAIMON_ROOT_BWLIMIT:-512K}"'* ]] || return 1
     [[ "$root_script" == *'flock -n 9'* ]] || return 1
     [[ "$emby_script" == *'SRC1="/root/emby"'* ]] || return 1
     [[ "$emby_script" == *'DEST="kissska1:Emby"'* ]] || return 1
     [[ "$emby_script" == *'--transfers=1'* ]] || return 1
-    [[ "$emby_script" == *'--bwlimit='* ]] || return 1
+    [[ "$emby_script" == *'--bwlimit="${DAIMON_EMBY_BWLIMIT:-0}"'* ]] || return 1
     [[ "$emby_script" == *'flock -n 9'* ]] || return 1
     [[ "$emby_script" == *'docker stop --timeout 30'* ]] || return 1
     [[ "$emby_script" == *'docker start "$id"'* ]] || return 1
@@ -448,6 +449,8 @@ test_generated_backup_policies() {
     crontab_sync_script_content_ok emby "$fixture/emby.sh" || return 1
     sed '/^# DAIMON_EMBY_BACKUP_VERSION=/d' "$fixture/emby.sh" > "$fixture/old-emby.sh"
     ! crontab_sync_script_content_ok emby "$fixture/old-emby.sh" || return 1
+    sed 's/^# DAIMON_EMBY_BACKUP_VERSION=.*/# DAIMON_EMBY_BACKUP_VERSION=2/' "$fixture/emby.sh" > "$fixture/throttled-emby.sh"
+    ! crontab_sync_script_content_ok emby "$fixture/throttled-emby.sh" || return 1
     ! grep -qE 'before-restore|还原前备份|是否创建迁移备份|backup_resolv_conf_once|ssh_config_backup' "$SOURCE"
 }
 
@@ -551,7 +554,7 @@ PY
     EMBY_FIXTURE="$fixture" EMBY_TEST_MODE="$mode" EMBY_REAL_RCLONE="$real_rclone" \
         DAIMON_LOCK_DIR="$fixture/locks" DAIMON_RCLONE_RUNNER_FILE="$DAIMON_RCLONE_RUNNER_FILE" \
         PATH="$fixture/bin:$PATH" python3 - <<'PY'
-import fcntl, json, os, signal, subprocess, time
+import fcntl, json, os, shlex, signal, subprocess, time
 from pathlib import Path
 root = Path(os.environ['EMBY_FIXTURE'])
 mode = os.environ['EMBY_TEST_MODE']
@@ -584,7 +587,10 @@ if mode in ('same-lock', 'shared-lock'):
 command = ['bash', str(root / 'isolated.sh')]
 if mode == 'runner-term': command = ['bash', os.environ['DAIMON_RCLONE_RUNNER_FILE'], 'emby', str(root / 'isolated.sh')]
 output = (root / 'output').open('w')
-process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+environment = os.environ.copy()
+environment.pop('DAIMON_EMBY_BWLIMIT', None)
+if mode == 'bandwidth-override': environment['DAIMON_EMBY_BWLIMIT'] = '768K'
+process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True, env=environment)
 try:
     if mode == 'shared-lock':
         time.sleep(0.3)
@@ -608,7 +614,7 @@ state = json.loads((root / 'state.json').read_text())
 log = '\n'.join(p.read_text() for p in (root / 'logs').glob('*.log')) + (root / 'output').read_text()
 print(log)
 print(calls)
-success = mode in ('success', 'parent-mount', 'readonly', 'shared-lock', 'excluded-collision')
+success = mode in ('success', 'bandwidth-override', 'parent-mount', 'readonly', 'shared-lock', 'excluded-collision')
 assert (rc == 0) == (success or mode == 'same-lock'), ('unexpected exit', mode, rc)
 if mode == 'sync-failure': assert rc == 23
 if mode == 'check-failure': assert rc == 24
@@ -628,6 +634,9 @@ if mode in ('collision', 'missing-source', 'empty-source', 'info-failure', 'insp
 if mode == 'collision': assert 'Media' in log and 'media' in log
 if success:
     assert calls.index('docker stop ') < calls.index('rclone sync ') < calls.index('rclone check ') < calls.index('docker start ')
+    sync_args = shlex.split(next(line for line in calls.splitlines() if line.startswith('rclone sync ')))
+    bandwidth = [arg for arg in sync_args if arg.startswith('--bwlimit=')]
+    assert bandwidth == ['--bwlimit=' + environment.get('DAIMON_EMBY_BWLIMIT', '0')], ('unexpected bandwidth limit', bandwidth)
     paths = {entry['Path'] for entry in json.loads((root / 'inventory.json').read_text()) if not entry['IsDir']}
     assert paths == database_paths, ('wrong database or log filters', paths)
 PY
@@ -692,6 +701,7 @@ test_generated_root_backup_policy() {
     script=$(cat "$fixture/Root_Backup.sh")
     bash -n "$fixture/Root_Backup.sh" || return 1
     grep -Fq 'DEST1="kissska1:Root_Backup"' "$fixture/Root_Backup.sh" || return 1
+    grep -Fq -- '--bwlimit="${DAIMON_ROOT_BWLIMIT:-512K}"' "$fixture/Root_Backup.sh" || return 1
     grep -Fq 'docker inspect -f' "$fixture/Root_Backup.sh" || return 1
     grep -Fq 'Type "bind"' "$fixture/Root_Backup.sh" || return 1
     grep -Fq 'index($0, "/root/") == 1' "$fixture/Root_Backup.sh" || return 1
@@ -1090,7 +1100,7 @@ for mode in success corrupt traversal; do check "Vaultwarden archive $mode" test
 for kind in bitwarden custom; do check "generated $kind sync propagates failure" test_generated_sync_failure "$kind"; done
 check 'generated backup policies exclude bulky data and avoid pre-operation backups' test_generated_backup_policies
 check 'generated Emby backup rejects case collisions before sync' test_generated_emby_rejects_case_collision_before_sync
-for mode in success info-failure inspect-failure stop-failure sync-failure check-failure start-failure term int runner-term timeout duplicate check-duplicate auto-restart check-auto-restart parent-mount readonly missing-source empty-source pending-recovery same-lock shared-lock excluded-collision; do
+for mode in success bandwidth-override info-failure inspect-failure stop-failure sync-failure check-failure start-failure term int runner-term timeout duplicate check-duplicate auto-restart check-auto-restart parent-mount readonly missing-source empty-source pending-recovery same-lock shared-lock excluded-collision; do
     check "generated Emby lifecycle $mode" test_emby_lifecycle "$mode"
 done
 check 'generated root backup freezes bind-mounted Docker services' test_generated_root_backup_policy

@@ -21953,7 +21953,7 @@ crontab_sync_script_content_ok() {
 		emby)
 			grep -q 'SRC1="/root/emby"' "$script_file" 2>/dev/null \
 				&& grep -q 'DEST="kissska1:Emby"' "$script_file" 2>/dev/null \
-				&& grep -q '^# DAIMON_EMBY_BACKUP_VERSION=2$' "$script_file" 2>/dev/null \
+				&& grep -q '^# DAIMON_EMBY_BACKUP_VERSION=3$' "$script_file" 2>/dev/null \
 				&& grep -q 'flock' "$script_file" 2>/dev/null \
 				&& grep -q 'run_transfer sync' "$script_file" 2>/dev/null \
 				&& grep -q 'run_transfer check' "$script_file" 2>/dev/null
@@ -22003,7 +22003,7 @@ crontab_sync_builtin_name_by_id() {
 		via) echo "via同步脚本" ;;
 		nginxdomain) echo "域名和nginx配置备份脚本" ;;
 		root) echo "/root Docker一致性备份脚本" ;;
-		emby) echo "Emby目录低速备份脚本" ;;
+		emby) echo "Emby目录备份脚本" ;;
 	esac
 }
 
@@ -22224,7 +22224,7 @@ EOF
 		emby)
 			cat > "$script_file" <<'EOF'
 #!/bin/bash
-# DAIMON_EMBY_BACKUP_VERSION=2
+# DAIMON_EMBY_BACKUP_VERSION=3
 set -Eeuo pipefail
 umask 077
 
@@ -22414,7 +22414,7 @@ done < "$STATE_FILE"
 
 emby_preflight >> "$LOG_FILE" 2>&1
 run_transfer sync "$SRC1" "$DEST" "${FILTERS[@]}" "${NETWORK[@]}" \
-    --transfers=1 --bwlimit="${DAIMON_EMBY_BWLIMIT:-512K}"
+    --transfers=1 --bwlimit="${DAIMON_EMBY_BWLIMIT:-0}"
 verify_backup_state
 run_transfer check "$SRC1" "$DEST" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
