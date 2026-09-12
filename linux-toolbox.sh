@@ -59,6 +59,11 @@ DAIMON_REPO_URL="https://github.com/daimon3332/linux-tools-daimon"
 DAIMON_AGREEMENT_URL="https://github.com/daimon3332/linux-tools-daimon/blob/master/USER_AGREEMENT.md"
 DAIMON_GITHUB_PROXY_PRIMARY="https://gh-proxy.com/"
 DAIMON_CERT_HELPER_MARKER="$DAIMON_ROOT_DIR/.update-cert-helper"
+if [ "${1:-}" = --migrate-backups ]; then
+    source <(awk '/^crontab_sync_[a-z_]+\(\) [({]/ {active=1; closing=($0 ~ /\($/ ? ")" : "}")} active {print} active && $0 == closing {active=0}' "${BASH_SOURCE[0]}")
+    crontab_sync_upgrade_installed
+    exit $?
+fi
 mkdir -p "$DAIMON_SCRIPT_DIR" "$DAIMON_BACKUP_DIR" "$DAIMON_BACKUP_SH_DIR" "$DAIMON_TOOLS_DIR" "$DAIMON_DOCKER_COMPOSE_UPDATE_DIR" >/dev/null 2>&1 || true
 
 daimon_migrate_path() {
@@ -21883,13 +21888,167 @@ crontab_sync_legacy_script_file_by_id() {
 	esac
 }
 
+crontab_sync_root_name() {
+    local dir name
+    dir=$(crontab_sync_backup_dir)
+    name=$(python3 - "$dir" <<'PY'
+import hashlib, re, sys
+from pathlib import Path
+root = Path(sys.argv[1])
+marker = root / '.root-backup-name'
+if marker.is_file() and not marker.is_symlink():
+    names = [marker.read_text().strip()]
+else:
+    names = []
+    for path in root.glob('*.sh'):
+        if path.is_symlink(): continue
+        data = path.read_bytes()
+        if hashlib.sha256(data).hexdigest() == '29cbcb44c60876dbd5b77eeb6a95790623e657cf9a6c67da5f34fc356a2e9282' or (b'# DAIMON_CHAIN_BACKUP_VERSION=' in data and b'TASK_KIND="root"\n' in data):
+            names.append(path.stem)
+if len(names) != 1 or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', names[0]) or names[0] in ('Root_Backup', 'Emby', 'Emby_Root_Backup'):
+    sys.exit('ERROR: Cannot uniquely identify the server backup name; create a server-named root task first')
+print(names[0])
+PY
+    ) || return 1
+    printf '%s\n' "$name"
+}
+
+crontab_sync_upgrade_installed() (
+    set -euo pipefail
+    umask 077
+    local dir stage
+    dir=$(crontab_sync_backup_dir)
+    [ -d "$dir" ] || return 0
+    [ ! -L "$dir" ] || { echo 'ERROR: Symlink backup directory' >&2; return 1; }
+    command -v python3 >/dev/null || { echo 'ERROR: python3 required to check installed backup versions' >&2; return 1; }
+    mkdir -p "${DAIMON_LOCK_DIR:-/run/lock}"
+    exec 7>"${DAIMON_LOCK_DIR:-/run/lock}/daimon-backup-scripts.lock"
+    flock -xn 7 || { echo 'ERROR: Backup scripts active; upgrade deferred' >&2; return 1; }
+    exec 8>"${DAIMON_LOCK_DIR:-/run/lock}/daimon-rclone-backups.lock"
+    flock -xn 8 || { echo 'ERROR: Backup running; upgrade deferred' >&2; return 1; }
+    stage=$(mktemp -d "$dir/.upgrade.XXXXXX")
+    trap 'rm -f -- "$stage"/*.sh; rmdir -- "$stage"' EXIT
+    export DAIMON_SKIP_RUNNER_WRITE=1 DAIMON_UPGRADE_LOCKED=1
+    export -f crontab_sync_write_script crontab_sync_root_name crontab_sync_backup_dir crontab_sync_log_dir
+    python3 - "$dir" "$stage" <<'PY'
+import hashlib, os, re, subprocess, sys, tempfile
+from pathlib import Path
+root, stage = (Path(arg).resolve() for arg in sys.argv[1:])
+assert stage.parent == root and stage.name.startswith('.upgrade.')
+known = {
+    '29cbcb44c60876dbd5b77eeb6a95790623e657cf9a6c67da5f34fc356a2e9282': 'root',
+    '069e16aeac132d368245114ffa001a87d61b2818443812de59be7eeacb4089ec': 'root',
+    '4558aee3c75b35dd1640e086edd220e85a5c761100c9c27746ee8d2a2f223105': 'emby',
+}
+managed = {}
+for path in root.glob('*.sh'):
+    if path.is_symlink():
+        if path.name in ('Root_Backup.sh', 'Emby_Root_Backup.sh'): sys.exit('ERROR: Managed script is a symlink')
+        continue
+    data = path.read_bytes()
+    kind = known.get(hashlib.sha256(data).hexdigest())
+    if re.search(rb'^# DAIMON_CHAIN_BACKUP_VERSION=\d+$', data, re.M):
+        match = re.search(rb'^TASK_KIND="(root|emby)"$', data, re.M)
+        if not match: sys.exit('ERROR: Invalid managed task header')
+        kind = match[1].decode()
+    if kind: managed[path] = kind
+    elif path.name in ('Root_Backup.sh', 'Emby_Root_Backup.sh'):
+        sys.exit('ERROR: Unknown installed backup template: ' + str(path))
+if not managed:
+    print('BACKUP_UPGRADE no installed root/Emby tasks')
+    sys.exit(0)
+roots = [path for path, kind in managed.items() if kind == 'root' and path.name != 'Root_Backup.sh']
+if len(roots) > 1: sys.exit('ERROR: Multiple server root tasks; identity is ambiguous')
+name = roots[0].stem if roots else None
+marker = root / '.root-backup-name'
+if marker.exists():
+    if marker.is_symlink(): sys.exit('ERROR: Symlink identity marker')
+    saved = marker.read_text().strip()
+    if name and name != saved: sys.exit('ERROR: Saved server identity conflicts with installed script')
+    name = saved
+if any(kind == 'root' for kind in managed.values()):
+    if not name or not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*', name) or name in ('Root_Backup', 'Emby', 'Emby_Root_Backup'):
+        sys.exit('ERROR: Server backup name is required; no task changed')
+    canonical = root / (name + '.sh')
+    if canonical.exists() and canonical not in managed: sys.exit('ERROR: Unknown custom script at canonical path')
+else:
+    canonical = None
+# Old jobs do not all use the upgrade lock.
+for proc in Path('/proc').glob('[0-9]*/cmdline'):
+    try: args = proc.read_bytes().split(b'\0')
+    except (FileNotFoundError, PermissionError, ProcessLookupError): continue
+    if any(os.fsencode(path) in args for path in managed):
+        sys.exit('ERROR: Installed backup process is active; upgrade deferred')
+desired = {}
+for path, kind in managed.items():
+    target = canonical if kind == 'root' else path
+    if target in desired: continue
+    temporary = stage / target.name
+    subprocess.run(['bash', '-c', 'crontab_sync_write_script "$1" "$2"', 'upgrade', kind, str(temporary)], check=True)
+    desired[target] = temporary.read_bytes()
+if canonical: desired[marker] = (name + '\n').encode()
+old = root / 'Root_Backup.sh'
+obsolete = [old] if old in managed and old != canonical else []
+cron = subprocess.run(['crontab', '-l'], capture_output=True)
+if cron.returncode != 0 and not (cron.returncode == 1 and b'no crontab for' in cron.stderr.lower()):
+    sys.exit('ERROR: Cannot read existing crontab')
+before = cron.stdout
+lines = before.decode().splitlines(keepends=True)
+after_lines, seen_root = [], False
+for line in lines:
+    active = not line.lstrip().startswith('#')
+    root_line = active and canonical and any(re.search(re.escape(str(path)) + r'(?=\s|$)', line) for path, kind in managed.items() if kind == 'root')
+    if root_line:
+        if seen_root: continue
+        seen_root = True
+        line = re.sub(re.escape(str(old)) + r'(?=\s|$)', lambda _: str(canonical), line)
+    after_lines.append(line)
+after = ''.join(after_lines).encode()
+changes = {p: data for p, data in desired.items() if not p.exists() or p.read_bytes() != data}
+if not changes and not obsolete and after == before:
+    print('BACKUP_UPGRADE current')
+    sys.exit(0)
+# Keep rollback bytes only in memory for this transaction; no persistent backup-of-backup.
+previous = {p: (p.read_bytes(), p.stat().st_mode & 0o777) if p.exists() else None for p in set(changes) | set(obsolete)}
+def write(path, data, mode):
+    assert path.parent == root and not path.is_symlink()
+    fd, temporary = tempfile.mkstemp(prefix='.replace.', dir=root)
+    try:
+        with os.fdopen(fd, 'wb') as out:
+            out.write(data); out.flush(); os.fsync(out.fileno())
+        os.chmod(temporary, mode)
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary): os.unlink(temporary)
+cron_changed = False
+try:
+    for path, data in changes.items(): write(path, data, 0o600 if path == marker else 0o700)
+    current = subprocess.run(['crontab', '-l'], capture_output=True)
+    if current.stdout != before or current.returncode != cron.returncode: raise RuntimeError('Crontab changed during upgrade')
+    if after != before:
+        subprocess.run(['crontab', '-'], input=after, check=True)
+        cron_changed = True
+        if subprocess.check_output(['crontab', '-l']) != after: raise RuntimeError('Crontab verification failed')
+    for path in obsolete:
+        assert path.parent == root and path.name == 'Root_Backup.sh' and not path.is_symlink()
+        path.unlink()
+except BaseException:
+    for path, saved in previous.items():
+        if saved is None: path.unlink(missing_ok=True)
+        else: write(path, *saved)
+    if cron_changed: subprocess.run(['crontab', '-'], input=before, check=True)
+    raise
+print('BACKUP_UPGRADE updated=' + ','.join(p.name for p in changes) + ' removed=' + ','.join(p.name for p in obsolete))
+PY
+)
+
 crontab_sync_script_file_by_id() {
 	case "$1" in
 		bitwarden) echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Kissska1.sh" ;;
 		imagebed) echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh" ;;
 		via) echo "$(crontab_sync_backup_dir)/Via_OneDrive_to_Kissska1.sh" ;;
 		nginxdomain) echo "$(crontab_sync_backup_dir)/Nginx_Domain_Local_Backup.sh" ;;
-		root) echo "$(crontab_sync_backup_dir)/Root_Backup.sh" ;;
+		root) local name; name=$(crontab_sync_root_name) || return 1; echo "$(crontab_sync_backup_dir)/$name.sh" ;;
 		emby) echo "$(crontab_sync_backup_dir)/Emby_Root_Backup.sh" ;;
 		custom) echo "$(crontab_sync_backup_dir)/$2" ;;
 	esac
@@ -21942,28 +22101,15 @@ crontab_sync_script_content_ok() {
 				&& grep -q 'rclone_nginx_write_bundle "$TMP_DIR"' "$script_file" 2>/dev/null \
 				&& grep -q 'config-files.json' "$script_file" 2>/dev/null
 			;;
-		root)
-			grep -q 'SRC1="/root"' "$script_file" 2>/dev/null \
-				&& grep -q 'DEST1="kissska1:Root_Backup"' "$script_file" 2>/dev/null \
-				&& grep -q 'docker stop' "$script_file" 2>/dev/null \
-				&& grep -q 'docker start' "$script_file" 2>/dev/null \
-				&& grep -q 'flock -x' "$script_file" 2>/dev/null \
-				&& grep -q 'last-success' "$script_file" 2>/dev/null
-			;;
-		emby)
-			grep -q 'SRC1="/root/emby"' "$script_file" 2>/dev/null \
-				&& grep -q 'DEST="kissska1:Emby"' "$script_file" 2>/dev/null \
-				&& grep -q '^# DAIMON_EMBY_BACKUP_VERSION=3$' "$script_file" 2>/dev/null \
-				&& grep -q 'flock' "$script_file" 2>/dev/null \
-				&& grep -q 'run_transfer sync' "$script_file" 2>/dev/null \
-				&& grep -q 'run_transfer check' "$script_file" 2>/dev/null
-			;;
-		custom)
-			grep -q 'SRC1="/root"' "$script_file" 2>/dev/null \
-				&& grep -q 'DEST1="kissska1:$SCRIPT_NAME"' "$script_file" 2>/dev/null \
-				&& grep -q 'flock' "$script_file" 2>/dev/null \
-				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
-			;;
+        root|emby|custom)
+            local stage expected result=1
+            stage=$(mktemp -d) || return 1
+            expected="$stage/$(basename "$script_file")"
+            if DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script "$id" "$expected" && cmp -s "$expected" "$script_file"; then result=0; fi
+            rm -f -- "$expected"
+            rmdir -- "$stage"
+            return "$result"
+            ;;
 	esac
 }
 
@@ -22032,13 +22178,18 @@ crontab_sync_custom_files() {
 		! -name 'Nginx_Domain_Local_Backup.sh' \
 		! -name 'Root_Backup.sh' \
 		! -name 'Emby_Root_Backup.sh' \
-		-printf '%f\n' 2>/dev/null | sort
+		-printf '%f\n' 2>/dev/null | sort | { local name; name=$(crontab_sync_root_name 2>/dev/null) || name=''; while IFS= read -r file; do [ "$file" = "$name.sh" ] || printf '%s\n' "$file"; done; }
 }
 
 crontab_sync_write_script() (
 	umask 077
 	local id="$1"
 	local target="$2" script_file
+    if [ "${DAIMON_UPGRADE_LOCKED:-0}" != 1 ]; then
+        mkdir -p "${DAIMON_LOCK_DIR:-/run/lock}" || return 1
+        exec 7>"${DAIMON_LOCK_DIR:-/run/lock}/daimon-backup-scripts.lock"
+        flock -xn 7 || { echo 'ERROR: Backup running; script replacement deferred' >&2; return 1; }
+    fi
 	mkdir -p "$(dirname "$target")" "$(crontab_sync_log_dir)" || return 1
 	script_file=$(mktemp "${target}.XXXXXX") || return 1
 	trap 'rm -f -- "$script_file"' EXIT
@@ -22126,138 +22277,74 @@ EOF
 		nginxdomain)
 			rclone_nginx_write_backup_script "$script_file"
 			;;
-		root)
-			cat > "$script_file" <<'EOF'
-#!/bin/bash
-set -Eeuo pipefail
-umask 077
-
-SRC1="/root"
-DEST1="kissska1:Root_Backup"
-LOG_DIR="/var/log/rclone"
-LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/Root_Backup_$(date +%F).log}"
-LOCAL_LOCK_FILE="/run/lock/daimon-Root_Backup.lock"
-GLOBAL_LOCK_FILE="/run/lock/daimon-rclone-backups.lock"
-SUCCESS_FILE="$LOG_DIR/Root_Backup.last-success"
-CONTAINER_STATE_FILE=""
-BACKUP_OK=0
-
-command -v rclone >/dev/null 2>&1 || { printf '%s\n' "rclone 未安装" >&2; exit 1; }
-command -v flock >/dev/null 2>&1 || { printf '%s\n' "flock 未安装" >&2; exit 1; }
-install -d -m 700 "$LOG_DIR" "$(dirname "$LOCAL_LOCK_FILE")"
-touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
-exec 9>"$LOCAL_LOCK_FILE"
-flock -n 9 || { printf '%s\n' "已有 /root 备份运行，跳过本次任务" >> "$LOG_FILE"; exit 0; }
-exec 8>"$GLOBAL_LOCK_FILE"
-flock -x 8
-
-restore_containers() {
-    local rc=$? id restart_failed=0
-    trap - EXIT INT TERM
-    set +e
-    if [ -n "$CONTAINER_STATE_FILE" ] && [ -s "$CONTAINER_STATE_FILE" ]; then
-        while IFS= read -r id; do
-            [ -n "$id" ] || continue
-            [ "$(docker inspect -f '{{.State.Running}}' "$id" 2>/dev/null || true)" = true ] && continue
-            if ! docker start "$id" >/dev/null 2>&1; then
-                printf '%s\n' "容器恢复启动失败: $id" >> "$LOG_FILE"
-                restart_failed=1
+		root|emby|custom)
+            local backup_name kind source
+            if [ "$id" = emby ]; then
+                backup_name=Emby; kind=emby; source=/root/emby
+            else
+                backup_name=$(basename "$target" .sh)
+                if [ "$backup_name" = Root_Backup ]; then
+                    backup_name=$(crontab_sync_root_name) || return 1
+                fi
+                [[ "$backup_name" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] && [ "$backup_name" != Root_Backup ] || { echo 'ERROR: A persistent server backup name is required' >&2; return 1; }
+                kind=root; source=/root
             fi
-        done < "$CONTAINER_STATE_FILE"
-    fi
-    [ -z "$CONTAINER_STATE_FILE" ] || rm -f -- "$CONTAINER_STATE_FILE"
-    if [ "$restart_failed" -ne 0 ] || [ "$BACKUP_OK" -ne 1 ]; then
-        rc=1
-    else
-        date -Is > "$SUCCESS_FILE"
-        chmod 600 "$SUCCESS_FILE"
-        printf '===== %s /root 备份完成 =====\n' "$(date -Is)" >> "$LOG_FILE"
-    fi
-    exit "$rc"
-}
-trap restore_containers EXIT INT TERM
-
-rm -f -- "$SUCCESS_FILE"
-printf '===== %s 开始 /root 一致性备份 =====\n' "$(date -Is)" >> "$LOG_FILE"
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-    CONTAINER_STATE_FILE=$(mktemp /run/lock/daimon-root-containers.XXXXXX)
-    while IFS= read -r id; do
-        [ -n "$id" ] || continue
-        if docker inspect -f '{{range .Mounts}}{{if eq .Type "bind"}}{{println .Source}}{{end}}{{end}}' "$id" 2>/dev/null |
-            awk '$0 == "/root" || (index($0, "/root/") == 1 && $0 != "/root/emby" && index($0, "/root/emby/") != 1) {found=1} END {exit !found}'; then
-            printf '%s\n' "$id" >> "$CONTAINER_STATE_FILE"
-        fi
-    done < <(docker ps -q)
-    while IFS= read -r id; do
-        [ -n "$id" ] || continue
-        docker stop --timeout 30 "$id" >> "$LOG_FILE" 2>&1
-    done < "$CONTAINER_STATE_FILE"
-fi
-
-rclone sync \
-  "$SRC1" "$DEST1" \
-  --exclude '/.cache/**' \
-  --exclude '/.npm/**' \
-  --exclude '/.nvm/**' \
-  --exclude '/emby/**' \
-  --exclude '**/node_modules/**' \
-  --exclude '**/logs/**' \
-  --exclude '**/*.log' \
-  --exclude '**/.migration-*/rollback/**' \
-  --exclude '**/.tmp/**' \
-  --exclude '**/*.tmp' \
-  --exclude '**/*.temp' \
-  --transfers=2 \
-  --checkers=4 \
-  --fast-list \
-  --bwlimit="${DAIMON_ROOT_BWLIMIT:-512K}" \
-  --contimeout=30s \
-  --timeout=2m \
-  --retries=3 \
-  --low-level-retries=2 \
-  --log-file="$LOG_FILE" \
-  --log-level INFO
-
-BACKUP_OK=1
-EOF
-			;;
-		emby)
-			cat > "$script_file" <<'EOF'
-#!/bin/bash
-# DAIMON_EMBY_BACKUP_VERSION=3
+            printf '#!/bin/bash\n# DAIMON_CHAIN_BACKUP_VERSION=1\nTASK_KIND="%s"\nBACKUP_NAME="%s"\nSRC1="%s"\n' "$kind" "$backup_name" "$source" > "$script_file"
+            cat >> "$script_file" <<'EOF'
 set -Eeuo pipefail
 umask 077
 
-SRC1="/root/emby"
-DEST="kissska1:Emby"
+PRIMARY="qq3303338052@outlook:$BACKUP_NAME"
+SECONDARY="kissska1:$BACKUP_NAME"
 LOG_DIR="/var/log/rclone"
-LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/emby_root_backup_$(date +%Y%m%d-%H%M%S)-$$.log}"
+LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/${BACKUP_NAME}_$(date +%Y%m%d-%H%M%S)-$$.log}"
 RUNTIME_DIR="${DAIMON_LOCK_DIR:-/run/lock}"
-LOCK_FILE="$RUNTIME_DIR/daimon-emby-root-backup.lock"
+LOCK_FILE="$RUNTIME_DIR/daimon-${TASK_KIND}-root-backup.lock"
 GLOBAL_LOCK_FILE="$RUNTIME_DIR/daimon-rclone-backups.lock"
-STATE_DIR="$RUNTIME_DIR/daimon-emby"
+STATE_DIR="$RUNTIME_DIR/daimon-$TASK_KIND"
 STATE_FILE="$STATE_DIR/containers.pending"
-SUCCESS_FILE="$LOG_DIR/emby_root_backup.last-success"
-INVENTORY="" MOUNTS="" CHILD_PID=""
+SUCCESS_FILE="$LOG_DIR/${BACKUP_NAME}.last-success"
+PRIMARY_SUCCESS="$LOG_DIR/${BACKUP_NAME}.qq-success"
+STAGE=preflight
+INVENTORY="" MOUNTS="" CHILD_PID="" GENERATION="" AFTER_GENERATION=""
 OWNS_STATE=0 BACKUP_OK=0
 FILTERS=(--exclude '/logs/**' --exclude '**/logs/**' --exclude '/*.log' --exclude '**/*.log'
-    --exclude '/.migration-*/rollback/**' --exclude '**/.migration-*/rollback/**')
-NETWORK=(--checkers=1 --contimeout=30s --timeout=2m --retries=3 --low-level-retries=2
+    --exclude '/.migration-*/**' --exclude '**/.migration-*/**'
+    --exclude '/.tmp/**' --exclude '**/.tmp/**')
+if [ "$TASK_KIND" = root ]; then
+    FILTERS+=(--exclude '/.cache/**' --exclude '/.npm/**' --exclude '/.nvm/**' --exclude '/emby/**'
+        --exclude '**/node_modules/**' --exclude '/*.tmp' --exclude '**/*.tmp'
+        --exclude '/*.temp' --exclude '**/*.temp'
+        --exclude '/linux-daimon/backup/nginx-domain/.bundle*'
+        --exclude '/linux-daimon/backup-sh/.upgrade*/**'
+        --exclude '/linux-daimon/rclone-logs/**'
+        --exclude '/linux-daimon/backup/nginx-domain/script-update-*/**'
+        --exclude '/linux-daimon/backup/nginx-domain/challenge-fix-*/**'
+        --exclude '/linux-daimon/backup/nginx-domain/migration_*/**'
+        --exclude '/linux-daimon/backup/nginx-domain/cpa-renew-20260820_112206/**')
+fi
+NETWORK=(--bwlimit=0 --transfers=4 --checkers=8 --contimeout=30s --timeout=2m --retries=3 --low-level-retries=2
     --log-file="$LOG_FILE" --log-level INFO)
 
-for tool in flock python3 rclone docker timeout; do
+for tool in flock python3 rclone timeout; do
     command -v "$tool" >/dev/null 2>&1 || { printf 'ERROR: 缺少依赖 %s\n' "$tool" >&2; exit 1; }
 done
 install -d -m 700 "$LOG_DIR"
 mkdir -p "$RUNTIME_DIR"
 touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
+exec 7>"$RUNTIME_DIR/daimon-backup-scripts.lock"
+flock -s 7
 exec 9>"$LOCK_FILE"
-flock -n 9 || { printf '%s\n' '已有 Emby 备份运行，跳过本次任务' >> "$LOG_FILE"; exit 0; }
+flock -n 9 || { printf '%s\n' "已有 $BACKUP_NAME 备份运行，跳过本次任务" >> "$LOG_FILE"; exit 0; }
 exec 8>"$GLOBAL_LOCK_FILE"
 flock -x 8
 install -d -m 700 "$STATE_DIR"
 [ ! -e "$STATE_FILE" ] || { printf 'ERROR: 存在待恢复容器清单，确认恢复后再重试: %s\n' "$STATE_FILE" >> "$LOG_FILE"; exit 1; }
-rm -f -- "$SUCCESS_FILE"
+rm -f -- "$SUCCESS_FILE" "$PRIMARY_SUCCESS"
+if [ "$TASK_KIND" = root ] && [ -d "$SRC1/linux-daimon/backup/nginx-domain" ]; then
+    exec 6>"$SRC1/linux-daimon/backup/nginx-domain/.bundle.lock"
+    flock -x 6
+fi
 
 container_state() {
     timeout 30s docker inspect -f '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$1" 2>> "$LOG_FILE"
@@ -22271,12 +22358,8 @@ stop_transfer() {
     fi
 }
 
-restore_containers() {
-    local rc=$? id state deadline recovery_failed=0
-    trap - EXIT
-    trap '' INT TERM
-    set +e
-    stop_transfer
+recover_writers() {
+    local id state deadline recovery_failed=0
     if [ "$OWNS_STATE" -eq 1 ]; then
         while IFS= read -r id; do
             [ -n "$id" ] || continue
@@ -22289,7 +22372,7 @@ restore_containers() {
                 state=$(container_state "$id") || state=""
                 case "$state" in 'true none'|'true healthy') break ;; esac
                 if [ "$SECONDS" -ge "$deadline" ] || [ "$state" != 'true starting' ]; then
-                    printf 'ERROR: Emby 相关容器恢复验证失败: %s (%s)\n' "$id" "$state" >> "$LOG_FILE"
+                    printf 'ERROR: 备份相关容器恢复验证失败: %s (%s)\n' "$id" "$state" >> "$LOG_FILE"
                     recovery_failed=1
                     break
                 fi
@@ -22297,22 +22380,35 @@ restore_containers() {
             done
         done < "$STATE_FILE"
         if [ "$recovery_failed" -eq 0 ]; then
-            rm -f -- "$STATE_FILE" || recovery_failed=1
+            if rm -f -- "$STATE_FILE"; then OWNS_STATE=0; else recovery_failed=1; fi
         else
             printf 'ERROR: 请检查并恢复清单中的原运行容器: %s\n' "$STATE_FILE" >> "$LOG_FILE"
         fi
     fi
+    return "$recovery_failed"
+}
+
+restore_containers() {
+    local rc=$? recovery_failed=0
+    trap - EXIT
+    trap '' INT TERM
+    set +e
+    stop_transfer
+    recover_writers || recovery_failed=1
     [ -z "$INVENTORY" ] || rm -f -- "$INVENTORY"
     [ -z "$MOUNTS" ] || rm -f -- "$MOUNTS"
+    [ -z "$GENERATION" ] || rm -f -- "$GENERATION"
+    [ -z "$AFTER_GENERATION" ] || rm -f -- "$AFTER_GENERATION"
     if [ "$rc" -eq 0 ] && [ "$BACKUP_OK" -eq 1 ] && [ "$recovery_failed" -eq 0 ]; then
         if date -Is > "$SUCCESS_FILE" && chmod 600 "$SUCCESS_FILE"; then
-            printf '===== %s Emby 目录备份完成 =====\n' "$(date -Is)" >> "$LOG_FILE"
+            printf '===== %s %s 双备份完成 =====\n' "$(date -Is)" "$BACKUP_NAME" >> "$LOG_FILE"
         else
             rm -f -- "$SUCCESS_FILE"
             rc=1
         fi
-    elif [ "$rc" -eq 0 ]; then
-        rc=1
+    else
+        [ "$rc" -ne 0 ] || rc=1
+        printf 'ERROR: stage=%s rc=%s qq_verified=%s recovery_failed=%s\n' "$STAGE" "$rc" "$([ -f "$PRIMARY_SUCCESS" ] && echo yes || echo no)" "$recovery_failed" >> "$LOG_FILE"
     fi
     exit "$rc"
 }
@@ -22320,8 +22416,8 @@ trap restore_containers EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-emby_preflight() {
-    [ -d "$SRC1" ] && [ -r "$SRC1" ] || { printf 'ERROR: Emby 源目录不存在或不可读: %s\n' "$SRC1" >&2; return 1; }
+backup_preflight() {
+    [ -d "$SRC1" ] && [ -r "$SRC1" ] || { printf 'ERROR: 备份源目录不存在或不可读: %s\n' "$SRC1" >&2; return 1; }
     rclone lsjson "$SRC1" --recursive "${FILTERS[@]}" > "$INVENTORY" || return
     python3 - "$INVENTORY" <<'PY'
 import json
@@ -22332,11 +22428,11 @@ with open(sys.argv[1], encoding="utf-8") as source:
     entries = json.load(source)
 seen, conflicts = {}, set()
 if not any(not entry["IsDir"] for entry in entries):
-    sys.exit("ERROR: Emby 同步范围为空，拒绝同步以保护远端数据")
+    sys.exit("ERROR: 备份同步范围为空，拒绝同步以保护远端数据")
 for entry in entries:
     parts = entry["Path"].split("/")
     if any(part in ("", ".", "..") for part in parts):
-        sys.exit("ERROR: 无效的 Emby 相对路径")
+        sys.exit("ERROR: 无效的 备份相对路径")
     for length in range(1, len(parts) + 1):
         path = "/".join(parts[:length])
         key = unicodedata.normalize("NFC", path).casefold()
@@ -22363,9 +22459,10 @@ run_transfer() {
 verify_backup_state() {
     local id state
     if grep -Eiq 'Duplicate (directory|file|object) found in (source|destination) - ignoring' "$LOG_FILE"; then
-        echo 'ERROR: Emby 同步或校验忽略了重复路径，备份不完整' >> "$LOG_FILE"
+        echo 'ERROR: 同步或校验忽略了重复路径，备份不完整' >> "$LOG_FILE"
         return 1
     fi
+    [ "$OWNS_STATE" -eq 1 ] || return 0
     while IFS= read -r id; do
         state=$(container_state "$id") || return
         [ "${state%% *}" = false ] || { printf 'ERROR: 备份期间容器被外部启动: %s\n' "$id" >&2; return 1; }
@@ -22374,10 +22471,16 @@ verify_backup_state() {
 
 INVENTORY=$(mktemp "$STATE_DIR/inventory.XXXXXX")
 MOUNTS=$(mktemp "$STATE_DIR/mounts.XXXXXX")
-printf '===== %s 开始 Emby 一致性备份 =====\n' "$(date -Is)" >> "$LOG_FILE"
-emby_preflight >> "$LOG_FILE" 2>&1
-timeout 30s docker info >> "$LOG_FILE" 2>&1
-ids=$(timeout 30s docker ps -q)
+printf '===== %s 开始 %s 一致性备份 =====\n' "$(date -Is)" "$BACKUP_NAME" >> "$LOG_FILE"
+backup_preflight >> "$LOG_FILE" 2>&1
+ids=""
+if command -v docker >/dev/null 2>&1; then
+    timeout 30s docker info >> "$LOG_FILE" 2>&1
+    ids=$(timeout 30s docker ps -q)
+elif [ "$TASK_KIND" = emby ] || [ -d /var/lib/docker ]; then
+    echo 'ERROR: Docker unavailable; cannot establish writer state' >&2
+    exit 1
+fi
 if [ -n "$ids" ]; then
     mapfile -t containers <<< "$ids"
     for id in "${containers[@]}"; do
@@ -22385,7 +22488,7 @@ if [ -n "$ids" ]; then
     done
     timeout 30s docker inspect -f '{{.Id}} {{json .Mounts}}' "${containers[@]}" > "$MOUNTS"
 fi
-python3 - "$SRC1" "$MOUNTS" "$STATE_FILE" <<'PY'
+python3 - "$SRC1" "$MOUNTS" "$STATE_FILE" "$TASK_KIND" <<'PY'
 import json
 import os
 import sys
@@ -22399,6 +22502,8 @@ with open(sys.argv[2], encoding="utf-8") as source:
             if mount["Type"] != "bind" or not mount["RW"]:
                 continue
             path = os.path.realpath(mount["Source"])
+            if sys.argv[4] == "root" and os.path.commonpath((os.path.join(root, "emby"), path)) == os.path.join(root, "emby"):
+                continue
             if os.path.commonpath((root, path)) in (root, path):
                 selected.append(container)
                 break
@@ -22412,76 +22517,59 @@ while IFS= read -r id; do
     [ "${state%% *}" = false ] || { printf 'ERROR: 容器未停止: %s\n' "$id" >&2; exit 1; }
 done < "$STATE_FILE"
 
-emby_preflight >> "$LOG_FILE" 2>&1
-run_transfer sync "$SRC1" "$DEST" "${FILTERS[@]}" "${NETWORK[@]}" \
-    --transfers=1 --bwlimit="${DAIMON_EMBY_BWLIMIT:-0}"
+backup_preflight >> "$LOG_FILE" 2>&1
+STAGE=primary_sync
+run_transfer sync "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
-run_transfer check "$SRC1" "$DEST" "${FILTERS[@]}" "${NETWORK[@]}"
+STAGE=primary_check
+run_transfer check "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
+GENERATION=$(mktemp "$STATE_DIR/qq-generation.XXXXXX")
+AFTER_GENERATION=$(mktemp "$STATE_DIR/qq-after.XXXXXX")
+capture_generation() {
+    timeout --kill-after=30s 7d rclone lsjson "$PRIMARY" --recursive --files-only --hash \
+        "${FILTERS[@]}" "${NETWORK[@]}" > "$1" 2>> "$LOG_FILE" &
+    CHILD_PID=$!
+    local rc=0
+    wait "$CHILD_PID" || rc=$?
+    CHILD_PID=""
+    [ "$rc" -eq 0 ] || return "$rc"
+    python3 - "$1" <<'PY'
+import json, sys
+from pathlib import Path
+path = Path(sys.argv[1])
+entries = json.loads(path.read_text())
+if not entries:
+    sys.exit("ERROR: Primary backup is empty")
+records = sorted((entry["Path"], entry["Size"], entry.get("ModTime"), entry.get("Hashes", {})) for entry in entries)
+path.write_text(json.dumps(records, sort_keys=True))
+PY
+}
+capture_generation "$GENERATION"
+STAGE=recover_writers
+recover_writers
+if [ "$TASK_KIND" = root ]; then exec 6>&-; fi
+STAGE=primary_recheck
+capture_generation "$AFTER_GENERATION"
+cmp -s "$GENERATION" "$AFTER_GENERATION" || { echo 'ERROR: QQ backup changed after primary verification' >&2; exit 1; }
+date -Is > "$PRIMARY_SUCCESS"
+chmod 600 "$PRIMARY_SUCCESS"
+printf '===== %s QQ 校验完成，原运行容器已恢复 =====\n' "$(date -Is)" >> "$LOG_FILE"
+STAGE=secondary_sync
+run_transfer sync "$PRIMARY" "$SECONDARY" "${FILTERS[@]}" "${NETWORK[@]}"
+verify_backup_state
+STAGE=secondary_check
+run_transfer check "$PRIMARY" "$SECONDARY" "${FILTERS[@]}" "${NETWORK[@]}"
+verify_backup_state
+capture_generation "$AFTER_GENERATION"
+cmp -s "$GENERATION" "$AFTER_GENERATION" || { echo 'ERROR: QQ backup changed during replication' >&2; exit 1; }
+STAGE=complete
 BACKUP_OK=1
 EOF
-			;;
-		custom)
-			cat > "$script_file" <<'EOF'
-#!/bin/bash
-set -Eeuo pipefail
-umask 077
-SRC1="/root"
-# 自动获取脚本文件名（不含.sh后缀）作为目标文件夹名
-
-SCRIPT_NAME=$(basename "$0" .sh)
-
-DEST1="kissska1:$SCRIPT_NAME"
-
-LOG_DIR="/var/log/rclone"
-LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/${SCRIPT_NAME}_$(date +%F).log}"
-LOCK_FILE="/run/lock/daimon-${SCRIPT_NAME}.lock"
-GLOBAL_LOCK_FILE="/run/lock/daimon-rclone-backups.lock"
-SUCCESS_FILE="$LOG_DIR/${SCRIPT_NAME}.last-success"
-
-command -v flock >/dev/null 2>&1 || { printf '%s\n' "flock 未安装" >&2; exit 1; }
-install -d -m 700 "$LOG_DIR" "$(dirname "$LOCK_FILE")"
-touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
-exec 9>"$LOCK_FILE"
-flock -n 9 || { printf '%s\n' "已有备份运行，跳过本次任务" >> "$LOG_FILE"; exit 0; }
-exec 8>"$GLOBAL_LOCK_FILE"
-flock -x 8
-
-echo "===== $(date -Is) 开始备份 =====" >> "$LOG_FILE"
-
-# 运行时缓存、依赖、日志、迁移回滚和 Emby 目录由专用流程处理。
-rclone sync \
-  "$SRC1" "$DEST1" \
-  --exclude '/.cache/**' \
-  --exclude '/.npm/**' \
-  --exclude '/.nvm/**' \
-  --exclude '/emby/**' \
-  --exclude '**/node_modules/**' \
-  --exclude '**/logs/**' \
-  --exclude '**/*.log' \
-  --exclude '**/.migration-*/rollback/**' \
-  --exclude '**/.tmp/**' \
-  --exclude '**/*.tmp' \
-  --exclude '**/*.temp' \
-  --transfers=2 \
-  --checkers=4 \
-  --fast-list \
-  --bwlimit="${DAIMON_ROOT_BWLIMIT:-512K}" \
-  --contimeout=30s \
-  --timeout=2m \
-  --retries=3 \
-  --low-level-retries=2 \
-  --log-file="$LOG_FILE" \
-  --log-level INFO
-
-date -Is > "$SUCCESS_FILE"
-chmod 600 "$SUCCESS_FILE"
-echo "===== $(date -Is) 备份完成 =====" >> "$LOG_FILE"
-EOF
-			;;
+            ;;
 		*) return 1 ;;
 	esac || return 1
-	crontab_sync_write_run_tools || return 1
+	[ "${DAIMON_SKIP_RUNNER_WRITE:-0}" = 1 ] || crontab_sync_write_run_tools || return 1
 	bash -n "$script_file" && chmod 700 "$script_file" && mv -f -- "$script_file" "$target"
 )
 
@@ -22709,7 +22797,7 @@ crontab_sync_create_custom() {
 		return 1
 	fi
 	check_crontab_installed
-	crontab_sync_write_script custom "$file"
+	crontab_sync_write_script custom "$file" || return 1
 	(crontab -l 2>/dev/null | grep -vF "$file" || true; echo "$cron_line") | crontab - || return 1
 	echo -e "${gl_lv}自定义同步脚本已创建${gl_bai}"
 	echo "脚本路径: $file"
@@ -22727,6 +22815,7 @@ crontab_sync_run_root_once() {
 }
 
 crontab_sync_manager() {
+    crontab_sync_upgrade_installed || return 1
 	crontab_sync_reconcile_legacy || true
 	while true; do
 		clear
@@ -23203,6 +23292,10 @@ kejilion_update() {
 	fi
 
 	rm -f "$rollback_file" 2>/dev/null || true
+    if ! /bin/bash "$DAIMON_LOCAL_SCRIPT" --migrate-backups; then
+        echo 'ERROR: 主脚本已更新，但备份任务升级未完成；请重试 d --migrate-backups'
+        return 1
+    fi
 	echo -e "${gl_lv}linux-tools-daimon 已更新${gl_bai}"
 	echo "快捷命令: d"
 	echo "当前进程仍是旧脚本，按任意键后将自动进入新版界面..."
@@ -23219,6 +23312,7 @@ kejilion_update() {
 
 
 kejilion_sh() {
+crontab_sync_upgrade_installed || echo 'ERROR: 已安装备份任务升级未完成，请检查 cronsync'
 crontab_sync_reconcile_legacy || true
 if [ -f "$DAIMON_CERT_HELPER_MARKER" ]; then
 	 rm -f "$DAIMON_CERT_HELPER_MARKER"

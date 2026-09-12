@@ -38,7 +38,7 @@ while IFS= read -r fn; do
     load_function "$fn" || exit 1
 done < <(awk '/^rclone_status_text\(\)/ {active=1} /^crontab_sync_backup_dir\(\)/ {active=0}
     active && /^[a-zA-Z_]+\(\) [({]/ {sub(/\(.*/, ""); print}' "$SOURCE")
-for fn in crontab_sync_backup_dir crontab_sync_log_cache_file crontab_sync_log_run_dir crontab_sync_log_export_dir crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_log_sanitize crontab_sync_log_copy crontab_sync_log_export crontab_sync_custom_files; do
+for fn in crontab_sync_backup_dir crontab_sync_log_cache_file crontab_sync_log_run_dir crontab_sync_log_export_dir crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_log_sanitize crontab_sync_log_copy crontab_sync_log_export crontab_sync_custom_files crontab_sync_root_name; do
     load_function "$fn" || exit 1
 done
 root_use() { :; }
@@ -433,23 +433,23 @@ test_generated_backup_policies() {
     [[ "$root_script" == *'SRC1="/root"'* ]] || return 1
     [[ "$root_script" == *'--exclude '\''/.cache/**'\'''* ]] || return 1
     [[ "$root_script" == *'--exclude '\''/emby/**'\'''* ]] || return 1
-    [[ "$root_script" == *'DEST1="kissska1:$SCRIPT_NAME"'* ]] || return 1
+    [[ "$root_script" == *'PRIMARY="qq3303338052@outlook:$BACKUP_NAME"'* ]] || return 1
     [[ "$root_script" != *'DEST2='* ]] || return 1
-    [[ "$root_script" == *'--bwlimit="${DAIMON_ROOT_BWLIMIT:-512K}"'* ]] || return 1
+    [[ "$root_script" == *'--bwlimit=0'* ]] || return 1
     [[ "$root_script" == *'flock -n 9'* ]] || return 1
     [[ "$emby_script" == *'SRC1="/root/emby"'* ]] || return 1
-    [[ "$emby_script" == *'DEST="kissska1:Emby"'* ]] || return 1
-    [[ "$emby_script" == *'--transfers=1'* ]] || return 1
-    [[ "$emby_script" == *'--bwlimit="${DAIMON_EMBY_BWLIMIT:-0}"'* ]] || return 1
+    [[ "$emby_script" == *'SECONDARY="kissska1:$BACKUP_NAME"'* ]] || return 1
+    [[ "$emby_script" == *'--transfers=4'* ]] || return 1
+    [[ "$emby_script" == *'--bwlimit=0'* ]] || return 1
     [[ "$emby_script" == *'flock -n 9'* ]] || return 1
     [[ "$emby_script" == *'docker stop --timeout 30'* ]] || return 1
     [[ "$emby_script" == *'docker start "$id"'* ]] || return 1
     [[ "$emby_script" == *'--exclude '\''/logs/**'\'''* ]] || return 1
     [[ "$emby_script" == *'casefold'* ]] || return 1
     crontab_sync_script_content_ok emby "$fixture/emby.sh" || return 1
-    sed '/^# DAIMON_EMBY_BACKUP_VERSION=/d' "$fixture/emby.sh" > "$fixture/old-emby.sh"
+    sed '/^# DAIMON_CHAIN_BACKUP_VERSION=/d' "$fixture/emby.sh" > "$fixture/old-emby.sh"
     ! crontab_sync_script_content_ok emby "$fixture/old-emby.sh" || return 1
-    sed 's/^# DAIMON_EMBY_BACKUP_VERSION=.*/# DAIMON_EMBY_BACKUP_VERSION=2/' "$fixture/emby.sh" > "$fixture/throttled-emby.sh"
+    sed 's/^# DAIMON_CHAIN_BACKUP_VERSION=.*/# DAIMON_CHAIN_BACKUP_VERSION=0/' "$fixture/emby.sh" > "$fixture/throttled-emby.sh"
     ! crontab_sync_script_content_ok emby "$fixture/throttled-emby.sh" || return 1
     ! grep -qE 'before-restore|还原前备份|是否创建迁移备份|backup_resolv_conf_once|ssh_config_backup' "$SOURCE"
 }
@@ -468,8 +468,8 @@ test_emby_lifecycle() {
     crontab_sync_log_dir() { printf '%s\n' "$fixture/logs"; }
     mkdir -p "$fixture/src/data" "$fixture/logs" "$fixture/locks" "$fixture/bin"
     printf fixture > "$fixture/src/data/db.sqlite3"
-    crontab_sync_write_script emby "$fixture/Emby.sh" || return 1
-    sed -e "s|SRC1=\"/root/emby\"|SRC1=\"$fixture/src\"|" \
+    crontab_sync_write_script "$([ "$mode" = root-mounts ] && echo root || echo emby)" "$fixture/Emby.sh" || return 1
+    sed -e "s|^SRC1=.*|SRC1=\"$fixture/src\"|" \
         -e "s|LOG_DIR=\"/var/log/rclone\"|LOG_DIR=\"$fixture/logs\"|" \
         "$fixture/Emby.sh" > "$fixture/isolated.sh"
     cat > "$fixture/bin/docker" <<'PY'
@@ -497,7 +497,9 @@ elif op == 'inspect':
             source = root / 'src' if key in ('a' * 64, 'b' * 64) else root / 'unrelated'
             if mode == 'parent-mount' and key == 'b' * 64: source = root
             if mode == 'readonly' and key == 'c' * 64: source = root / 'src'
-            mounts = [{'Type': 'bind', 'Source': str(source), 'RW': key != 'c' * 64}]
+            if mode == 'root-mounts' and key == 'c' * 64: source = root / 'src/emby'
+            if mode == 'root-mounts' and key == 'b' * 64: source = root
+            mounts = [{'Type': 'bind', 'Source': str(source), 'RW': mode == 'root-mounts' or key != 'c' * 64}]
             print(str(source) if 'range .Mounts' in fmt else (key + ' ' if '.Id' in fmt else '') + json.dumps(mounts))
         else:
             print(str(state[key]).lower() + (' none' if '.Health' in fmt else ''))
@@ -515,13 +517,21 @@ else:
 PY
     cat > "$fixture/bin/rclone" <<'PY'
 #!/usr/bin/env python3
-import os, signal, subprocess, sys, time
+import json, os, signal, subprocess, sys, time
 from pathlib import Path
 root = Path(os.environ['EMBY_FIXTURE'])
 args = sys.argv[1:]
 mode = os.environ['EMBY_TEST_MODE']
 with (root / 'calls').open('a') as out:
     out.write('rclone ' + ' '.join(args) + '\n')
+if args[0] == 'lsjson' and args[1].startswith('qq3303338052@outlook:'):
+    counter = root / 'generation-count'
+    count = int(counter.read_text()) + 1 if counter.exists() else 1
+    counter.write_text(str(count))
+    if mode == 'generation-failure': sys.exit(25)
+    size = 2 if (mode == 'primary-mutation' and count > 1) or (mode == 'replication-mutation' and count > 2) else 1
+    print(json.dumps([{'Path': 'data/db.sqlite3', 'Size': size, 'ModTime': '2026-09-13T00:00:00Z', 'Hashes': {'sha1': str(size)}}]))
+    sys.exit(0)
 if args[0] == 'lsjson':
     source = Path(args[1]).resolve()
     if source != (root / 'src').resolve(): sys.exit(99)
@@ -531,6 +541,14 @@ if args[0] == 'lsjson':
     sys.stderr.buffer.write(result.stderr)
     sys.exit(result.returncode)
 if args[0] not in ('sync', 'check'): sys.exit(99)
+secondary = args[1].startswith('qq3303338052@outlook:')
+assert args[1:3] == (['qq3303338052@outlook:Emby', 'kissska1:Emby'] if secondary else [str(root / 'src'), 'qq3303338052@outlook:Emby'])
+state = json.loads((root / 'state.json').read_text())
+if secondary:
+    assert state['a' * 64] and state['b' * 64], 'Secondary copy ran before writer recovery'
+    if mode == 'secondary-' + args[0] + '-failure': sys.exit(26)
+else:
+    assert not state['a' * 64] and not state['b' * 64], 'Primary operation ran with writers active'
 if args[0] == 'sync':
     if mode in ('term', 'int', 'runner-term'):
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
@@ -614,14 +632,14 @@ state = json.loads((root / 'state.json').read_text())
 log = '\n'.join(p.read_text() for p in (root / 'logs').glob('*.log')) + (root / 'output').read_text()
 print(log)
 print(calls)
-success = mode in ('success', 'bandwidth-override', 'parent-mount', 'readonly', 'shared-lock', 'excluded-collision')
+success = mode in ('root-mounts', 'success', 'bandwidth-override', 'parent-mount', 'readonly', 'shared-lock', 'excluded-collision')
 assert (rc == 0) == (success or mode == 'same-lock'), ('unexpected exit', mode, rc)
 if mode == 'sync-failure': assert rc == 23
 if mode == 'check-failure': assert rc == 24
 if mode == 'timeout': assert rc == 124
 if mode in ('term', 'runner-term'): assert rc == 143
 if mode == 'int': assert rc == 130
-assert (root / 'logs/emby_root_backup.last-success').exists() == success
+assert (root / 'logs/Emby.last-success').exists() == success
 if mode == 'start-failure':
     assert state['a' * 64] and not state['b' * 64]
     assert any((root / 'locks').rglob('*.pending')), 'Recovery instructions lost'
@@ -636,7 +654,9 @@ if success:
     assert calls.index('docker stop ') < calls.index('rclone sync ') < calls.index('rclone check ') < calls.index('docker start ')
     sync_args = shlex.split(next(line for line in calls.splitlines() if line.startswith('rclone sync ')))
     bandwidth = [arg for arg in sync_args if arg.startswith('--bwlimit=')]
-    assert bandwidth == ['--bwlimit=' + environment.get('DAIMON_EMBY_BWLIMIT', '0')], ('unexpected bandwidth limit', bandwidth)
+    assert bandwidth == ['--bwlimit=0'], ('unexpected bandwidth limit', bandwidth)
+    assert calls.count('rclone sync ') == 2 and calls.count('rclone check ') == 2
+    assert calls.index('docker start ') < calls.index('rclone sync qq3303338052@outlook:Emby kissska1:Emby')
     paths = {entry['Path'] for entry in json.loads((root / 'inventory.json').read_text()) if not entry['IsDir']}
     assert paths == database_paths, ('wrong database or log filters', paths)
 PY
@@ -650,7 +670,7 @@ test_rclone_runner_live_status_and_warning() {
     export DAIMON_RCLONE_STATUS_LOCK="$fixture/status.lock"
     crontab_sync_write_runner "$fixture/runner.sh" || return 1
     python3 - "$fixture" <<'PY'
-import os, signal, subprocess, sys, time
+import json, os, signal, subprocess, sys, time
 from pathlib import Path
 root = Path(sys.argv[1])
 runner = root / 'runner.sh'
@@ -690,6 +710,71 @@ assert 'PRIVATE_FIXTURE' not in cache.read_text() and '[REDACTED]' in warning[11
 assert next(row for row in rows if row[4] == 'long')[6] == '中断/未知'
 PY
 }
+test_chain_upgrade() {
+    local mode="$1" fixture="$WORK/upgrade-$1"
+    mkdir -p "$fixture/tasks" "$fixture/logs" "$fixture/locks" "$fixture/bin"
+    export DAIMON_BACKUP_SH_DIR="$fixture/tasks" DAIMON_LOCK_DIR="$fixture/locks"
+    export UPGRADE_FIXTURE="$fixture" UPGRADE_MODE="$mode"
+    load_function crontab_sync_upgrade_installed || return 1
+    load_function crontab_sync_write_script || return 1
+    load_function crontab_sync_root_name || return 1
+    crontab_sync_log_dir() { printf '%s/logs\n' "$UPGRADE_FIXTURE"; }
+    cat > "$fixture/bin/crontab" <<'PY'
+#!/usr/bin/env python3
+import os, sys
+from pathlib import Path
+root = Path(os.environ['UPGRADE_FIXTURE'])
+path = root / 'cron'
+if sys.argv[1] == '-l':
+    sys.stdout.buffer.write(path.read_bytes())
+else:
+    if os.environ['UPGRADE_MODE'] == 'cron-failure': sys.exit(1)
+    path.write_bytes(sys.stdin.buffer.read())
+PY
+    chmod 700 "$fixture/bin/crontab"
+    export PATH="$fixture/bin:$PATH"
+    DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script root "$fixture/tasks/Server-A.sh" || return 1
+    DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script emby "$fixture/tasks/Emby_Root_Backup.sh" || return 1
+    sed -i 's/DAIMON_CHAIN_BACKUP_VERSION=1/DAIMON_CHAIN_BACKUP_VERSION=0/' "$fixture/tasks/Server-A.sh" "$fixture/tasks/Emby_Root_Backup.sh"
+    cp "$fixture/tasks/Server-A.sh" "$fixture/tasks/Root_Backup.sh"
+    printf '#!/bin/bash\necho unrelated\n' > "$fixture/tasks/unrelated.sh"
+    printf '# preserved\n25 4 * * * /bin/bash %s/tasks/Root_Backup.sh\n45 4 * * * /bin/bash %s/tasks/Server-A.sh\n7 2 * * * echo unrelated\n' "$fixture" "$fixture" > "$fixture/cron"
+    if [ "$mode" = ambiguous ]; then cp "$fixture/tasks/Server-A.sh" "$fixture/tasks/Server-B.sh"; fi
+    if [ "$mode" = unknown ]; then printf '#!/bin/bash\necho custom\n' > "$fixture/tasks/Root_Backup.sh"; fi
+    if [ "$mode" = symlink ]; then mv "$fixture/tasks/Root_Backup.sh" "$fixture/linked.sh"; ln -s "$fixture/linked.sh" "$fixture/tasks/Root_Backup.sh"; fi
+    if [ "$mode" = lock ]; then exec 5>"$fixture/locks/daimon-backup-scripts.lock"; flock -x 5; fi
+    python3 - <<'PY'
+import hashlib, os
+from pathlib import Path
+root = Path(os.environ['UPGRADE_FIXTURE'])
+(root / 'before').write_text(repr({p.name: p.read_bytes() for p in (root / 'tasks').iterdir()}))
+(root / 'cron-before').write_bytes((root / 'cron').read_bytes())
+PY
+    local rc=0
+    crontab_sync_upgrade_installed > "$fixture/output" 2>&1 || rc=$?
+    cat "$fixture/output"
+    if [ "$mode" = success ]; then
+        [ "$rc" = 0 ] || return 1
+        [ "$(cat "$fixture/tasks/.root-backup-name")" = Server-A ] || return 1
+        [ ! -e "$fixture/tasks/Root_Backup.sh" ] || return 1
+        [ "$(grep -c 'Server-A.sh' "$fixture/cron")" = 1 ] || return 1
+        grep -q '^25 4 ' "$fixture/cron" || return 1
+        grep -q '^# preserved$' "$fixture/cron" || return 1
+        grep -q '^7 2 ' "$fixture/cron" || return 1
+        crontab_sync_upgrade_installed > "$fixture/output" 2>&1 || return 1
+        grep -q 'BACKUP_UPGRADE current' "$fixture/output" || return 1
+    else
+        [ "$rc" != 0 ] || return 1
+        python3 - <<'PY'
+import ast, os
+from pathlib import Path
+root = Path(os.environ['UPGRADE_FIXTURE'])
+assert ast.literal_eval((root / 'before').read_text()) == {p.name: p.read_bytes() for p in (root / 'tasks').iterdir()}
+assert (root / 'cron-before').read_bytes() == (root / 'cron').read_bytes()
+PY
+    fi
+}
+
 test_generated_root_backup_policy() {
     local fixture="$WORK/root-backup" script cron
     load_function crontab_sync_write_script || return 1
@@ -697,19 +782,19 @@ test_generated_root_backup_policy() {
     load_function crontab_sync_cron_entry || return 1
     crontab_sync_log_dir() { printf '%s\n' "$fixture/logs"; }
     mkdir -p "$fixture"
-    crontab_sync_write_script root "$fixture/Root_Backup.sh" || return 1
-    script=$(cat "$fixture/Root_Backup.sh")
-    bash -n "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'DEST1="kissska1:Root_Backup"' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq -- '--bwlimit="${DAIMON_ROOT_BWLIMIT:-512K}"' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'docker inspect -f' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'Type "bind"' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'index($0, "/root/") == 1' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'index($0, "/root/emby/") != 1' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'BACKUP_OK=1' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'date -Is > "$SUCCESS_FILE"' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'docker stop --timeout 30' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'docker start "$id"' "$fixture/Root_Backup.sh" || return 1
+    crontab_sync_write_script root "$fixture/Server-A.sh" || return 1
+    script=$(cat "$fixture/Server-A.sh")
+    bash -n "$fixture/Server-A.sh" || return 1
+    grep -Fq 'BACKUP_NAME="Server-A"' "$fixture/Server-A.sh" || return 1
+    grep -Fq -- '--bwlimit=0' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'docker inspect -f' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'mount["Type"] != "bind"' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'os.path.commonpath((root, path))' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'sys.argv[4] == "root"' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'BACKUP_OK=1' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'date -Is > "$SUCCESS_FILE"' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'docker stop --timeout 30' "$fixture/Server-A.sh" || return 1
+    grep -Fq 'docker start "$id"' "$fixture/Server-A.sh" || return 1
     cron=$(crontab_sync_cron_line_by_id root /root/linux-daimon/backup-sh/Root_Backup.sh)
     [[ "$cron" == *'TZ=Asia/Shanghai date +\%H:\%M'* && "$cron" == *'"04:25"'* ]] || return 1
     ! crontab_sync_cron_entry '99 99 * * * echo invalid'
@@ -1100,8 +1185,11 @@ for mode in success corrupt traversal; do check "Vaultwarden archive $mode" test
 for kind in bitwarden custom; do check "generated $kind sync propagates failure" test_generated_sync_failure "$kind"; done
 check 'generated backup policies exclude bulky data and avoid pre-operation backups' test_generated_backup_policies
 check 'generated Emby backup rejects case collisions before sync' test_generated_emby_rejects_case_collision_before_sync
-for mode in success bandwidth-override info-failure inspect-failure stop-failure sync-failure check-failure start-failure term int runner-term timeout duplicate check-duplicate auto-restart check-auto-restart parent-mount readonly missing-source empty-source pending-recovery same-lock shared-lock excluded-collision; do
+for mode in root-mounts generation-failure primary-mutation replication-mutation secondary-sync-failure secondary-check-failure success bandwidth-override info-failure inspect-failure stop-failure sync-failure check-failure start-failure term int runner-term timeout duplicate check-duplicate auto-restart check-auto-restart parent-mount readonly missing-source empty-source pending-recovery same-lock shared-lock excluded-collision; do
     check "generated Emby lifecycle $mode" test_emby_lifecycle "$mode"
+done
+for mode in success ambiguous unknown symlink lock cron-failure; do
+    check "chain upgrade $mode" test_chain_upgrade "$mode"
 done
 check 'generated root backup freezes bind-mounted Docker services' test_generated_root_backup_policy
 check 'rclone runner records, redacts, and expires statuses' test_rclone_runner_records_status

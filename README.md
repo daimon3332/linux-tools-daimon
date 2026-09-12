@@ -318,12 +318,14 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 | 2 | 图床同步脚本 | 每天上海时间 04:10 同步图床数据 |
 | 3 | Via 同步脚本 | 每天上海时间 04:15 从 `qq3303338052@outlook:Via` 同步到 `kissska1:Via` |
 | 4 | 域名和nginx配置备份脚本 | 每天上海时间 04:00 本地备份到 `/root/linux-daimon/backup/nginx-domain/auto_latest`，只保留 1 份，不使用 rclone |
-| 5 | Emby目录备份脚本 | 每周日上海时间 05:45 停止使用 `/root/emby` 的运行中容器，默认不限速，完成一致性同步后恢复；不创建快照 |
-| 6 | `/root` Docker 一致性备份脚本 | 每天上海时间 04:25 停止运行中的 Docker 容器，同步 `/root` 后自动恢复容器 |
+| 5 | Emby目录备份脚本 | 每周日上海时间 05:45 停止使用 `/root/emby` 的运行中容器，不限速同步到 QQ，校验并恢复容器后从 QQ 复制到 kissska1；不创建快照 |
+| 6 | `/root` Docker 一致性备份脚本 | 每天上海时间 04:25 沿用服务器名称，冻结相关容器完成 `/root` → QQ，再恢复容器并执行 QQ → kissska1 |
 
-Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停止对 `/root/emby` 有可写挂载的原运行容器（包括父目录挂载）；同步及 `rclone check` 期间保持停止。空源、Docker 检查失败、路径冲突、同步或容器恢复失败均不能标记成功。日志和迁移回滚目录不参与备份，SQLite 的 WAL/journal 不作为普通日志排除。`sync` 会删除目标中不再存在的文件，不等于历史版本备份；不创建快照。
+Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停止对 `/root/emby` 有可写挂载的原运行容器（包括父目录挂载）；向 QQ 同步及 `rclone check` 期间保持停止，恢复后再执行 QQ → kissska1 及校验。两阶段均固定 `--bwlimit=0 --transfers=4 --checkers=8`，旧限速环境变量不再生效。空源、Docker 检查失败、路径冲突、同步或容器恢复失败均不能标记成功。日志和迁移回滚目录不参与备份，SQLite 的 WAL/journal 不作为普通日志排除。`sync` 会删除目标中不再存在的文件，不等于历史版本备份；不创建快照。
 
 正常失败或 INT/TERM 会先等待传输退出，再恢复容器。恢复失败时保留 `/run/lock/daimon-emby/containers.pending`，核对并恢复清单中的容器后才能移除清单重试；强杀或主机故障不能依靠 shell trap 自动恢复。运行器会保留真正存活的长任务状态，重复路径警告不显示为完整成功。
+
+更新、启动或进入本菜单会检测已安装的受管理 `/root`、Emby 脚本；识别旧版本后原子替换，保留服务器名称和已有时间，合并重复 `/root` 任务。任务运行、身份歧义或未知自定义模板会明确阻止升级。未安装任务的服务器不会自动创建任务。`/root` 与自定义服务器脚本使用相同的一致性模板：`qq3303338052@outlook:<服务器名>` → `kissska1:<服务器名>`；Emby 独立使用两边的 `Emby`，Nginx 本地包仍包含在服务器目录的 `linux-daimon/backup/nginx-domain/auto_latest`。
 
 新版脚本启动或进入本菜单时，会先验证 `kissska1`，再自动删除旧 Infini-cloud 任务和脚本，保留原执行时间并生成对应的 kissska1 同步任务。
 

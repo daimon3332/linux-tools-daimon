@@ -1758,17 +1758,17 @@ Emby 目录备份脚本：
 * * * * * [ "$(TZ=Asia/Shanghai date +\%H:\%M)" = "05:45" ] && [ "$(TZ=Asia/Shanghai date +\%w)" = "0" ] && /bin/bash /root/linux-daimon/backup-sh/.rclone-runner.sh emby /root/linux-daimon/backup-sh/Emby_Root_Backup.sh >> /var/log/rclone/cron_Emby_Root_Backup.log 2>&1
 ```
 
-解释：每周日上海时间 05:45 获得共享锁后，使用同一组过滤规则检查实际同步范围；空源或 OneDrive 大小写冲突会直接失败。随后停止对 `/root/emby` 有可写挂载的原运行容器（含父目录挂载），单并发同步到唯一目标 `kissska1:Emby`，默认不限速（`DAIMON_EMBY_BWLIMIT` 默认为 `0`，可显式覆盖），保持停机直到 `rclone check` 完成，再恢复容器并验证运行状态；全部成功才写成功标记。不创建快照，排除根层及嵌套日志和迁移回滚目录，但保留数据库 WAL/journal。
+解释：每周日上海时间 05:45 获得共享锁后，使用同一组过滤规则检查实际同步范围；空源或 OneDrive 大小写冲突会直接失败。随后停止对 `/root/emby` 有可写挂载的原运行容器（含父目录挂载），以 `--bwlimit=0 --transfers=4 --checkers=8` 同步到 `qq3303338052@outlook:Emby`，保持停机直到 QQ 的 `rclone check` 完成，再恢复容器并验证运行状态，然后从 QQ 同步到 `kissska1:Emby` 并校验；复制前后核对 QQ 文件清单、大小、时间及哈希，检测主备份被外部改动。旧限速环境变量不再生效；全部成功才写成功标记。不创建快照，排除根层及嵌套日志和迁移回滚目录，但保留数据库 WAL/journal。
 
 `sync` 可能删除目标中的旧文件，首次执行应先核对相同过滤规则的 dry-run，不能用 `--delete-excluded` 清理旧日志。INT/TERM 会先终止并等待传输退出，再恢复原运行容器；强杀和主机故障不保证自动恢复。恢复失败时保留 `/run/lock/daimon-emby/containers.pending` 并拒绝下次备份，需人工核对恢复。只读挂载、不相关容器和原已停止容器不受影响。
 
 `/root` Docker 一致性备份：
 
 ```bash
-* * * * * [ "$(TZ=Asia/Shanghai date +\%H:\%M)" = "04:25" ] && /bin/bash /root/linux-daimon/backup-sh/.rclone-runner.sh root /root/linux-daimon/backup-sh/Root_Backup.sh >> /var/log/rclone/cron_Root_Backup.log 2>&1
+* * * * * [ "$(TZ=Asia/Shanghai date +\%H:\%M)" = "04:25" ] && /bin/bash /root/linux-daimon/backup-sh/.rclone-runner.sh root /root/linux-daimon/backup-sh/Tecent-ShangHai-4C4G.sh >> /var/log/rclone/cron_Root_Backup.log 2>&1
 ```
 
-解释：每天上海时间 04:25 记录当前运行中的 Docker 容器，停止容器后同步 `/root` 到 `kissska1:Root_Backup`，成功或失败都会恢复原来运行的容器；排除缓存、依赖、日志、临时文件和 `/root/emby`。也可在 crontab 菜单选择立即执行一次备份，需要输入 `RUN_ROOT_BACKUP` 确认。
+解释：示例服务器名为 `Tecent-ShangHai-4C4G`，其他服务器沿用自己的名称。每天上海时间 04:25 停止对 `/root` 有可写挂载的相关容器（排除独立 Emby 子目录），不限速同步到 `qq3303338052@outlook:Tecent-ShangHai-4C4G` 并校验；恢复原运行容器后从 QQ 同步到 `kissska1:Tecent-ShangHai-4C4G` 并校验。排除缓存、依赖、日志、临时目录和 `/root/emby`。Nginx 的 `auto_latest` 本地包锁与备份共用，归入上述服务器目录。跨账号复制是否经过服务器由 rclone 后端能力决定，不保证云端直传。也可在 crontab 菜单选择立即执行一次备份，需要输入 `RUN_ROOT_BACKUP` 确认。
 
 ## 18. 常用的一键脚本
 
