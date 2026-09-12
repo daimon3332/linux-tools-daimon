@@ -22075,11 +22075,13 @@ crontab_sync_script_content_ok() {
 				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
 			;;
         nginxdomain)
-            # Accept both the current generated script and older generated revisions.
-            grep -q 'BACKUP_DIR="$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null \
-                && grep -q 'rclone_nginx_write_bundle' "$script_file" 2>/dev/null \
-                && grep -q 'config-files.json' "$script_file" 2>/dev/null \
-                && grep -q 'flock' "$script_file" 2>/dev/null
+            # Accept current and legacy generated Nginx backup scripts.
+            if grep -q 'BACKUP_DIR="\$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null &&
+               grep -Eq 'rclone_nginx_write_bundle|copy_backup_item' "$script_file" 2>/dev/null &&
+               grep -q 'manifest.txt' "$script_file" 2>/dev/null; then
+                return 0
+            fi
+            return 1
             ;;
         root|emby|custom)
             local stage expected result=1
