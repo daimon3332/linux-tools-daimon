@@ -741,6 +741,39 @@ test_main_eof() {
     kejilion_sh </dev/null
     [ "$count" -eq 1 ]
 }
+test_update_refreshes_cert_helper() {
+    load_function kejilion_update || return 1
+    local base="$WORK/update-helper" count=0 trace="$WORK/update-helper.trace"
+    local DAIMON_LOCAL_SCRIPT="$base/linux-toolbox.sh"
+    local DAIMON_OLD_LOCAL_SCRIPT="$base/daimon.sh"
+    local DAIMON_CERT_HELPER_MARKER="$base/.update-cert-helper"
+    mkdir -p "$base"
+    : > "$trace"
+    root_use() { :; }
+    clear() { :; }
+    break_end() { :; }
+    mktemp() {
+        count=$((count + 1))
+        printf '%s\n' "$base/tmp.$count"
+    }
+    daimon_download_update_file() { printf '#!/bin/bash\nexit 0\n' > "$1"; }
+    daimon_install_script_file() { :; }
+    cp() { :; }
+    chmod() { :; }
+    ln() { :; }
+    rm() { :; }
+    sed() { :; }
+    grep() {
+        if [[ "$*" == *'/usr/local/bin/d'* ]]; then return 1; fi
+        command grep "$@"
+    }
+    read() { printf '%s\n' "$*" >> "$trace"; return 0; }
+    exec() { printf 'exec\n' >> "$trace"; return 0; }
+    kejilion_update || return 1
+    [ -f "$DAIMON_CERT_HELPER_MARKER" ] &&
+        grep -Fq 'exec' "$trace" &&
+        ! grep -Fq '更新 Nginx + 域名续期脚本' "$trace"
+}
 test_ufw_unknown_ports() {
     local trace="$WORK/ufw.trace" SSH_CONNECTION=''
     : > "$trace"
@@ -888,6 +921,7 @@ check 'third-party tool metadata remains aligned' test_tool_metadata_alignment
 check 'third-party documentation numbering matches the menu' test_tool_documentation_numbering
 check 'Bitwarden config validation never prints credentials' test_bitwarden_config_privacy
 check 'main menu stops safely on EOF' test_main_eof
+check 'script update always refreshes the Nginx cert helper' test_update_refreshes_cert_helper
 check 'UFW cannot enable with unknown SSH ports' test_ufw_unknown_ports
 check 'UFW cannot enable after allow-rule failure' test_ufw_allow_failure
 check 'mq with fq leaf queues passes verification' test_active_qdisc good

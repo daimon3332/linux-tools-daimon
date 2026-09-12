@@ -23217,7 +23217,7 @@ kejilion_update() {
 	echo "linux-tools-daimon 脚本更新"
 	echo "------------------------"
 
-	local tmp_file rollback_file keep_permission="false" keep_canshu="" keep_stats="" cert_helper_choice="1"
+	local tmp_file rollback_file keep_permission="false" keep_canshu="" keep_stats=""
 	tmp_file=$(mktemp /tmp/daimon_tmp.XXXXXX) || { echo -e "${gl_hong}创建临时文件失败${gl_bai}"; break_end; return 1; }
 	rollback_file=$(mktemp /tmp/daimon_rollback.XXXXXX) || rollback_file=""
 
@@ -23234,20 +23234,12 @@ kejilion_update() {
 	keep_canshu=$(grep -h '^canshu=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 	keep_stats=$(grep -h '^ENABLE_STATS=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 
-	read -e -p "更新 Nginx + 域名续期脚本？(1=仅主脚本，2=同时更新，0=取消): " cert_helper_choice || {
+	if ! : > "$DAIMON_CERT_HELPER_MARKER"; then
 		rm -f "$tmp_file" "$rollback_file"
+		echo -e "${gl_hong}更新失败：无法安排 Nginx + 域名续期脚本更新${gl_bai}"
+		break_end
 		return 1
-	}
-	case "$cert_helper_choice" in
-		2) : > "$DAIMON_CERT_HELPER_MARKER" ;;
-		1|"") rm -f "$DAIMON_CERT_HELPER_MARKER" 2>/dev/null || true ;;
-		0|*)
-			rm -f "$tmp_file" "$rollback_file"
-			echo "已取消更新"
-			break_end
-			return 0
-			;;
-	esac
+	fi
 
 	[ -n "$rollback_file" ] && [ -f "$DAIMON_LOCAL_SCRIPT" ] && cp -f "$DAIMON_LOCAL_SCRIPT" "$rollback_file" 2>/dev/null || true
 	chmod +x "$tmp_file"
