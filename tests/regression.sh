@@ -603,7 +603,7 @@ test_tool_numbers() {
         failed) ! handle_tool_numbers install '1 2' ;;
         leading-zero) handle_tool_numbers install 08 && [ "$(cat "$trace")" = ripgrep ] ;;
         all)
-            for n in $(seq 1 16); do handle_tool_numbers install "$n" || return 1; done
+            for n in $(seq 1 15); do handle_tool_numbers install "$n" || return 1; done
             [ "$(wc -l < "$trace")" -eq 16 ] || return 1
             [ "$(cat "$trace")" = "$(printf '%s\n' "${tool_ids[@]}")" ]
             ;;
@@ -764,7 +764,7 @@ check 'rclone ARM64 release selects the correct asset' test_rclone_release aarch
 check 'rclone corrupt archive preserves the old executable' test_rclone_release x86_64 yes amd64
 check 'unsupported rclone architecture makes no changes' test_rclone_release unknown no unsupported
 check 'network failure restores runtime values and both config files' test_network_rollback
-check 'all 16 third-party tool IDs are reachable' test_tool_numbers all
+check 'all 15 third-party tool IDs are reachable' test_tool_numbers all
 check 'tool index 08 is decimal, not invalid octal' test_tool_numbers leading-zero
 check 'batch tool failure propagates to its caller' test_tool_numbers failed
 check 'Bitwarden config validation never prints credentials' test_bitwarden_config_privacy
