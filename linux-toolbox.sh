@@ -22096,11 +22096,13 @@ crontab_sync_script_content_ok() {
 				&& grep -q '"kissska1:Via"' "$script_file" 2>/dev/null \
 				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
 			;;
-		nginxdomain)
-			grep -q 'BACKUP_DIR="$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null \
-				&& grep -q 'rclone_nginx_write_bundle "$TMP_DIR"' "$script_file" 2>/dev/null \
-				&& grep -q 'config-files.json' "$script_file" 2>/dev/null
-			;;
+        nginxdomain)
+            # Accept both the current generated script and older generated revisions.
+            grep -q 'BACKUP_DIR="$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null \
+                && grep -q 'rclone_nginx_write_bundle' "$script_file" 2>/dev/null \
+                && grep -q 'config-files.json' "$script_file" 2>/dev/null \
+                && grep -q 'flock' "$script_file" 2>/dev/null
+            ;;
         root|emby|custom)
             local stage expected result=1
             stage=$(mktemp -d) || return 1
