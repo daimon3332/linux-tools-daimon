@@ -9749,8 +9749,8 @@ linux_Settings() {
 
 
 linux_tools() {
-  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi fastfetch ncdu nexttrace iperf3)
-  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "fastfetch" "ncdu" "NextTrace" "iperf3")
+  local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi ncdu nexttrace iperf3)
+  local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "ncdu" "NextTrace" "iperf3")
   local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "系统概览" "磁盘占用" "路由追踪" "网络性能测试")
 
   local programming_ids=(python npm nodejs bun uv git claude codex)
@@ -11043,25 +11043,6 @@ EOF
         systemctl start firewalld >/dev/null 2>&1 || true
         firewall-cmd --state 2>/dev/null || true
         ;;
-      fastfetch)
-        root_use
-        if command -v apt >/dev/null 2>&1; then
-          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
-          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
-            -o Dpkg::Options::="--force-confdef" \
-            -o Dpkg::Options::="--force-confold" \
-            software-properties-common
-          add-apt-repository -y ppa:zhangsongcui3371/fastfetch
-          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
-          DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
-            -o Dpkg::Options::="--force-confdef" \
-            -o Dpkg::Options::="--force-confold" \
-            fastfetch
-        else
-          install fastfetch
-        fi
-        fastfetch --version 2>/dev/null || true
-        ;;
       yazi)
         install_yazi_griffo
         ;;
@@ -11098,14 +11079,6 @@ EOF
       bat) remove_bat_all ;;
       btop) remove btop; rm -rf "$HOME/.config/btop" ;;
       yazi) remove_yazi_all ;;
-      fastfetch)
-        remove fastfetch
-        if command -v add-apt-repository >/dev/null 2>&1; then
-          add-apt-repository --remove -y ppa:zhangsongcui3371/fastfetch 2>/dev/null || true
-          apt update -y 2>/dev/null || true
-        fi
-        rm -rf "$HOME/.config/fastfetch"
-        ;;
       htop) remove htop; rm -rf "$HOME/.config/htop" "$HOME/.htoprc" ;;
       ripgrep) remove ripgrep ;;
       fd) remove_fd_alias; remove fd-find ;;

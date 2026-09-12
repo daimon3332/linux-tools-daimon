@@ -594,7 +594,7 @@ test_network_rollback() {
 }
 test_tool_numbers() {
     local mode="$1" trace="$WORK/tools.trace" n
-    local tool_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi fastfetch ncdu nexttrace iperf3)
+    local tool_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi ncdu nexttrace iperf3)
     : > "$trace"
     install_tool_by_id() { echo "$1" >> "$trace"; [ "$mode" != failed ] || [ "$1" != vim ]; }
     remove_tool_by_id() { echo "$1" >> "$trace"; }

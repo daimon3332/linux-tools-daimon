@@ -174,7 +174,6 @@ Swap 只调整带本脚本 inode 归属标记的 `/swapfile`；未标记的已�
 | 10 | fzf | 命令行模糊搜索工具，使用 git clone 安装 |
 | 11 | ble.sh | Bash 行编辑增强、自动补全和历史补全 |
 | 12 | yazi | 现代终端文件管理器，通过 `debian.griffo.io` apt 源安装 |
-| 13 | fastfetch | 系统概览信息展示工具 |
 | 14 | ncdu | 交互式磁盘占用分析工具 |
 | 15 | NextTrace | 可视化路由追踪工具，通过官方 apt 源安装 |
 | 16 | iperf3 | 网络性能测试工具 |
