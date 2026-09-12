@@ -21695,10 +21695,13 @@ crontab_sync_log_run_dir() { echo "${DAIMON_RCLONE_RUN_LOG_DIR:-/var/log/rclone/
 crontab_sync_log_export_dir() { echo "${DAIMON_RCLONE_EXPORT_DIR:-/root/linux-daimon/rclone-logs}"; }
 crontab_sync_runner_file() { echo "${DAIMON_RCLONE_RUNNER_FILE:-$(crontab_sync_backup_dir)/.rclone-runner.sh}"; }
 
-crontab_sync_write_runner() {
-	local target="$1"
+crontab_sync_write_runner() (
+	umask 077
+	local target="$1" staged
 	mkdir -p "$(dirname "$target")" "$(crontab_sync_log_run_dir)" "$(dirname "$(crontab_sync_log_cache_file)")" || return 1
-	cat > "$target" <<'EOF'
+	staged=$(mktemp "${target}.XXXXXX") || return 1
+	trap 'rm -f -- "$staged"' EXIT
+	cat > "$staged" <<'EOF'
 #!/bin/bash
 set -u
 TASK="${1:-custom}"
@@ -21717,29 +21720,66 @@ run_id="$(date +%Y%m%d-%H%M%S)-$$-$safe_task"
 run_log="$RUN_DIR/$run_id.log"
 exec 9>"$LOCK_FILE"; flock -x 9
 cutoff=$((epoch - 30 * 86400)); tmp_cache=$(mktemp "$CACHE_FILE.XXXXXX") || exit 1
-awk -F '\t' -v OFS='\t' -v cutoff="$cutoff" -v stale="$((epoch - 3600))" '$1 >= cutoff {if ($7 == "执行中" && $1 < stale) {$7="中断/未知"; $8="-"; $12="运行器未正常结束"} print}' "$CACHE_FILE" > "$tmp_cache" || true
+active_pids=" "
+while IFS=$'\t' read -r _ _ _ _ _ _ previous_status _ _ previous_pid _ _; do
+    [ "$previous_status" = '执行中' ] && [[ "$previous_pid" =~ ^[0-9]+$ ]] || continue
+    if kill -0 "$previous_pid" 2>/dev/null && [ -r "/proc/$previous_pid/cmdline" ] \
+        && tr '\0' '\n' < "/proc/$previous_pid/cmdline" | grep -Fxq -- "$0"; then
+        active_pids+="$previous_pid "
+    fi
+done < "$CACHE_FILE"
+awk -F '\t' -v OFS='\t' -v cutoff="$cutoff" -v stale="$((epoch - 3600))" -v active="$active_pids" '$1 >= cutoff {if ($7 == "执行中" && $1 < stale && !index(active, " " $10 " ")) {$7="中断/未知"; $8="-"; $12="运行器未正常结束"} print}' "$CACHE_FILE" > "$tmp_cache" || exit 1
 printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$epoch" "$started" "-" "$run_id" "$safe_task" "sync" "执行中" "-" "0" "$$" "$run_log" "-" >> "$tmp_cache"
-chmod 600 "$tmp_cache" && mv -f "$tmp_cache" "$CACHE_FILE"; flock -u 9
+chmod 600 "$tmp_cache" && mv -f "$tmp_cache" "$CACHE_FILE" || { rm -f -- "$tmp_cache"; exit 1; }
+flock -u 9
 export DAIMON_RUN_LOG="$run_log"
 printf '===== %s 开始任务=%s 脚本=%s =====\n' "$started" "$safe_task" "$SCRIPT" > "$run_log"; chmod 600 "$run_log"
-"$SCRIPT" >> "$run_log" 2>&1; rc=$?
+child_pid=""; interrupted=0
+cancel_run() {
+    interrupted="$1"
+    trap '' INT TERM
+    if [ -n "$child_pid" ]; then
+        kill -TERM "$child_pid" 2>/dev/null || true
+        wait "$child_pid" 2>/dev/null || true
+    fi
+}
+trap 'cancel_run 130' INT
+trap 'cancel_run 143' TERM
+"$SCRIPT" >> "$run_log" 2>&1 & child_pid=$!
+wait "$child_pid"; rc=$?
+[ "$interrupted" -eq 0 ] || rc="$interrupted"
+child_pid=""
+trap - INT TERM
 finished=$(date -Is); end_epoch=$(date +%s); duration=$((end_epoch - epoch))
 status="成功"; reason="-"
-if [ "$rc" -ne 0 ]; then
+if [ "$rc" -eq 130 ] || [ "$rc" -eq 143 ]; then
+    status="中断/未知"; reason="任务已中断，请核对日志中的容器恢复结果"
+elif [ "$rc" -ne 0 ]; then
     status="失败"
     reason=$(grep -Ei 'error|failed|fatal|denied|timeout|cannot|无法|失败' "$run_log" 2>/dev/null | tail -n 1 | tr '\t\r\n' '   ' | sed -E -e 's/([Bb]earer[[:space:]]+)[^[:space:]]+/\1[REDACTED]/g' -e 's/((access_token|refresh_token|client_secret|tempauth|password)"?[[:space:]]*[=:][[:space:]]*"?)[^"[:space:]&,}]+/\1[REDACTED]/Ig' | cut -c1-240)
     reason=${reason:-"脚本退出码 $rc"}
 elif grep -Eiq '已有 .*运行.*跳过|已有.*运行，跳过' "$run_log"; then
     status="被锁跳过"; reason="检测到已有同类任务运行"
+elif grep -Eiq 'Duplicate (directory|file|object) found in (source|destination) - ignoring' "$run_log"; then
+    status="有警告"
+    reason=$(grep -Ei 'Duplicate (directory|file|object) found in (source|destination) - ignoring' "$run_log" | tail -n 1 | tr '\t\r\n' '   ' | sed -E -e 's/([Bb]earer[[:space:]]+)[^[:space:]]+/\1[REDACTED]/g' -e 's/((access_token|refresh_token|client_secret|tempauth|password)"?[[:space:]]*[=:][[:space:]]*"?)[^"[:space:]&,}]+/\1[REDACTED]/Ig' | cut -c1-240)
 fi
-exec 9>"$LOCK_FILE"; flock -x 9; tmp_cache=$(mktemp "$CACHE_FILE.XXXXXX") || exit "$rc"
-awk -F '\t' -v OFS='\t' -v id="$run_id" -v ended="$finished" -v status="$status" -v rc="$rc" -v duration="$duration" -v reason="$reason" '$4 == id {$3=ended; $7=status; $8=rc; $9=duration; $12=reason} {print}' "$CACHE_FILE" > "$tmp_cache"
-chmod 600 "$tmp_cache" && mv -f "$tmp_cache" "$CACHE_FILE"; flock -u 9
+cache_failure() {
+    printf '%s\n' 'ERROR: 无法更新任务状态缓存，请核对任务日志' >> "$run_log"
+    [ "$rc" -ne 0 ] || rc=1
+    exit "$rc"
+}
+exec 9>"$LOCK_FILE" || cache_failure
+flock -x 9 || cache_failure
+tmp_cache=$(mktemp "$CACHE_FILE.XXXXXX") || cache_failure
+awk -F '\t' -v OFS='\t' -v id="$run_id" -v ended="$finished" -v status="$status" -v rc="$rc" -v duration="$duration" -v reason="$reason" '$4 == id {$3=ended; $7=status; $8=rc; $9=duration; $12=reason} {print}' "$CACHE_FILE" > "$tmp_cache" \
+    && chmod 600 "$tmp_cache" && mv -f "$tmp_cache" "$CACHE_FILE" || { rm -f -- "$tmp_cache"; cache_failure; }
+flock -u 9
 printf '===== %s 结束状态=%s 退出码=%s 耗时=%ss =====\n' "$finished" "$status" "$rc" "$duration" >> "$run_log"
 exit "$rc"
 EOF
-	chmod 700 "$target"
-}
+	bash -n "$staged" && chmod 700 "$staged" && mv -f -- "$staged" "$target"
+)
 
 crontab_sync_write_run_tools() { crontab_sync_write_runner "$(crontab_sync_runner_file)"; }
 
@@ -21913,8 +21953,10 @@ crontab_sync_script_content_ok() {
 		emby)
 			grep -q 'SRC1="/root/emby"' "$script_file" 2>/dev/null \
 				&& grep -q 'DEST="kissska1:Emby"' "$script_file" 2>/dev/null \
+				&& grep -q '^# DAIMON_EMBY_BACKUP_VERSION=2$' "$script_file" 2>/dev/null \
 				&& grep -q 'flock' "$script_file" 2>/dev/null \
-				&& grep -q 'rclone sync' "$script_file" 2>/dev/null
+				&& grep -q 'run_transfer sync' "$script_file" 2>/dev/null \
+				&& grep -q 'run_transfer check' "$script_file" 2>/dev/null
 			;;
 		custom)
 			grep -q 'SRC1="/root"' "$script_file" 2>/dev/null \
@@ -22148,7 +22190,7 @@ if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
     done < <(docker ps -q)
     while IFS= read -r id; do
         [ -n "$id" ] || continue
-        docker stop --time 30 "$id" >> "$LOG_FILE" 2>&1
+        docker stop --timeout 30 "$id" >> "$LOG_FILE" 2>&1
     done < "$CONTAINER_STATE_FILE"
 fi
 
@@ -22182,42 +22224,201 @@ EOF
 		emby)
 			cat > "$script_file" <<'EOF'
 #!/bin/bash
+# DAIMON_EMBY_BACKUP_VERSION=2
 set -Eeuo pipefail
 umask 077
 
 SRC1="/root/emby"
 DEST="kissska1:Emby"
 LOG_DIR="/var/log/rclone"
-LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/emby_root_backup_$(date +%F).log}"
-LOCK_FILE="/run/lock/daimon-emby-root-backup.lock"
-GLOBAL_LOCK_FILE="/run/lock/daimon-rclone-backups.lock"
+LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/emby_root_backup_$(date +%Y%m%d-%H%M%S)-$$.log}"
+RUNTIME_DIR="${DAIMON_LOCK_DIR:-/run/lock}"
+LOCK_FILE="$RUNTIME_DIR/daimon-emby-root-backup.lock"
+GLOBAL_LOCK_FILE="$RUNTIME_DIR/daimon-rclone-backups.lock"
+STATE_DIR="$RUNTIME_DIR/daimon-emby"
+STATE_FILE="$STATE_DIR/containers.pending"
 SUCCESS_FILE="$LOG_DIR/emby_root_backup.last-success"
+INVENTORY="" MOUNTS="" CHILD_PID=""
+OWNS_STATE=0 BACKUP_OK=0
+FILTERS=(--exclude '/logs/**' --exclude '**/logs/**' --exclude '/*.log' --exclude '**/*.log'
+    --exclude '/.migration-*/rollback/**' --exclude '**/.migration-*/rollback/**')
+NETWORK=(--checkers=1 --contimeout=30s --timeout=2m --retries=3 --low-level-retries=2
+    --log-file="$LOG_FILE" --log-level INFO)
 
-command -v flock >/dev/null 2>&1 || { printf '%s\n' "flock 未安装" >&2; exit 1; }
-install -d -m 700 "$LOG_DIR" "$(dirname "$LOCK_FILE")"
+for tool in flock python3 rclone docker timeout; do
+    command -v "$tool" >/dev/null 2>&1 || { printf 'ERROR: 缺少依赖 %s\n' "$tool" >&2; exit 1; }
+done
+install -d -m 700 "$LOG_DIR"
+mkdir -p "$RUNTIME_DIR"
 touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
 exec 9>"$LOCK_FILE"
-flock -n 9 || { printf '%s\n' "已有 Emby 备份运行，跳过本次任务" >> "$LOG_FILE"; exit 0; }
+flock -n 9 || { printf '%s\n' '已有 Emby 备份运行，跳过本次任务' >> "$LOG_FILE"; exit 0; }
 exec 8>"$GLOBAL_LOCK_FILE"
 flock -x 8
+install -d -m 700 "$STATE_DIR"
+[ ! -e "$STATE_FILE" ] || { printf 'ERROR: 存在待恢复容器清单，确认恢复后再重试: %s\n' "$STATE_FILE" >> "$LOG_FILE"; exit 1; }
+rm -f -- "$SUCCESS_FILE"
 
-printf '===== %s 开始 Emby 目录备份 =====\n' "$(date -Is)" >> "$LOG_FILE"
-timeout 7d rclone sync "$SRC1" "$DEST" \
-  --exclude '**/logs/**' \
-  --exclude '**/*.log' \
-  --exclude '**/.migration-*/rollback/**' \
-  --transfers=1 \
-  --checkers=1 \
-  --bwlimit="${DAIMON_EMBY_BWLIMIT:-512K}" \
-  --contimeout=30s \
-  --timeout=2m \
-  --retries=3 \
-  --low-level-retries=2 \
-  --log-file="$LOG_FILE" \
-  --log-level INFO
-printf '%s\n' "$(date -Is)" > "$SUCCESS_FILE"
-chmod 600 "$SUCCESS_FILE"
-printf '===== %s Emby 目录备份完成 =====\n' "$(date -Is)" >> "$LOG_FILE"
+container_state() {
+    timeout 30s docker inspect -f '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' "$1" 2>> "$LOG_FILE"
+}
+
+stop_transfer() {
+    if [ -n "$CHILD_PID" ]; then
+        kill -TERM "$CHILD_PID" 2>/dev/null || true
+        wait "$CHILD_PID" 2>/dev/null || true
+        CHILD_PID=""
+    fi
+}
+
+restore_containers() {
+    local rc=$? id state deadline recovery_failed=0
+    trap - EXIT
+    trap '' INT TERM
+    set +e
+    stop_transfer
+    if [ "$OWNS_STATE" -eq 1 ]; then
+        while IFS= read -r id; do
+            [ -n "$id" ] || continue
+            state=$(container_state "$id") || state=""
+            if [ "${state%% *}" != true ]; then
+                timeout 60s docker start "$id" >> "$LOG_FILE" 2>&1 || { recovery_failed=1; continue; }
+            fi
+            deadline=$((SECONDS + 60))
+            while true; do
+                state=$(container_state "$id") || state=""
+                case "$state" in 'true none'|'true healthy') break ;; esac
+                if [ "$SECONDS" -ge "$deadline" ] || [ "$state" != 'true starting' ]; then
+                    printf 'ERROR: Emby 相关容器恢复验证失败: %s (%s)\n' "$id" "$state" >> "$LOG_FILE"
+                    recovery_failed=1
+                    break
+                fi
+                sleep 1
+            done
+        done < "$STATE_FILE"
+        if [ "$recovery_failed" -eq 0 ]; then
+            rm -f -- "$STATE_FILE" || recovery_failed=1
+        else
+            printf 'ERROR: 请检查并恢复清单中的原运行容器: %s\n' "$STATE_FILE" >> "$LOG_FILE"
+        fi
+    fi
+    [ -z "$INVENTORY" ] || rm -f -- "$INVENTORY"
+    [ -z "$MOUNTS" ] || rm -f -- "$MOUNTS"
+    if [ "$rc" -eq 0 ] && [ "$BACKUP_OK" -eq 1 ] && [ "$recovery_failed" -eq 0 ]; then
+        if date -Is > "$SUCCESS_FILE" && chmod 600 "$SUCCESS_FILE"; then
+            printf '===== %s Emby 目录备份完成 =====\n' "$(date -Is)" >> "$LOG_FILE"
+        else
+            rm -f -- "$SUCCESS_FILE"
+            rc=1
+        fi
+    elif [ "$rc" -eq 0 ]; then
+        rc=1
+    fi
+    exit "$rc"
+}
+trap restore_containers EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+emby_preflight() {
+    [ -d "$SRC1" ] && [ -r "$SRC1" ] || { printf 'ERROR: Emby 源目录不存在或不可读: %s\n' "$SRC1" >&2; return 1; }
+    rclone lsjson "$SRC1" --recursive "${FILTERS[@]}" > "$INVENTORY" || return
+    python3 - "$INVENTORY" <<'PY'
+import json
+import sys
+import unicodedata
+
+with open(sys.argv[1], encoding="utf-8") as source:
+    entries = json.load(source)
+seen, conflicts = {}, set()
+if not any(not entry["IsDir"] for entry in entries):
+    sys.exit("ERROR: Emby 同步范围为空，拒绝同步以保护远端数据")
+for entry in entries:
+    parts = entry["Path"].split("/")
+    if any(part in ("", ".", "..") for part in parts):
+        sys.exit("ERROR: 无效的 Emby 相对路径")
+    for length in range(1, len(parts) + 1):
+        path = "/".join(parts[:length])
+        key = unicodedata.normalize("NFC", path).casefold()
+        previous = seen.setdefault(key, path)
+        if previous != path:
+            conflicts.add(tuple(sorted((previous, path))))
+if conflicts:
+    print("ERROR: EMBY_CASE_COLLISION: OneDrive 无法保存以下大小写重名路径:", file=sys.stderr)
+    for left, right in sorted(conflicts):
+        print("  " + left + " | " + right, file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+run_transfer() {
+    timeout --kill-after=30s 7d rclone "$@" >> "$LOG_FILE" 2>&1 &
+    CHILD_PID=$!
+    local rc=0
+    wait "$CHILD_PID" || rc=$?
+    CHILD_PID=""
+    return "$rc"
+}
+
+verify_backup_state() {
+    local id state
+    if grep -Eiq 'Duplicate (directory|file|object) found in (source|destination) - ignoring' "$LOG_FILE"; then
+        echo 'ERROR: Emby 同步或校验忽略了重复路径，备份不完整' >> "$LOG_FILE"
+        return 1
+    fi
+    while IFS= read -r id; do
+        state=$(container_state "$id") || return
+        [ "${state%% *}" = false ] || { printf 'ERROR: 备份期间容器被外部启动: %s\n' "$id" >&2; return 1; }
+    done < "$STATE_FILE"
+}
+
+INVENTORY=$(mktemp "$STATE_DIR/inventory.XXXXXX")
+MOUNTS=$(mktemp "$STATE_DIR/mounts.XXXXXX")
+printf '===== %s 开始 Emby 一致性备份 =====\n' "$(date -Is)" >> "$LOG_FILE"
+emby_preflight >> "$LOG_FILE" 2>&1
+timeout 30s docker info >> "$LOG_FILE" 2>&1
+ids=$(timeout 30s docker ps -q)
+if [ -n "$ids" ]; then
+    mapfile -t containers <<< "$ids"
+    for id in "${containers[@]}"; do
+        [[ "$id" =~ ^[a-f0-9]{12,64}$ ]] || { echo 'ERROR: 无效的 Docker 容器 ID' >&2; exit 1; }
+    done
+    timeout 30s docker inspect -f '{{.Id}} {{json .Mounts}}' "${containers[@]}" > "$MOUNTS"
+fi
+python3 - "$SRC1" "$MOUNTS" "$STATE_FILE" <<'PY'
+import json
+import os
+import sys
+
+root = os.path.realpath(sys.argv[1])
+selected = []
+with open(sys.argv[2], encoding="utf-8") as source:
+    for line in source:
+        container, mounts = line.strip().split(" ", 1)
+        for mount in json.loads(mounts):
+            if mount["Type"] != "bind" or not mount["RW"]:
+                continue
+            path = os.path.realpath(mount["Source"])
+            if os.path.commonpath((root, path)) in (root, path):
+                selected.append(container)
+                break
+with open(sys.argv[3], "x", encoding="utf-8") as target:
+    target.writelines(container + "\n" for container in selected)
+PY
+OWNS_STATE=1
+while IFS= read -r id; do
+    timeout 60s docker stop --timeout 30 "$id" >> "$LOG_FILE" 2>&1
+    state=$(container_state "$id")
+    [ "${state%% *}" = false ] || { printf 'ERROR: 容器未停止: %s\n' "$id" >&2; exit 1; }
+done < "$STATE_FILE"
+
+emby_preflight >> "$LOG_FILE" 2>&1
+run_transfer sync "$SRC1" "$DEST" "${FILTERS[@]}" "${NETWORK[@]}" \
+    --transfers=1 --bwlimit="${DAIMON_EMBY_BWLIMIT:-512K}"
+verify_backup_state
+run_transfer check "$SRC1" "$DEST" "${FILTERS[@]}" "${NETWORK[@]}"
+verify_backup_state
+BACKUP_OK=1
 EOF
 			;;
 		custom)

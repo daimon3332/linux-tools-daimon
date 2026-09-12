@@ -4,9 +4,13 @@ case "$(uname -s)" in MINGW*) export MSYS="${MSYS:+$MSYS }winsymlinks:nativestri
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/migration.XXXXXX") || exit 1
-trap 'rm -rf -- "$WORK"' EXIT
+trap 'case "$(realpath -- "$WORK")" in "$ROOT"/.tmp/migration.*) rm -rf -- "$WORK" ;; esac' EXIT
 export TMPDIR="$WORK"
 export DAIMON_RCLONE_RUNNER_FILE="$WORK/rclone-runner.sh"
+export DAIMON_RCLONE_RUN_LOG_DIR="$WORK/run-logs"
+export DAIMON_RCLONE_STATUS_CACHE="$WORK/status.tsv"
+export DAIMON_RCLONE_STATUS_LOCK="$WORK/status.lock"
+export DAIMON_LOCK_DIR="$WORK/locks"
 export DAIMON_RESTORE_ROOT="$WORK/root"
 export DAIMON_NGINX_DIR="$WORK/nginx"
 mkdir -p "$DAIMON_RESTORE_ROOT" "$DAIMON_NGINX_DIR"
@@ -14,12 +18,14 @@ tr -d '\r' < "${DAIMON_TEST_SOURCE:-$ROOT/linux-toolbox.sh}" > "$WORK/source.sh"
 SOURCE="$WORK/source.sh"
 if ! python3 --version >/dev/null 2>&1; then
     python3() { python "$@" | tr -d '\r'; }
+    export -f python3
 fi
 
 load_function() {
     local body
     body=$(awk -v name="$1" '
         $0 ~ "^[[:space:]]*" name "\\(\\) [({]" {
+            if ($0 ~ /\{.*\}[[:space:]]*$/) {print; exit}
             active=1; match($0,/[^[:space:]]/); indent=substr($0,1,RSTART-1)
             closing=($0 ~ /\($/ ? ")" : "}")
         }
@@ -408,13 +414,16 @@ test_generated_sync_failure() {
     crontab_sync_write_script "$kind" "$fixture/task.sh" || return 1
     rclone() { return 1; }
     export -f rclone
-    sed "s|^LOG_DIR=.*|LOG_DIR='$fixture/logs'|" "$fixture/task.sh" > "$fixture/isolated.sh"
+    mkdir -p "$fixture/locks" "$fixture/source"
+    sed -e "s|^LOG_DIR=.*|LOG_DIR='$fixture/logs'|" -e "s|/run/lock|$fixture/locks|g" \
+        -e "s|^SRC1=.*|SRC1='$fixture/source'|" "$fixture/task.sh" > "$fixture/isolated.sh"
     ! bash "$fixture/isolated.sh"
 }
 
 test_generated_backup_policies() {
     local fixture="$WORK/policies" root_script emby_script
     load_function crontab_sync_write_script || return 1
+    load_function crontab_sync_script_content_ok || return 1
     crontab_sync_log_dir() { printf '%s\n' "$fixture/logs"; }
     mkdir -p "$fixture"
     crontab_sync_write_script custom "$fixture/root.sh" || return 1
@@ -432,7 +441,245 @@ test_generated_backup_policies() {
     [[ "$emby_script" == *'--transfers=1'* ]] || return 1
     [[ "$emby_script" == *'--bwlimit='* ]] || return 1
     [[ "$emby_script" == *'flock -n 9'* ]] || return 1
+    [[ "$emby_script" == *'docker stop --timeout 30'* ]] || return 1
+    [[ "$emby_script" == *'docker start "$id"'* ]] || return 1
+    [[ "$emby_script" == *'--exclude '\''/logs/**'\'''* ]] || return 1
+    [[ "$emby_script" == *'casefold'* ]] || return 1
+    crontab_sync_script_content_ok emby "$fixture/emby.sh" || return 1
+    sed '/^# DAIMON_EMBY_BACKUP_VERSION=/d' "$fixture/emby.sh" > "$fixture/old-emby.sh"
+    ! crontab_sync_script_content_ok emby "$fixture/old-emby.sh" || return 1
     ! grep -qE 'before-restore|还原前备份|是否创建迁移备份|backup_resolv_conf_once|ssh_config_backup' "$SOURCE"
+}
+
+test_generated_emby_rejects_case_collision_before_sync() {
+    test_emby_lifecycle collision
+}
+
+test_emby_lifecycle() {
+    local mode="$1" fixture="$WORK/emby-$1" real_rclone
+    command -v flock >/dev/null || { echo 'Linux flock is required'; return 1; }
+    real_rclone=${DAIMON_TEST_REAL_RCLONE:-$(type -P rclone)}
+    [ -x "$real_rclone" ] || { echo 'A real rclone is required for local-only filter tests'; return 1; }
+    load_function crontab_sync_write_script || return 1
+    load_function crontab_sync_script_content_ok || return 1
+    crontab_sync_log_dir() { printf '%s\n' "$fixture/logs"; }
+    mkdir -p "$fixture/src/data" "$fixture/logs" "$fixture/locks" "$fixture/bin"
+    printf fixture > "$fixture/src/data/db.sqlite3"
+    crontab_sync_write_script emby "$fixture/Emby.sh" || return 1
+    sed -e "s|SRC1=\"/root/emby\"|SRC1=\"$fixture/src\"|" \
+        -e "s|LOG_DIR=\"/var/log/rclone\"|LOG_DIR=\"$fixture/logs\"|" \
+        "$fixture/Emby.sh" > "$fixture/isolated.sh"
+    cat > "$fixture/bin/docker" <<'PY'
+#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+root = Path(os.environ['EMBY_FIXTURE'])
+mode = os.environ['EMBY_TEST_MODE']
+args = sys.argv[1:]
+op = args[0]
+with (root / 'calls').open('a') as out:
+    out.write('docker ' + ' '.join(args) + '\n')
+state_file = root / 'state.json'
+state = json.loads(state_file.read_text())
+if op == 'info':
+    sys.exit(17 if mode == 'info-failure' else 0)
+if op == 'ps':
+    print('\n'.join(key for key, value in state.items() if value))
+elif op == 'inspect':
+    if mode == 'inspect-failure': sys.exit(18)
+    fmt = args[args.index('-f') + 1] if '-f' in args else args[args.index('--format') + 1]
+    for key in args[3:]:
+        if key not in state: sys.exit(19)
+        if '.Mounts' in fmt:
+            source = root / 'src' if key in ('a' * 64, 'b' * 64) else root / 'unrelated'
+            if mode == 'parent-mount' and key == 'b' * 64: source = root
+            if mode == 'readonly' and key == 'c' * 64: source = root / 'src'
+            mounts = [{'Type': 'bind', 'Source': str(source), 'RW': key != 'c' * 64}]
+            print(str(source) if 'range .Mounts' in fmt else (key + ' ' if '.Id' in fmt else '') + json.dumps(mounts))
+        else:
+            print(str(state[key]).lower() + (' none' if '.Health' in fmt else ''))
+elif op in ('stop', 'start'):
+    key = args[-1]
+    if op == 'start' and (root / 'transfer.pid').exists():
+        try: os.kill(int((root / 'transfer.pid').read_text()), 0)
+        except ProcessLookupError: pass
+        else: sys.exit('Transfer still running during container recovery')
+    if mode == op + '-failure' and key == 'b' * 64: sys.exit(20)
+    state[key] = op == 'start'
+    state_file.write_text(json.dumps(state))
+else:
+    sys.exit(99)
+PY
+    cat > "$fixture/bin/rclone" <<'PY'
+#!/usr/bin/env python3
+import os, signal, subprocess, sys, time
+from pathlib import Path
+root = Path(os.environ['EMBY_FIXTURE'])
+args = sys.argv[1:]
+mode = os.environ['EMBY_TEST_MODE']
+with (root / 'calls').open('a') as out:
+    out.write('rclone ' + ' '.join(args) + '\n')
+if args[0] == 'lsjson':
+    source = Path(args[1]).resolve()
+    if source != (root / 'src').resolve(): sys.exit(99)
+    result = subprocess.run([os.environ['EMBY_REAL_RCLONE'], '--config', '/dev/null', *args], capture_output=True)
+    (root / 'inventory.json').write_bytes(result.stdout)
+    sys.stdout.buffer.write(result.stdout)
+    sys.stderr.buffer.write(result.stderr)
+    sys.exit(result.returncode)
+if args[0] not in ('sync', 'check'): sys.exit(99)
+if args[0] == 'sync':
+    if mode in ('term', 'int', 'runner-term'):
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+        (root / 'transfer.pid').write_text(str(os.getpid()))
+        (root / 'transferring').touch()
+        while True: time.sleep(0.1)
+    if mode == 'sync-failure':
+        print('ERROR: fixture sync failed password=PRIVATE_FIXTURE', file=sys.stderr)
+        sys.exit(23)
+    if mode == 'timeout': sys.exit(124)
+    if mode == 'duplicate': print('NOTICE: Duplicate directory found in source - ignoring')
+if (args[0], mode) in (('sync', 'auto-restart'), ('check', 'check-auto-restart')):
+    import json
+    state = json.loads((root / 'state.json').read_text())
+    state['a' * 64] = True
+    (root / 'state.json').write_text(json.dumps(state))
+if args[0] == 'check' and mode == 'check-failure': sys.exit(24)
+if args[0] == 'check' and mode == 'check-duplicate': print('NOTICE: Duplicate object found in destination - ignoring')
+PY
+    chmod 700 "$fixture/bin/docker" "$fixture/bin/rclone" "$fixture/isolated.sh"
+    EMBY_FIXTURE="$fixture" EMBY_TEST_MODE="$mode" EMBY_REAL_RCLONE="$real_rclone" \
+        DAIMON_LOCK_DIR="$fixture/locks" DAIMON_RCLONE_RUNNER_FILE="$DAIMON_RCLONE_RUNNER_FILE" \
+        PATH="$fixture/bin:$PATH" python3 - <<'PY'
+import fcntl, json, os, signal, subprocess, time
+from pathlib import Path
+root = Path(os.environ['EMBY_FIXTURE'])
+mode = os.environ['EMBY_TEST_MODE']
+initial = {'a' * 64: True, 'b' * 64: True, 'c' * 64: True, 'd' * 64: False}
+(root / 'state.json').write_text(json.dumps(initial))
+database_paths = {'data/db.sqlite3' + suffix for suffix in ('', '-wal', '-shm', '-journal')}
+for path in database_paths: (root / 'src' / path).write_text('database fixture')
+for path in ('logs/root.txt', 'root.log', 'data/logs/nested.txt', 'data/nested.log', '.migration-fixture/rollback/old', 'data/.migration-fixture/rollback/old'):
+    file = root / 'src' / path
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text('excluded')
+if mode in ('collision', 'excluded-collision'):
+    parent = root / 'src' / ('logs' if mode == 'excluded-collision' else 'data')
+    for path in ('Media/a.strm', 'media/b.strm'):
+        file = parent / path
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text(path)
+    assert len([p for p in parent.iterdir() if p.name.lower() == 'media']) == 2, 'Case-sensitive Linux fixture required'
+if mode == 'missing-source': (root / 'src').rename(root / 'missing')
+if mode == 'empty-source':
+    for path in database_paths: (root / 'src' / path).unlink()
+if mode == 'pending-recovery':
+    (root / 'locks/daimon-emby').mkdir()
+    (root / 'locks/daimon-emby/containers.pending').write_text('a' * 64 + '\n')
+lock = None
+if mode in ('same-lock', 'shared-lock'):
+    name = 'daimon-emby-root-backup.lock' if mode == 'same-lock' else 'daimon-rclone-backups.lock'
+    lock = (root / 'locks' / name).open('w')
+    fcntl.flock(lock, fcntl.LOCK_EX)
+command = ['bash', str(root / 'isolated.sh')]
+if mode == 'runner-term': command = ['bash', os.environ['DAIMON_RCLONE_RUNNER_FILE'], 'emby', str(root / 'isolated.sh')]
+output = (root / 'output').open('w')
+process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+try:
+    if mode == 'shared-lock':
+        time.sleep(0.3)
+        assert process.poll() is None
+        assert not (root / 'calls').exists(), 'Services touched before shared lock acquisition'
+        lock.close()
+    if mode in ('term', 'int', 'runner-term'):
+        deadline = time.monotonic() + 8
+        while not (root / 'transferring').exists() and process.poll() is None and time.monotonic() < deadline: time.sleep(0.03)
+        assert (root / 'transferring').exists(), 'Transfer never started'
+        process.send_signal(signal.SIGINT if mode == 'int' else signal.SIGTERM)
+    rc = process.wait(timeout=12)
+finally:
+    if process.poll() is None:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+    if lock and not lock.closed: lock.close()
+    output.close()
+calls = (root / 'calls').read_text() if (root / 'calls').exists() else ''
+state = json.loads((root / 'state.json').read_text())
+log = '\n'.join(p.read_text() for p in (root / 'logs').glob('*.log')) + (root / 'output').read_text()
+print(log)
+print(calls)
+success = mode in ('success', 'parent-mount', 'readonly', 'shared-lock', 'excluded-collision')
+assert (rc == 0) == (success or mode == 'same-lock'), ('unexpected exit', mode, rc)
+if mode == 'sync-failure': assert rc == 23
+if mode == 'check-failure': assert rc == 24
+if mode == 'timeout': assert rc == 124
+if mode in ('term', 'runner-term'): assert rc == 143
+if mode == 'int': assert rc == 130
+assert (root / 'logs/emby_root_backup.last-success').exists() == success
+if mode == 'start-failure':
+    assert state['a' * 64] and not state['b' * 64]
+    assert any((root / 'locks').rglob('*.pending')), 'Recovery instructions lost'
+else:
+    assert state == initial, ('container state changed', state)
+assert 'stop --timeout 30 ' + 'c' * 64 not in calls
+assert 'start ' + 'd' * 64 not in calls
+if mode in ('collision', 'missing-source', 'empty-source', 'info-failure', 'inspect-failure', 'same-lock', 'pending-recovery'):
+    assert 'rclone sync ' not in calls and 'docker stop ' not in calls
+if mode == 'collision': assert 'Media' in log and 'media' in log
+if success:
+    assert calls.index('docker stop ') < calls.index('rclone sync ') < calls.index('rclone check ') < calls.index('docker start ')
+    paths = {entry['Path'] for entry in json.loads((root / 'inventory.json').read_text()) if not entry['IsDir']}
+    assert paths == database_paths, ('wrong database or log filters', paths)
+PY
+}
+
+test_rclone_runner_live_status_and_warning() {
+    local fixture="$WORK/runner-live"
+    mkdir -p "$fixture"
+    export DAIMON_RCLONE_STATUS_CACHE="$fixture/status.tsv"
+    export DAIMON_RCLONE_RUN_LOG_DIR="$fixture/runs"
+    export DAIMON_RCLONE_STATUS_LOCK="$fixture/status.lock"
+    crontab_sync_write_runner "$fixture/runner.sh" || return 1
+    python3 - "$fixture" <<'PY'
+import os, signal, subprocess, sys, time
+from pathlib import Path
+root = Path(sys.argv[1])
+runner = root / 'runner.sh'
+cache = root / 'status.tsv'
+for name, body in {
+    'long': 'trap "exit 143" TERM\ntouch "' + str(root / 'ready') + '"\nwhile :; do sleep 0.1; done',
+    'success': 'exit 0',
+    'warning': 'echo "Duplicate object found in destination - ignoring password=PRIVATE_FIXTURE"'
+}.items():
+    file = root / (name + '.sh')
+    file.write_text('#!/bin/bash\n' + body + '\n')
+    file.chmod(0o700)
+process = subprocess.Popen(['bash', str(runner), 'long', str(root / 'long.sh')], start_new_session=True)
+try:
+    deadline = time.monotonic() + 5
+    while not (root / 'ready').exists() and time.monotonic() < deadline: time.sleep(0.02)
+    assert (root / 'ready').exists()
+    rows = [line.split('\t') for line in cache.read_text().splitlines()]
+    for row in rows:
+        if row[4] == 'long': row[0] = str(int(time.time()) - 7200)
+    cache.write_text(''.join('\t'.join(row) + '\n' for row in rows))
+    subprocess.run(['bash', str(runner), 'success', str(root / 'success.sh')], check=True)
+    rows = [line.split('\t') for line in cache.read_text().splitlines()]
+    assert next(row for row in rows if row[4] == 'long')[6] == '执行中'
+finally:
+    process.send_signal(signal.SIGTERM)
+    try: process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+assert process.returncode == 143
+subprocess.run(['bash', str(runner), 'warning', str(root / 'warning.sh')], check=True)
+rows = [line.split('\t') for line in cache.read_text().splitlines()]
+warning = next(row for row in rows if row[4] == 'warning')
+assert warning[6] == '有警告' and warning[7] == '0'
+assert 'PRIVATE_FIXTURE' not in cache.read_text() and '[REDACTED]' in warning[11]
+assert next(row for row in rows if row[4] == 'long')[6] == '中断/未知'
+PY
 }
 test_generated_root_backup_policy() {
     local fixture="$WORK/root-backup" script cron
@@ -451,7 +698,7 @@ test_generated_root_backup_policy() {
     grep -Fq 'index($0, "/root/emby/") != 1' "$fixture/Root_Backup.sh" || return 1
     grep -Fq 'BACKUP_OK=1' "$fixture/Root_Backup.sh" || return 1
     grep -Fq 'date -Is > "$SUCCESS_FILE"' "$fixture/Root_Backup.sh" || return 1
-    grep -Fq 'docker stop --time 30' "$fixture/Root_Backup.sh" || return 1
+    grep -Fq 'docker stop --timeout 30' "$fixture/Root_Backup.sh" || return 1
     grep -Fq 'docker start "$id"' "$fixture/Root_Backup.sh" || return 1
     cron=$(crontab_sync_cron_line_by_id root /root/linux-daimon/backup-sh/Root_Backup.sh)
     [[ "$cron" == *'TZ=Asia/Shanghai date +\%H:\%M'* && "$cron" == *'"04:25"'* ]] || return 1
@@ -488,6 +735,27 @@ test_rclone_runner_records_status() {
     bash "$runner" success "$success_script" || return 1
     grep -q $'\tstale\tsync\t中断/未知\t-\t' "$cache" || return 1
     ! grep -q $'\told\tsync\t' "$cache"
+}
+
+test_rclone_runner_cache_failure() {
+    local tool="$1" task_rc="$2" fixture="$WORK/runner-cache-$1-$2" rc=0 expected="$2"
+    mkdir -p "$fixture"
+    export DAIMON_RCLONE_STATUS_CACHE="$fixture/status.tsv"
+    export DAIMON_RCLONE_RUN_LOG_DIR="$fixture/runs"
+    export DAIMON_RCLONE_STATUS_LOCK="$fixture/status.lock"
+    export RUNNER_CACHE_FAILURE="$tool" RUNNER_FAIL_AFTER="$fixture/task-finished"
+    crontab_sync_write_runner "$fixture/runner.sh" || return 1
+    printf '#!/bin/bash\ntouch "$RUNNER_FAIL_AFTER"\nexit %s\n' "$task_rc" > "$fixture/task.sh"
+    chmod 700 "$fixture/task.sh"
+    mktemp() { [ "$RUNNER_CACHE_FAILURE" != mktemp ] || [ ! -e "$RUNNER_FAIL_AFTER" ] || return 71; command mktemp "$@"; }
+    awk() { [ "$RUNNER_CACHE_FAILURE" != awk ] || [ ! -e "$RUNNER_FAIL_AFTER" ] || return 71; command awk "$@"; }
+    mv() { [ "$RUNNER_CACHE_FAILURE" != mv ] || [ ! -e "$RUNNER_FAIL_AFTER" ] || return 71; command mv "$@"; }
+    export -f mktemp awk mv
+    bash "$fixture/runner.sh" fixture "$fixture/task.sh" || rc=$?
+    [ "$expected" -ne 0 ] || expected=1
+    [ "$rc" -eq "$expected" ] || { printf 'Cache %s failure: expected %s, got %s\n' "$tool" "$expected" "$rc"; return 1; }
+    [ -e "$RUNNER_FAIL_AFTER" ] && grep -q $'\t执行中\t' "$DAIMON_RCLONE_STATUS_CACHE" \
+        && ! grep -q $'\t成功\t' "$DAIMON_RCLONE_STATUS_CACHE"
 }
 
 test_rclone_runner_is_not_custom_task() {
@@ -819,10 +1087,18 @@ check 'public verification remains read-only and hides URL secrets' test_verify_
 check 'rclone menu exposes only requested restore workflows' test_rclone_menu_has_only_restore_workflows
 for mode in success invalid concurrent; do check "credential transaction $mode" test_credentials_transaction "$mode"; done
 for mode in success corrupt traversal; do check "Vaultwarden archive $mode" test_vault_archive "$mode"; done
-for kind in bitwarden custom emby; do check "generated $kind sync propagates failure" test_generated_sync_failure "$kind"; done
+for kind in bitwarden custom; do check "generated $kind sync propagates failure" test_generated_sync_failure "$kind"; done
 check 'generated backup policies exclude bulky data and avoid pre-operation backups' test_generated_backup_policies
+check 'generated Emby backup rejects case collisions before sync' test_generated_emby_rejects_case_collision_before_sync
+for mode in success info-failure inspect-failure stop-failure sync-failure check-failure start-failure term int runner-term timeout duplicate check-duplicate auto-restart check-auto-restart parent-mount readonly missing-source empty-source pending-recovery same-lock shared-lock excluded-collision; do
+    check "generated Emby lifecycle $mode" test_emby_lifecycle "$mode"
+done
 check 'generated root backup freezes bind-mounted Docker services' test_generated_root_backup_policy
 check 'rclone runner records, redacts, and expires statuses' test_rclone_runner_records_status
+check 'rclone runner preserves live tasks and redacts warnings' test_rclone_runner_live_status_and_warning
+for tool in mktemp awk mv; do
+    for task_rc in 0 23 143; do check "rclone runner cache failure $tool after $task_rc" test_rclone_runner_cache_failure "$tool" "$task_rc"; done
+done
 check 'rclone runner is excluded from custom tasks' test_rclone_runner_is_not_custom_task
 check 'rclone log copy and export redact credentials' test_rclone_log_copy_and_export_are_redacted
 check 'remote names and types do not expose tokens' test_remote_names_privacy
