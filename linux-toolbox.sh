@@ -18883,7 +18883,8 @@ nginx_domain_cert_dir_for_domain() {
             /root/domain/*/fullchain.pem) dirname "$cert_path"; return 0 ;;
         esac
     done
-    echo "/root/domain/$domain"
+    # Keep the certificate layout compatible with cert_nginx.sh: /root/domain/<first-label>.
+    printf '/root/domain/%s\n' "${domain%%.*}"
 }
 
 cleanup_nginx_and_cert() {
