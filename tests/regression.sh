@@ -604,7 +604,7 @@ test_tool_numbers() {
         leading-zero) handle_tool_numbers install 08 && [ "$(cat "$trace")" = ripgrep ] ;;
         all)
             for n in $(seq 1 15); do handle_tool_numbers install "$n" || return 1; done
-            [ "$(wc -l < "$trace")" -eq 16 ] || return 1
+            [ "$(wc -l < "$trace")" -eq 15 ] || return 1
             [ "$(cat "$trace")" = "$(printf '%s\n' "${tool_ids[@]}")" ]
             ;;
     esac
