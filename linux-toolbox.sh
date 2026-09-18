@@ -111,8 +111,11 @@ daimon_country() {
 		return 0
 	fi
 	if command -v curl >/dev/null 2>&1; then
-		DAIMON_COUNTRY_CACHE=$(curl -s --max-time 5 https://ipinfo.io 2>/dev/null | grep -oE '"country"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4)
-		[ -z "$DAIMON_COUNTRY_CACHE" ] && DAIMON_COUNTRY_CACHE=$(curl -s --max-time 5 https://ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+		DAIMON_COUNTRY_CACHE=$(curl -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/json 2>/dev/null | grep -oE '"country"[[:space:]]*:[[:space:]]*"[A-Z]{2}"' | head -1 | cut -d'"' -f4)
+		if [ -z "$DAIMON_COUNTRY_CACHE" ]; then
+			DAIMON_COUNTRY_CACHE=$(curl -4 -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+		fi
+		[[ "$DAIMON_COUNTRY_CACHE" =~ ^[A-Z]{2}$ ]] || DAIMON_COUNTRY_CACHE=""
 	fi
 	echo "$DAIMON_COUNTRY_CACHE"
 }
@@ -299,11 +302,25 @@ daimon_git_clone() {
 	local repo_url="$1"
 	local target="$2"
 	shift 2
-	local clone_url
+	local clone_url prefix
 	while IFS= read -r clone_url; do
 		[ -z "$clone_url" ] && continue
 		echo -e "${gl_kjlan}尝试克隆: $clone_url${gl_bai}"
-		git clone "$@" "$clone_url" "$target" && return 0
+		prefix=${clone_url%"$repo_url"}
+		git -c "url.${prefix}https://github.com/.insteadOf=https://github.com/" \
+			clone "$@" "$repo_url" "$target" && return 0
+	done < <(daimon_github_url_candidates "$repo_url")
+	return 1
+}
+
+daimon_git_update() {
+	local target="$1" repo_url clone_url prefix
+	shift
+	repo_url=$(git -C "$target" remote get-url origin) || return 1
+	repo_url=$(daimon_strip_github_proxy "$repo_url")
+	while IFS= read -r clone_url; do
+		prefix=${clone_url%"$repo_url"}
+		git -C "$target" -c "url.${prefix}https://github.com/.insteadOf=https://github.com/" "$@" && return 0
 	done < <(daimon_github_url_candidates "$repo_url")
 	return 1
 }
@@ -544,8 +561,12 @@ install() {
 		return 1
 	fi
 
-	local package
+	local package apt_updated=0
 	for package in "$@"; do
+		if command -v apt >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1 &&
+			[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" = "install ok installed" ]; then
+			continue
+		fi
 		if ! command -v "$package" &>/dev/null; then
 			echo -e "${gl_kjlan}正在安装 $package...${gl_bai}"
 			if command -v dnf &>/dev/null; then
@@ -557,7 +578,10 @@ install() {
 				yum install -y epel-release || return 1
 				yum install -y "$package" || return 1
 			elif command -v apt &>/dev/null; then
-				DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y || return 1
+				if [ "$apt_updated" -eq 0 ]; then
+					DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y || return 1
+					apt_updated=1
+				fi
 				DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
 					-o Dpkg::Options::="--force-confdef" \
 					-o Dpkg::Options::="--force-confold" \
@@ -9749,6 +9773,8 @@ linux_Settings() {
 
 
 linux_tools() {
+  local DAIMON_COUNTRY_CACHE="${DAIMON_COUNTRY_CACHE:-}"
+  DAIMON_COUNTRY_CACHE=$(daimon_country)
   local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi ncdu nexttrace iperf3)
   local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "ncdu" "NextTrace" "iperf3")
   local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "磁盘占用" "路由追踪" "网络性能测试")
@@ -9872,30 +9898,37 @@ EOF
   }
 
   configure_fzf() {
+    install git curl tar gzip || return 1
     if ! tool_installed fd; then
       echo "fzf 需要 fd/fdfind，正在安装 fd..."
-      install_tool_by_id fd
+      install_tool_by_id fd || return 1
     fi
     if ! tool_installed bat; then
       echo "fzf 预览需要 bat/batcat，正在安装 bat..."
-      install_tool_by_id bat
+      install_tool_by_id bat || return 1
     fi
     if ! tool_installed tree; then
       echo "fzf Alt+C 目录预览需要 tree，正在安装 tree..."
-      install_tool_by_id tree
+      install_tool_by_id tree || return 1
     fi
-    install git
-
     if [ -d "$DAIMON_FZF_DIR/.git" ]; then
-      git -C "$DAIMON_FZF_DIR" pull --ff-only || true
+      daimon_git_update "$DAIMON_FZF_DIR" pull --ff-only || return 1
     else
-      rm -rf "$DAIMON_FZF_DIR"
-      daimon_git_clone "https://github.com/junegunn/fzf.git" "$DAIMON_FZF_DIR" --depth 1
+      if [ -e "$DAIMON_FZF_DIR" ]; then
+        echo "fzf 目录已存在但不是 Git 仓库，请检查: $DAIMON_FZF_DIR"
+        return 1
+      fi
+      daimon_git_clone "https://github.com/junegunn/fzf.git" "$DAIMON_FZF_DIR" --depth 1 || return 1
     fi
 
-    if [ -x "$DAIMON_FZF_DIR/install" ]; then
-      "$DAIMON_FZF_DIR/install" --key-bindings --completion --no-update-rc
+    if daimon_is_cn; then
+      install_fzf_release || return 1
     fi
+    if [ -x "$DAIMON_FZF_DIR/install" ]; then
+      "$DAIMON_FZF_DIR/install" --key-bindings --completion --no-update-rc || return 1
+    fi
+    "$DAIMON_FZF_DIR/bin/fzf" --version || return 1
+    export PATH="$DAIMON_FZF_DIR/bin:$PATH"
 
     touch "$HOME/.bashrc"
     remove_fzf_config
@@ -9908,6 +9941,11 @@ EOF
 
 # 如果没有安装 fzf，只跳过 fzf 配置，不 return 整个 ~/.bashrc
 if command -v fzf >/dev/null 2>&1; then
+  if fzf --bash >/dev/null 2>&1; then
+    eval "$(fzf --bash)"
+  elif [ -f ~/.fzf.bash ]; then
+    source ~/.fzf.bash
+  fi
   # 默认使用 fd/fdfind 列文件
   if command -v fdfind >/dev/null 2>&1; then
     export FZF_DEFAULT_COMMAND='fdfind --type f --strip-cwd-prefix --hidden --follow --exclude .git'
@@ -9950,6 +9988,24 @@ EOF
     echo "fzf 已通过 git clone 安装到 $DAIMON_FZF_DIR 并写入 ~/.bashrc 配置"
   }
 
+  install_fzf_release() (
+    local version arch work
+    version=$(sed -n 's/^version=//p' "$DAIMON_FZF_DIR/install")
+    [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || return 1
+    case "$(uname -m)" in
+      x86_64|amd64) arch=amd64 ;;
+      aarch64|arm64) arch=arm64 ;;
+      *) echo "不支持的 fzf 架构: $(uname -m)"; return 1 ;;
+    esac
+    work=$(mktemp -d) || return 1
+    trap 'rm -rf -- "$work"' EXIT
+    daimon_download_to "https://github.com/junegunn/fzf/releases/download/v$version/fzf-$version-linux_$arch.tar.gz" "$work/fzf.tar.gz" || return 1
+    tar -xzOf "$work/fzf.tar.gz" fzf > "$work/fzf" || return 1
+    chmod 755 "$work/fzf" || return 1
+    [ "$("$work/fzf" --version | cut -d' ' -f1)" = "$version" ] || return 1
+    command install -m 755 "$work/fzf" "$DAIMON_FZF_DIR/bin/fzf"
+  )
+
   remove_fzf_all() {
     remove_fzf_config
     rm -rf "$DAIMON_FZF_DIR"
@@ -9976,16 +10032,20 @@ EOF
   }
 
   configure_blesh() {
-    install git make
+    install git make gawk || return 1
     if [ -d "$HOME/ble.sh/.git" ]; then
-      git -C "$HOME/ble.sh" pull --ff-only || true
-      git -C "$HOME/ble.sh" submodule update --init --recursive || true
+      daimon_git_update "$HOME/ble.sh" pull --ff-only || return 1
+      daimon_git_update "$HOME/ble.sh" submodule update --init --recursive || return 1
     else
-      rm -rf "$HOME/ble.sh"
-      daimon_git_clone "https://github.com/akinomyoga/ble.sh.git" "$HOME/ble.sh" --recursive
+      if [ -e "$HOME/ble.sh" ]; then
+        echo "ble.sh 目录已存在但不是 Git 仓库，请检查: $HOME/ble.sh"
+        return 1
+      fi
+      daimon_git_clone "https://github.com/akinomyoga/ble.sh.git" "$HOME/ble.sh" --recursive || return 1
     fi
 
-    (cd "$HOME/ble.sh" && make install)
+    (cd "$HOME/ble.sh" && make install) || return 1
+    [ -s "$HOME/.local/share/blesh/ble.sh" ] || return 1
 
     ensure_blesh_block_last
 
@@ -10078,9 +10138,9 @@ EOF
 
   configure_starship() {
     root_use
-    install curl tar gzip
+    install curl tar gzip || return 1
     mkdir -p "$DAIMON_SCRIPT_DIR" "$HOME/.config"
-    local starship_arch starship_target starship_url starship_tar starship_tmp starship_bin
+    local starship_arch starship_target starship_url starship_tar starship_tmp starship_bin starship_status=0
 
     if daimon_is_cn; then
       case "$(uname -m)" in
@@ -10097,26 +10157,25 @@ EOF
 
       starship_target="${starship_arch}-unknown-linux-musl"
       starship_url="https://gh-proxy.com/https://github.com/starship/starship/releases/latest/download/starship-${starship_target}.tar.gz"
-      starship_tar="/tmp/starship.tar.gz"
-      starship_tmp="/tmp/starship-install"
+      starship_tmp=$(mktemp -d) || return 1
+      starship_tar="$starship_tmp/starship.tar.gz"
 
-      rm -rf "$starship_tmp" "$starship_tar" 2>/dev/null || true
-      mkdir -p "$starship_tmp"
-
-      if curl -L --retry 5 -o "$starship_tar" "$starship_url" && tar -xzf "$starship_tar" -C "$starship_tmp"; then
+      if daimon_download_to "$starship_url" "$starship_tar" && tar -xzf "$starship_tar" -C "$starship_tmp"; then
         starship_bin="$starship_tmp/starship"
         [ -f "$starship_bin" ] || starship_bin=$(find "$starship_tmp" -type f -name starship | head -1)
-        [ -n "$starship_bin" ] && command install -m 755 "$starship_bin" /usr/local/bin/starship
+        [ -n "$starship_bin" ] && command install -m 755 "$starship_bin" /usr/local/bin/starship || starship_status=1
+      else
+        starship_status=1
       fi
 
-      rm -rf "$starship_tmp" "$starship_tar" 2>/dev/null || true
+      rm -rf -- "$starship_tmp"
     else
-      curl -sS https://starship.rs/install.sh | sh -s -- -y
+      (set -o pipefail; curl -fsSL --connect-timeout 10 --max-time 60 https://starship.rs/install.sh | sh -s -- -y) || starship_status=1
     fi
 
-    if ! command -v starship >/dev/null 2>&1; then
-      remove_starship_config
-      echo "starship 安装失败，已移除 ~/.bashrc 中的 starship 初始化，避免出现 command not found"
+    if [ "$starship_status" -ne 0 ] || ! starship --version >/dev/null 2>&1; then
+      command -v starship >/dev/null 2>&1 || remove_starship_config
+      echo "starship 安装失败，未写入新的 Shell 配置"
       return 1
     fi
 
@@ -10598,56 +10657,61 @@ EOF
 
   install_yazi_griffo() {
     root_use
+    install curl ca-certificates file || return 1
     if command -v apt >/dev/null 2>&1; then
-      install curl gnupg ca-certificates lsb-release
-      curl -sS https://debian.griffo.io/EA0F721D231FDD3A0A17B9AC7808B4DD62C41256.asc \
-        | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/debian.griffo.io.gpg || return 1
-      echo "deb https://debian.griffo.io/apt $(lsb_release -sc 2>/dev/null) main" \
-        | tee /etc/apt/sources.list.d/debian.griffo.io.list >/dev/null
-      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
-      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+      command install -d -m 0755 /etc/apt/keyrings || return 1
+      daimon_download_to https://yazi-rs.github.io/builds/yazi-keyring.gpg /etc/apt/keyrings/yazi.gpg || return 1
+      chmod 644 /etc/apt/keyrings/yazi.gpg || return 1
+      printf '%s\n' 'deb [signed-by=/etc/apt/keyrings/yazi.gpg] https://yazi-rs.github.io/builds/ stable main' \
+        > /etc/apt/sources.list.d/yazi.list || return 1
+      DEBIAN_FRONTEND=noninteractive apt-get update \
+        -o Dir::Etc::sourcelist=sources.list.d/yazi.list -o Dir::Etc::sourceparts=- || return 1
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt-get install -y --no-install-recommends \
         -o Dpkg::Options::="--force-confdef" \
         -o Dpkg::Options::="--force-confold" \
-        yazi
+        yazi || return 1
     else
-      install yazi
+      install yazi || return 1
     fi
-    yazi --version 2>/dev/null || true
+    yazi --version && ya --version
   }
 
   remove_yazi_all() {
-    remove yazi
+    remove yazi || return 1
     rm -rf "$HOME/.config/yazi" "$HOME/.local/share/yazi" "$HOME/.cache/yazi"
     if command -v apt >/dev/null 2>&1; then
       rm -f /etc/apt/sources.list.d/debian.griffo.io.list
       rm -f /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
+      rm -f /etc/apt/sources.list.d/yazi.list /etc/apt/keyrings/yazi.gpg
       apt update -y 2>/dev/null || true
     fi
   }
 
   install_nexttrace() {
     root_use
+    install curl ca-certificates || return 1
     if command -v apt >/dev/null 2>&1; then
-      install curl ca-certificates
-      command install -d -m 0755 /etc/apt/keyrings
-      curl -fsSL -o /tmp/nexttrace-archive-keyring.gpg "https://github.com/nxtrace/nexttrace-debs/releases/latest/download/nexttrace-archive-keyring.gpg" || return 1
-      command install -m 0644 /tmp/nexttrace-archive-keyring.gpg /etc/apt/keyrings/nexttrace.gpg
-      rm -f /tmp/nexttrace-archive-keyring.gpg
+      local repo_url
+      repo_url=$(daimon_url https://github.com/nxtrace/nexttrace-debs/releases/latest/download/)
+      command install -d -m 0755 /etc/apt/keyrings || return 1
+      daimon_download_to "https://github.com/nxtrace/nexttrace-debs/releases/latest/download/nexttrace-archive-keyring.gpg" /etc/apt/keyrings/nexttrace.gpg || return 1
+      chmod 644 /etc/apt/keyrings/nexttrace.gpg || return 1
       printf '%s\n' \
         'Types: deb' \
-        'URIs: https://github.com/nxtrace/nexttrace-debs/releases/latest/download/' \
+        "URIs: $repo_url" \
         'Suites: ./' \
         'Signed-By: /etc/apt/keyrings/nexttrace.gpg' \
-        | tee /etc/apt/sources.list.d/nexttrace.sources >/dev/null
-      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
-      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+        > /etc/apt/sources.list.d/nexttrace.sources || return 1
+      DEBIAN_FRONTEND=noninteractive apt-get update \
+        -o Dir::Etc::sourcelist=sources.list.d/nexttrace.sources -o Dir::Etc::sourceparts=- || return 1
+      DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt-get install -y \
         -o Dpkg::Options::="--force-confdef" \
         -o Dpkg::Options::="--force-confold" \
-        nexttrace
+        nexttrace || return 1
     else
-      install nexttrace
+      install nexttrace || return 1
     fi
-    nexttrace --version 2>/dev/null | head -n 1 || true
+    nexttrace --version
   }
 
   remove_nexttrace_all() {
@@ -10961,7 +11025,7 @@ EOF
         if tool_installed vim || command -v vim >/dev/null 2>&1; then
           echo "vim 已安装，正在检查并设置默认编辑器..."
         else
-          install vim
+          install vim || return 1
         fi
         configure_vim_editor
         vim --version 2>/dev/null | head -n 1 || true
@@ -10979,11 +11043,11 @@ EOF
         configure_bat_terminal
         ;;
       ripgrep)
-        install ripgrep
+        install ripgrep || return 1
         rg --version 2>/dev/null | head -n 1 || true
         ;;
       fd)
-        install fd-find
+        install fd-find || return 1
         configure_fd_alias
         fd --version 2>/dev/null || fdfind --version 2>/dev/null || true
         ;;
@@ -11003,8 +11067,8 @@ EOF
         if tool_installed bun; then
           bun --version
         else
-          install curl unzip
-          daimon_run_cached_script "https://bun.sh/install" "bun-install.sh"
+          install curl unzip || return 1
+          daimon_run_cached_script "https://bun.sh/install" "bun-install.sh" || return 1
           export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
           export PATH="$BUN_INSTALL/bin:$PATH"
           reload_shell_configs_safely
@@ -11015,8 +11079,8 @@ EOF
         if tool_installed uv; then
           uv --version
         else
-          install curl
-          daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh"
+          install curl || return 1
+          daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh" || return 1
           export PATH="$HOME/.local/bin:$PATH"
           reload_shell_configs_safely
           uv --version 2>/dev/null || true
@@ -11050,7 +11114,7 @@ EOF
         install_nexttrace
         ;;
       git|curl|tree|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu|iperf3)
-        install "$id"
+        install "$id" || return 1
         command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true
         ;;
       fail2ban)

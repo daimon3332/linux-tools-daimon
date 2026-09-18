@@ -809,18 +809,18 @@ fi
 EOF
 apt install -y tree ripgrep fd-find ncdu
 apt install -y iperf3
-curl -sS https://debian.griffo.io/EA0F721D231FDD3A0A17B9AC7808B4DD62C41256.asc | gpg --dearmor --yes -o /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
-echo "deb https://debian.griffo.io/apt $(lsb_release -sc 2>/dev/null) main" | tee /etc/apt/sources.list.d/debian.griffo.io.list >/dev/null
-apt update -y
-apt install -y yazi
-apt update -y
 install -d -m 0755 /etc/apt/keyrings
-curl -fsSL -o /tmp/nexttrace-archive-keyring.gpg https://github.com/nxtrace/nexttrace-debs/releases/latest/download/nexttrace-archive-keyring.gpg
-install -m 0644 /tmp/nexttrace-archive-keyring.gpg /etc/apt/keyrings/nexttrace.gpg
-rm -f /tmp/nexttrace-archive-keyring.gpg
-printf '%s\n' 'Types: deb' 'URIs: https://github.com/nxtrace/nexttrace-debs/releases/latest/download/' 'Suites: ./' 'Signed-By: /etc/apt/keyrings/nexttrace.gpg' | tee /etc/apt/sources.list.d/nexttrace.sources >/dev/null
-apt update -y
-apt install -y nexttrace
+daimon_download_to https://yazi-rs.github.io/builds/yazi-keyring.gpg /etc/apt/keyrings/yazi.gpg
+chmod 644 /etc/apt/keyrings/yazi.gpg
+echo 'deb [signed-by=/etc/apt/keyrings/yazi.gpg] https://yazi-rs.github.io/builds/ stable main' > /etc/apt/sources.list.d/yazi.list
+apt-get update -o Dir::Etc::sourcelist=sources.list.d/yazi.list -o Dir::Etc::sourceparts=-
+apt-get install -y --no-install-recommends yazi
+yazi --version && ya --version
+daimon_download_to https://github.com/nxtrace/nexttrace-debs/releases/latest/download/nexttrace-archive-keyring.gpg /etc/apt/keyrings/nexttrace.gpg
+chmod 644 /etc/apt/keyrings/nexttrace.gpg
+printf '%s\n' 'Types: deb' "URIs: $(daimon_url https://github.com/nxtrace/nexttrace-debs/releases/latest/download/)" 'Suites: ./' 'Signed-By: /etc/apt/keyrings/nexttrace.gpg' > /etc/apt/sources.list.d/nexttrace.sources
+apt-get update -o Dir::Etc::sourcelist=sources.list.d/nexttrace.sources -o Dir::Etc::sourceparts=-
+apt-get install -y nexttrace
 echo "alias fd='fdfind'" >> ~/.bashrc
 git clone --depth 1 https://github.com/junegunn/fzf.git /root/linux-daimon/tools/fzf
 /root/linux-daimon/tools/fzf/install --key-bindings --completion --no-update-rc
@@ -873,6 +873,7 @@ rm -rf /root/linux-daimon/tools/fzf
 # 删除 ~/.bashrc 中 ble.sh setup 配置块
 rm -rf ~/ble.sh ~/.local/share/blesh ~/.blerc
 rm -f /etc/apt/sources.list.d/debian.griffo.io.list /etc/apt/trusted.gpg.d/debian.griffo.io.gpg
+rm -f /etc/apt/sources.list.d/yazi.list /etc/apt/keyrings/yazi.gpg
 rm -f /etc/apt/keyrings/nexttrace.gpg /etc/apt/sources.list.d/nexttrace.sources
 sed -i "/^alias fd='fdfind'$/d;/^alias fd=fdfind$/d;/^alias fd=\"fdfind\"$/d" ~/.bashrc
 ```
