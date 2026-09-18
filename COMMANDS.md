@@ -631,10 +631,9 @@ modinfo tcp_bbr 2>/dev/null | grep -E '^(filename|version|description):'
 清除自定义网络优化：
 
 ```bash
-rm -f /etc/sysctl.d/99-daimon-network-optimize.conf /etc/sysctl.d/99-network-optimize.conf
-sysctl --system
+daimon_network_clear_custom_optimize
 ```
-解释：删除本脚本写入的网络优化配置。脚本也会顺手清理旧版本遗留的 qdisc 服务文件；部分运行态参数需要重启后完全恢复系统默认值。
+解释：通过菜单 `5 → 15 → 3` 调用此内部函数。先将 sysctl.conf 标记块和 `zz-daimon-network.conf` 改为仅保留 BBR/FQ，再删除网络优化文件并重载；不能只删除旧参数文件，否则覆盖块仍生效。脚本也会清理旧版本遗留的 qdisc 服务文件；没有其他来源定义的运行态参数可能需要重启后恢复默认值。
 
 ### 5.16 禁用 IPv6
 
