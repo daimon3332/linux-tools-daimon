@@ -195,6 +195,8 @@ Swap 只调整带本脚本 inode 归属标记的 `/swapfile`；未标记的已�
 | 7 | ClaudeCode | Claude Code 命令行工具；CN 使用 npm 镜像源，非 CN 使用官方安装脚本，并写入 `~/.claude/settings.json` |
 | 8 | Codex | Codex 命令行工具；统一通过 `npm install -g @openai/codex@latest` 安装，并写入 `~/.codex/config.toml` |
 
+已有 ClaudeCode/Codex 配置保持不变。Python 卸载检测到 3.12 是系统解释器时只移除 daimon 的快捷配置，保留解释器和系统依赖。
+
 ### Docker管理
 
 | 序号 | 选项 | 作用 |

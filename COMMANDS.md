@@ -813,13 +813,13 @@ install -d -m 0755 /etc/apt/keyrings
 daimon_download_to https://yazi-rs.github.io/builds/yazi-keyring.gpg /etc/apt/keyrings/yazi.gpg
 chmod 644 /etc/apt/keyrings/yazi.gpg
 echo 'deb [signed-by=/etc/apt/keyrings/yazi.gpg] https://yazi-rs.github.io/builds/ stable main' > /etc/apt/sources.list.d/yazi.list
-apt-get update -o Dir::Etc::sourcelist=sources.list.d/yazi.list -o Dir::Etc::sourceparts=-
+apt-get update -o Dir::Etc::sourcelist=sources.list.d/yazi.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
 apt-get install -y --no-install-recommends yazi
 yazi --version && ya --version
 daimon_download_to https://github.com/nxtrace/nexttrace-debs/releases/latest/download/nexttrace-archive-keyring.gpg /etc/apt/keyrings/nexttrace.gpg
 chmod 644 /etc/apt/keyrings/nexttrace.gpg
 printf '%s\n' 'Types: deb' "URIs: $(daimon_url https://github.com/nxtrace/nexttrace-debs/releases/latest/download/)" 'Suites: ./' 'Signed-By: /etc/apt/keyrings/nexttrace.gpg' > /etc/apt/sources.list.d/nexttrace.sources
-apt-get update -o Dir::Etc::sourcelist=sources.list.d/nexttrace.sources -o Dir::Etc::sourceparts=-
+apt-get update -o Dir::Etc::sourcelist=sources.list.d/nexttrace.sources -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0
 apt-get install -y nexttrace
 echo "alias fd='fdfind'" >> ~/.bashrc
 git clone --depth 1 https://github.com/junegunn/fzf.git /root/linux-daimon/tools/fzf
