@@ -10663,7 +10663,7 @@ EOF
       printf '%s\n' 'deb [signed-by=/etc/apt/keyrings/yazi.gpg] https://yazi-rs.github.io/builds/ stable main' \
         > /etc/apt/sources.list.d/yazi.list || return 1
       DEBIAN_FRONTEND=noninteractive apt-get update \
-        -o Dir::Etc::sourcelist=sources.list.d/yazi.list -o Dir::Etc::sourceparts=- || return 1
+        -o Dir::Etc::sourcelist=sources.list.d/yazi.list -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || return 1
       DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt-get install -y --no-install-recommends \
         -o Dpkg::Options::="--force-confdef" \
         -o Dpkg::Options::="--force-confold" \
@@ -10701,7 +10701,7 @@ EOF
         'Signed-By: /etc/apt/keyrings/nexttrace.gpg' \
         > /etc/apt/sources.list.d/nexttrace.sources || return 1
       DEBIAN_FRONTEND=noninteractive apt-get update \
-        -o Dir::Etc::sourcelist=sources.list.d/nexttrace.sources -o Dir::Etc::sourceparts=- || return 1
+        -o Dir::Etc::sourcelist=sources.list.d/nexttrace.sources -o Dir::Etc::sourceparts=- -o APT::Get::List-Cleanup=0 || return 1
       DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt-get install -y \
         -o Dpkg::Options::="--force-confdef" \
         -o Dpkg::Options::="--force-confold" \
@@ -10776,6 +10776,11 @@ EOF
   }
 
   remove_python_312_all() {
+    if [ "$(readlink -f /usr/bin/python3 2>/dev/null)" = "$(readlink -f /usr/bin/python3.12 2>/dev/null)" ] && [ -x /usr/bin/python3.12 ]; then
+      echo "Python 3.12 是系统 Python，保留解释器和系统依赖，仅移除 daimon 的 python 快捷配置。"
+      command -v update-alternatives >/dev/null 2>&1 && update-alternatives --remove daimon-python /usr/bin/python3.12
+      return 0
+    fi
     if command -v update-alternatives >/dev/null 2>&1; then
       update-alternatives --remove daimon-python /usr/bin/python3.12 2>/dev/null || true
     fi
@@ -10834,6 +10839,7 @@ EOF
   }
 
   configure_claude_code_settings() {
+    [ ! -e "$HOME/.claude/settings.json" ] || { echo "保留已有 ClaudeCode 配置"; return 0; }
     mkdir -p "$HOME/.claude"
     cat > "$HOME/.claude/settings.json" <<'EOF'
 {
@@ -10915,6 +10921,7 @@ PY
   }
 
   configure_codex_settings() {
+    [ ! -e "$HOME/.codex/config.toml" ] || { echo "保留已有 Codex 配置"; return 0; }
     mkdir -p "$HOME/.codex"
     cat > "$HOME/.codex/config.toml" <<'EOF'
 model = "gpt-5.5"
