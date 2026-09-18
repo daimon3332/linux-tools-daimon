@@ -85,6 +85,38 @@ later_conflict() {
     ! daimon_network_persist "$bbr" "$network" || return 1
     cmp -s "$DAIMON_SYSCTL_CONF" "$WORK/later-before" && [ ! -e "$DAIMON_NETWORK_PRIORITY_CONF" ]
 }
+replace_failure() {
+    fixture replace
+    cp "$DAIMON_SYSCTL_CONF" "$WORK/replace-before"
+    mkdir -p "$WORK/inject"
+    cat > "$WORK/inject/sitecustomize.py" <<'PY'
+import os
+original = os.replace
+def replace(source, target):
+    if str(target).endswith('/zz-daimon-network.conf'):
+        raise OSError('injected second-file replacement failure')
+    return original(source, target)
+os.replace = replace
+PY
+    ! PYTHONPATH="$WORK/inject" daimon_network_persist "$bbr" "$network" || return 1
+    cmp -s "$DAIMON_SYSCTL_CONF" "$WORK/replace-before" && [ ! -e "$DAIMON_NETWORK_PRIORITY_CONF" ]
+}
+symlink_and_mode() {
+    fixture link
+    mv "$DAIMON_SYSCTL_CONF" "$WORK/link/user.conf"
+    ln -s user.conf "$DAIMON_SYSCTL_CONF"
+    chmod 640 "$WORK/link/user.conf"
+    daimon_network_persist "$bbr" "$network" || return 1
+    [ -L "$DAIMON_SYSCTL_CONF" ] && [ "$(stat -c %a "$WORK/link/user.conf")" = 640 ] &&
+        grep -q '^# BEGIN daimon network overrides$' "$WORK/link/user.conf"
+}
+priority_symlink() {
+    fixture unsafe
+    printf 'keep\n' > "$WORK/keep"
+    ln -s "$WORK/keep" "$DAIMON_NETWORK_PRIORITY_CONF"
+    ! daimon_network_persist "$bbr" "$network" || return 1
+    [ "$(cat "$WORK/keep")" = keep ] && ! grep -q 'BEGIN daimon' "$DAIMON_SYSCTL_CONF"
+}
 check 'boot and reload overrides preserve user configuration' precedence
 check 'repeated apply does not duplicate blocks' idempotent
 check 'clear removes network overrides while retaining BBR' clear_network
@@ -92,5 +124,8 @@ check 'unmanaged priority file cannot be overwritten' collision
 check 'malformed blocks are rejected without edits' malformed
 check 'staging failure leaves existing configuration unchanged' write_failure
 check 'a later external override is rejected before writing' later_conflict
+check 'second-file replacement failure rolls back the first file' replace_failure
+check 'user sysctl symlink and file mode survive apply' symlink_and_mode
+check 'priority symlink cannot overwrite an unrelated file' priority_symlink
 printf '%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

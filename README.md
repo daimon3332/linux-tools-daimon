@@ -129,7 +129,7 @@ Swap 只调整带本脚本 inode 归属标记的 `/swapfile`；未标记的已�
 
 #### 系统网络自适应优化参数
 
-现代发行版内核通常已经包含标准 BBR，此时直接加载模块并启用，无需安装新内核。BBR/FQ 配置写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他网络参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`；清除自定义网络优化时保留 BBR/FQ。当前内核不支持 BBR 时不会写入配置或显示成功，可选择进入主菜单 13 安装兼容内核。其他 sysctl 文件定义不同值时只报告覆盖风险，不自动修改用户配置。
+现代发行版内核通常已经包含标准 BBR，此时直接加载模块并启用，无需安装新内核。BBR/FQ 配置写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他网络参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`。应用时同步生成 `/etc/sysctl.d/zz-daimon-network.conf` 和 `/etc/sysctl.conf` 末尾的 daimon 标记块，分别保证 systemd 开机加载与 `sysctl --system` / `sysctl -p` 重载的优先级；保留原有配置内容，重复应用不重复追加。需要 Python 3；更靠后的冲突、标记损坏或写入失败会停止并回滚。清除优化时移除网络覆盖并保留 BBR/FQ。当前内核不支持 BBR 时不会写入配置或显示成功，可选择进入主菜单 13 安装兼容内核。
 
 应用前还要求默认路由网卡的实际队列为 `fq` 或 `mq` 加全部 `fq` 叶队列；缺少 `tc`、没有默认路由或队列不符时停止，不自动覆盖已有队列。失败会恢复并核对配置文件和运行态参数；回滚不完整时保留快照并明确报错。参数不保证所有线路都变快，2026-09-07 的两机对比未显示 tcpfit 稳定全面胜出，因此保留现有方案，详见 [审计记录](AUDIT.md)。
 

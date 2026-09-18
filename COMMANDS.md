@@ -618,7 +618,7 @@ EOF
 sysctl -p /etc/sysctl.d/99-daimon-bbr-fq.conf
 sysctl -p /etc/sysctl.d/99-daimon-network-optimize.conf
 ```
-解释：实际入口为 `daimon_network_apply_custom_optimize`，BBR/FQ 写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`。应用前检查实际默认路由队列为 `fq` 或 `mq+fq`，不覆盖其他队列；失败恢复两个配置文件和逐项保存的运行态参数，回滚不完整时保留快照。已删除内核中无实际作用的 `tcp_low_latency`。
+解释：实际入口为 `daimon_network_apply_custom_optimize`，BBR/FQ 写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`。Python 3 持久化助手同时生成 `zz-daimon-network.conf` 和 `/etc/sysctl.conf` 末尾的 daimon 标记块，覆盖开机及重载时的旧值，保留其他工具的原始配置；发现更晚的冲突则拒绝应用。应用前检查默认路由队列为 `fq` 或 `mq+fq`，不覆盖其他队列；写入失败回滚持久化文件及运行态。已删除内核中无实际作用的 `tcp_low_latency`。
 
 查看优化状态：
 
