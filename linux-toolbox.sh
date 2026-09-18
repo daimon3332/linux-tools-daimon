@@ -8408,6 +8408,107 @@ DAIMON_BBR_FQ_CONF="/etc/sysctl.d/99-daimon-bbr-fq.conf"
 DAIMON_NETWORK_OPTIMIZE_CONF="/etc/sysctl.d/99-daimon-network-optimize.conf"
 DAIMON_NETWORK_LEGACY_CONF="/etc/sysctl.d/99-network-optimize.conf"
 
+daimon_network_persist() {
+	command -v python3 >/dev/null 2>&1 || { echo "持久化网络配置需要 python3，未写入覆盖配置。"; return 1; }
+	python3 - "${DAIMON_SYSCTL_CONF:-/etc/sysctl.conf}" \
+		"${DAIMON_NETWORK_PRIORITY_CONF:-/etc/sysctl.d/zz-daimon-network.conf}" "$@" <<'PY'
+import os, re, stat, sys, tempfile
+from pathlib import Path
+
+begin = b'# BEGIN daimon network overrides\n'
+end = b'# END daimon network overrides\n'
+staged, changed, originals = {}, [], {}
+
+def stage(path, data, metadata):
+    fd, name = tempfile.mkstemp(prefix='.' + path.name + '.', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as out:
+            out.write(data)
+            out.flush()
+            os.fsync(out.fileno())
+            os.fchmod(out.fileno(), stat.S_IMODE(metadata.st_mode) if metadata else 0o644)
+            if metadata:
+                os.fchown(out.fileno(), metadata.st_uid, metadata.st_gid)
+        return name
+    except BaseException:
+        os.unlink(name)
+        raise
+
+try:
+    main = Path(sys.argv[1]).resolve()
+    late = Path(sys.argv[2])
+    if late.is_symlink() or main == late.resolve():
+        raise ValueError('Unsafe network override path')
+    for path in (main, late):
+        if path.exists() and not path.is_file():
+            raise ValueError('Configuration is not a regular file: ' + str(path))
+        originals[path] = (path.read_bytes(), path.stat()) if path.exists() else (None, None)
+    old = originals[main][0] or b''
+    if old.count(begin) != old.count(end) or old.count(begin) > 1:
+        raise ValueError('Malformed daimon block in sysctl.conf')
+    if begin in old:
+        start, stop = old.index(begin), old.index(end)
+        if stop < start:
+            raise ValueError('Malformed daimon block order')
+        old = old[:start] + old[stop + len(end):]
+    if originals[late][0] is not None and not originals[late][0].startswith(begin):
+        raise ValueError('Refusing to overwrite an unmanaged file: ' + str(late))
+    values = {}
+    for filename in sys.argv[3:]:
+        if not filename or not Path(filename).exists():
+            continue
+        for line in Path(filename).read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith(('#', ';')):
+                continue
+            key, value = line.split('=', 1)
+            key, value = key.strip(), ' '.join(value.split())
+            if not re.fullmatch(r'(net|vm|fs)\.[a-zA-Z0-9_.]+', key) or not value:
+                raise ValueError('Invalid managed sysctl assignment')
+            values[key] = value
+    seen = set()
+    for directory in (late.parent, Path('/run/sysctl.d'), Path('/usr/local/lib/sysctl.d'), Path('/usr/lib/sysctl.d'), Path('/lib/sysctl.d')):
+        for path in directory.glob('*.conf'):
+            if path.name in seen:
+                continue
+            seen.add(path.name)
+            if path.name <= late.name:
+                continue
+            for line in path.read_text().splitlines():
+                line = line.strip()
+                if not line or line.startswith(('#', ';')) or '=' not in line:
+                    continue
+                key, value = line.split('=', 1)
+                key = key.strip().lstrip('-').replace('/', '.')
+                if key in values and ' '.join(value.split()) != values[key]:
+                    raise ValueError('Later sysctl override must be resolved: ' + str(path) + ': ' + key)
+    block = begin + ''.join(f'{k} = {v}\n' for k, v in values.items()).encode() + end
+    new_main = old + (b'\n' if old and not old.endswith(b'\n') else b'') + block
+    for path, data in ((main, new_main), (late, block)):
+        staged[path] = stage(path, data, originals[path][1])
+    for path in (main, late):
+        os.replace(staged[path], path)
+        del staged[path]
+        changed.append(path)
+except (OSError, ValueError) as error:
+    print('Network persistence failed: ' + str(error), file=sys.stderr)
+    for path in reversed(changed):
+        data, metadata = originals[path]
+        try:
+            if data is None:
+                path.unlink()
+            else:
+                backup = stage(path, data, metadata)
+                os.replace(backup, path)
+        except OSError as rollback:
+            print('ROLLBACK FAILED: ' + str(path) + ': ' + str(rollback), file=sys.stderr)
+    sys.exit(1)
+finally:
+    for name in staged.values():
+        os.unlink(name)
+PY
+}
+
 daimon_network_bbr_supported() {
 	modprobe tcp_bbr 2>/dev/null || true
 	sysctl -n net.ipv4.tcp_available_congestion_control 2>/dev/null | grep -qw bbr
@@ -8469,7 +8570,7 @@ daimon_network_show_conflicting_sysctl_configs() {
 		key_pattern=${key//./\\.}
 		while IFS= read -r match; do
 			source=${match%%:*}
-			[ "$source" = "$managed_file" ] && continue
+		[ "$source" = "$managed_file" ] && continue
 			rest=${match#*:}
 			line_number=${rest%%:*}
 			definition=${rest#*:}
@@ -8484,7 +8585,7 @@ daimon_network_show_conflicting_sysctl_configs() {
 		done < <(grep -HnE "^[[:space:]]*${key_pattern}[[:space:]]*=" \
 			/etc/sysctl.conf /etc/sysctl.d/*.conf 2>/dev/null || true)
 	done < "$managed_file"
-	[ "$found" -eq 0 ] || echo -e "${gl_huang}上述文件可能在重启或全量重载时覆盖本模块参数；脚本不会自动修改它们。${gl_bai}"
+	[ "$found" -eq 0 ] || echo -e "${gl_huang}原配置已保留；应用优化时 daimon 的末尾覆盖块和 zz-daimon-network.conf 负责重载/开机优先级。${gl_bai}"
 }
 
 daimon_network_show_other_bbr_configs() {
@@ -8520,7 +8621,8 @@ net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
 EOF
 	if command install -m 644 "$tmp" "$DAIMON_BBR_FQ_CONF" &&
-		sysctl -p "$DAIMON_BBR_FQ_CONF" >/dev/null 2>&1 && daimon_network_verify_bbr_fq; then
+		sysctl -p "$DAIMON_BBR_FQ_CONF" >/dev/null 2>&1 && daimon_network_verify_bbr_fq &&
+		{ [ "${DAIMON_NETWORK_DEFER_PERSIST:-0}" = 1 ] || daimon_network_persist "$DAIMON_BBR_FQ_CONF" "$DAIMON_NETWORK_OPTIMIZE_CONF"; }; then
 		rm -f "$tmp" "$old_conf"
 		return 0
 	fi
@@ -8682,6 +8784,7 @@ daimon_network_cleanup_old_qdisc_service() {
 daimon_network_apply_custom_optimize() {
 	root_use
 	local tmp snapshot key value actual file unsupported=0 rollback_failed=0
+	local DAIMON_NETWORK_DEFER_PERSIST=1
 	daimon_network_bbr_supported || { echo "当前内核不支持 BBR，未修改配置。"; return 2; }
 	daimon_network_verify_active_fq || return 1
 	snapshot=$(mktemp -d) || return 1
@@ -8729,7 +8832,8 @@ EOF
 		! command install -m 644 "$tmp" "$DAIMON_NETWORK_OPTIMIZE_CONF" ||
 		! sysctl -p "$DAIMON_NETWORK_OPTIMIZE_CONF" >/dev/null ||
 		! daimon_network_verify_sysctl_file "$DAIMON_NETWORK_OPTIMIZE_CONF" ||
-		! daimon_network_verify_bbr_fq; then
+		! daimon_network_verify_bbr_fq ||
+		! daimon_network_persist "$DAIMON_BBR_FQ_CONF" "$DAIMON_NETWORK_OPTIMIZE_CONF"; then
 		for file in "$DAIMON_BBR_FQ_CONF" "$DAIMON_NETWORK_OPTIMIZE_CONF"; do
 			if [ -f "$snapshot/$(basename "$file")" ]; then
 				cp -a "$snapshot/$(basename "$file")" "$file" || rollback_failed=1
@@ -8749,7 +8853,7 @@ EOF
 	fi
 	rm -rf "$snapshot"
 	rm -f "$DAIMON_NETWORK_LEGACY_CONF"
-	echo -e "${gl_lv}自定义网络优化已应用。只写入 sysctl 参数，配置文件: $DAIMON_NETWORK_OPTIMIZE_CONF${gl_bai}"
+	echo -e "${gl_lv}自定义网络优化已应用，重载与开机覆盖配置已同步。参数文件: $DAIMON_NETWORK_OPTIMIZE_CONF${gl_bai}"
 	[ "$unsupported" -gt 0 ] && echo -e "${gl_huang}已自适应跳过 $unsupported 个不受支持的参数。${gl_bai}"
 	daimon_network_show_conflicting_sysctl_configs "$DAIMON_NETWORK_OPTIMIZE_CONF"
 	send_stats "自定义网络优化"
@@ -8808,9 +8912,13 @@ daimon_network_show_custom_status() {
 
 daimon_network_clear_custom_optimize() {
 	root_use
+	daimon_network_persist "$DAIMON_BBR_FQ_CONF" || return 1
 	daimon_network_cleanup_old_qdisc_service
-	rm -f "$DAIMON_NETWORK_OPTIMIZE_CONF" "$DAIMON_NETWORK_LEGACY_CONF"
-	sysctl --system >/dev/null 2>&1 || true
+	if ! rm -f "$DAIMON_NETWORK_OPTIMIZE_CONF" "$DAIMON_NETWORK_LEGACY_CONF"; then
+		daimon_network_persist "$DAIMON_BBR_FQ_CONF" "$DAIMON_NETWORK_OPTIMIZE_CONF"
+		return 1
+	fi
+	sysctl --system >/dev/null 2>&1 || { echo "优化配置已清除，但系统参数重载失败，请检查 sysctl 配置。"; return 1; }
 	echo "已清除自定义网络优化配置，BBR/FQ 保持不变；其他运行态参数可能需要重启后恢复系统默认值。"
 	send_stats "清除自定义网络优化"
 }
