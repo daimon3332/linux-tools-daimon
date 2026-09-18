@@ -180,7 +180,7 @@ daimon_github_url_candidates() {
 }
 
 daimon_url() {
-	daimon_github_url_candidates "$1" | head -1
+	daimon_github_url_candidates "$1" | sed -n '1p'
 }
 
 daimon_download_to() {

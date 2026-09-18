@@ -99,6 +99,17 @@ settings_preserved() {
     mkdir() { exit 91; }
     "$1"
 }
+proxy_first_no_sigpipe() {
+    load daimon_url || return 1
+    daimon_github_url_candidates() {
+        echo https://first.example/file
+        local n
+        for ((n=0;n<5000;n++)); do echo https://next.example/file; done
+    }
+    local result
+    result=$(daimon_url unused) || return 1
+    [ "$result" = https://first.example/file ]
+}
 for fn in install_yazi_griffo install_nexttrace configure_blesh configure_starship configure_fzf; do
     check "$fn stops on dependency failure" dependency_failure "$fn"
 done
@@ -110,5 +121,6 @@ check 'NextTrace repository refresh preserves other package indexes' apt_indexes
 check 'Python removal preserves the operating system interpreter' system_python_preserved
 check 'Claude installation preserves existing settings' settings_preserved configure_claude_code_settings
 check 'Codex installation preserves existing settings' settings_preserved configure_codex_settings
+check 'proxy selection drains candidates under pipefail' proxy_first_no_sigpipe
 printf '%s passed, %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]
