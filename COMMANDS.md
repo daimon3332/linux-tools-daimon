@@ -59,7 +59,7 @@ mkdir -p /root/linux-daimon/daimon
 脚本更新：
 
 ```bash
-curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o /tmp/daimon_tmp.xxxxxx https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh
+curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o /tmp/daimon_tmp.xxxxxx https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh
 head -1 /tmp/daimon_tmp.xxxxxx | grep -q '^#!/bin/bash'
 grep -q 'DAIMON_NAME="linux-tools-daimon"' /tmp/daimon_tmp.xxxxxx
 cp -f /root/linux-daimon/linux-toolbox.sh /root/linux-daimon/linux-toolbox.sh.bak.$(date +%Y%m%d%H%M%S)
@@ -68,7 +68,7 @@ cp -f /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
 chmod +x /root/linux-daimon/linux-toolbox.sh /usr/local/bin/d
 ln -sf /usr/local/bin/d /usr/bin/d
 ```
-解释：从固定地址下载 `linux-toolbox.sh`，校验脚本首行和 daimon 标识，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。每次更新都会同步更新 Nginx + 域名续期脚本，不再询问用户选择；新进程会原子重建 `/root/linux-daimon/daimon/cert_nginx.sh`，并非交互安装新的续期包装脚本和 cron。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
+解释：优先从 GitHub 仓库下载 `linux-toolbox.sh`，国内优先代理；仓库不可用时才回退到可能有同步延迟的备用站点。校验脚本首行、daimon 标识及 Bash 语法，更新本地脚本与快捷命令，并保留首次同意状态、IPv6 参数和统计开关。每次更新都会同步更新 Nginx + 域名续期脚本，不再询问用户选择；新进程会原子重建 `/root/linux-daimon/daimon/cert_nginx.sh`，并非交互安装新的续期包装脚本和 cron。更新成功后会 `exec /usr/local/bin/d` 重新进入新版脚本，避免继续显示旧进程缓存的菜单。
 
 ## 1. 系统信息查询
 

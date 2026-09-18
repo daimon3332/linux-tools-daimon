@@ -259,24 +259,22 @@ daimon_install_script_file() {
 
 daimon_download_update_file() {
 	local target="$1"
-	local primary="${DAIMON_UPDATE_URL:-https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh}"
-	local fallback
-	fallback=$(daimon_update_fallback_url)
+	local primary fallback="${DAIMON_UPDATE_URL:-https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh}"
+	primary=$(daimon_update_fallback_url)
 
 	if daimon_try_download_url "$primary" "$target" && daimon_validate_update_file "$target"; then
 		return 0
 	fi
 
-	echo -e "${gl_huang}主更新地址失败，切换 GitHub 仓库地址...${gl_bai}"
-	if daimon_try_download_url "$fallback" "$target" && daimon_validate_update_file "$target"; then
-		return 0
-	fi
-
-	if [ "$fallback" != "$DAIMON_UPDATE_GITHUB_URL" ]; then
+	if [ "$primary" != "$DAIMON_UPDATE_GITHUB_URL" ]; then
 		echo -e "${gl_huang}指定 GitHub 代理失败，继续尝试备用 GitHub 代理...${gl_bai}"
 		if daimon_download_to "$DAIMON_UPDATE_GITHUB_URL" "$target" && daimon_validate_update_file "$target"; then
 			return 0
 		fi
+	fi
+	echo -e "${gl_huang}GitHub 更新失败，尝试备用站点；备用内容可能存在同步延迟。${gl_bai}"
+	if daimon_try_download_url "$fallback" "$target" && daimon_validate_update_file "$target"; then
+		return 0
 	fi
 
 	rm -f "$target" 2>/dev/null || true
