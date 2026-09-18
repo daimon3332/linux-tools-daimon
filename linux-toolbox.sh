@@ -219,6 +219,7 @@ daimon_update_fallback_url() {
 daimon_try_download_url() {
 	local url="$1"
 	local target="$2"
+	case "$url" in *\?*) url="${url}&_daimon=$(date +%s)" ;; *) url="${url}?_daimon=$(date +%s)" ;; esac
 	echo "下载地址: $url"
 	rm -f "$target" 2>/dev/null || true
 	curl -fsSL --connect-timeout 10 --max-time 60 --retry 2 -o "$target" "$url" 2>/dev/null && [ -s "$target" ] && return 0
