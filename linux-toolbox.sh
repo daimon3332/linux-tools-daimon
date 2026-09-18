@@ -8463,7 +8463,7 @@ try:
                 continue
             key, value = line.split('=', 1)
             key, value = key.strip(), ' '.join(value.split())
-            if not re.fullmatch(r'(net|vm|fs)\.[a-zA-Z0-9_.]+', key) or not value:
+            if not re.fullmatch(r'(net|vm|fs)\.[a-zA-Z0-9_.-]+', key) or not value:
                 raise ValueError('Invalid managed sysctl assignment')
             values[key] = value
     seen = set()
@@ -8570,7 +8570,7 @@ daimon_network_show_conflicting_sysctl_configs() {
 		key_pattern=${key//./\\.}
 		while IFS= read -r match; do
 			source=${match%%:*}
-		[ "$source" = "$managed_file" ] && continue
+			[ "$source" = "$managed_file" ] && continue
 			rest=${match#*:}
 			line_number=${rest%%:*}
 			definition=${rest#*:}

@@ -23,7 +23,7 @@ fixture() {
     network="$directory/sysctl.d/99-daimon-network-optimize.conf"
     printf '# user configuration\nvm.swappiness=0\n' > "$DAIMON_SYSCTL_CONF"
     printf 'net.ipv4.tcp_congestion_control=bbr\n' > "$bbr"
-    printf 'vm.swappiness=10\nnet.ipv4.tcp_max_syn_backlog=262144\n' > "$network"
+    printf 'vm.swappiness=10\nnet.ipv4.tcp_max_syn_backlog=262144\nfs.file-max=2097152\n' > "$network"
     printf 'net.ipv4.tcp_max_syn_backlog=8192\n' > "$directory/sysctl.d/99-zz-sing-box-daimon.conf"
 }
 precedence() {
