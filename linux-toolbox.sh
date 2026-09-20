@@ -23194,7 +23194,7 @@ for item in dict.fromkeys((config, source/'.bash_history', source/'.zsh_history'
     if any(char in relative for char in '*?[]\\\r\n') or relative.strip() != relative or relative.startswith('#'):
         sys.exit('ERROR: Unsupported special characters in backed-up metadata path')
     snapshot = work/'metadata-snapshot'/relative
-    snapshot.parent.mkdir(parents=True, mode=0o700)
+    snapshot.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
     for _ in range(3):
         shutil.copy2(item,snapshot)
         os.chmod(snapshot,0o600)
