@@ -22634,12 +22634,104 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || { printf '%s\n' "已有 $BACKUP_NAME 备份运行，跳过本次任务" >> "$LOG_FILE"; exit 0; }
 exec 8>"$GLOBAL_LOCK_FILE"
 flock -x 8
+root_services() {
+    [ "$TASK_KIND" = root ] || return 0
+    python3 - "$1" "$STATE_DIR/services.pending" "${DAIMON_ROOT_SERVICES_FILE:-$(dirname "$(readlink -f "$0")")/.root-backup.services}" <<'PYSERVICES'
+import json, os, re, subprocess, sys, tempfile
+from pathlib import Path
+mode, journal, config = sys.argv[1], Path(sys.argv[2]), Path(sys.argv[3])
+def read(path):
+    if path.is_symlink() or not path.is_file():
+        raise RuntimeError('Unsafe service configuration/recovery file')
+    return path.read_text()
+def valid(unit):
+    return isinstance(unit,str) and re.fullmatch(r'[A-Za-z0-9_:@.\-]+\.service',unit) and not unit.startswith('-')
+def call(*args):
+    result = subprocess.run(['systemctl',*args],capture_output=True,text=True,timeout=180)
+    if result.returncode:
+        raise RuntimeError('systemctl failed: ' + ' '.join(args[:2]))
+    return result.stdout
+def state(unit):
+    values = dict(line.split('=',1) for line in call('show',unit,'--property=LoadState,ActiveState,CanStop,RefuseManualStop,TriggeredBy').splitlines() if '=' in line)
+    if values.get('LoadState') != 'loaded':
+        raise RuntimeError('Service is unavailable: ' + unit)
+    return values
+try:
+    units = []
+    if journal.exists() or journal.is_symlink():
+        units = json.loads(read(journal))
+        if not isinstance(units,list) or any(not valid(unit) for unit in units):
+            raise RuntimeError('Invalid service recovery journal')
+    if mode == 'stop':
+        if journal.exists():
+            raise RuntimeError('Pending service recovery must finish first')
+        if not config.exists() and not config.is_symlink():
+            sys.exit(0)
+        selected = list(dict.fromkeys(line.strip() for line in read(config).splitlines() if line.strip() and not line.lstrip().startswith('#')))
+        if any(not valid(unit) for unit in selected):
+            raise RuntimeError('Invalid backup service name; expected explicit .service units')
+        for unit in selected:
+            info = state(unit)
+            if info.get('ActiveState') in ('inactive','failed'):
+                continue
+            if info.get('ActiveState') != 'active' or info.get('CanStop') != 'yes' or info.get('RefuseManualStop') == 'yes':
+                raise RuntimeError('Service cannot be safely paused: ' + unit)
+            if info.get('TriggeredBy'):
+                raise RuntimeError('Timer/socket-triggered services require a separate pause policy: ' + unit)
+            units.append(unit)
+        fd, temporary = tempfile.mkstemp(prefix='.services.',dir=journal.parent)
+        try:
+            with os.fdopen(fd,'w') as output:
+                json.dump(units,output)
+                output.flush()
+                os.fsync(output.fileno())
+            os.replace(temporary,journal)
+            descriptor = os.open(journal.parent,os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+        finally:
+            Path(temporary).unlink(missing_ok=True)
+        for unit in reversed(units):
+            call('stop',unit)
+            if state(unit).get('ActiveState') != 'inactive':
+                raise RuntimeError('Service did not stop: ' + unit)
+        print('HOST_SERVICES_PAUSED count=' + str(len(units)))
+    elif mode == 'verify':
+        for unit in units:
+            if state(unit).get('ActiveState') != 'inactive':
+                raise RuntimeError('Service restarted during primary backup: ' + unit)
+    elif mode in ('resume','finish','reconcile'):
+        failed = []
+        for unit in units:
+            try:
+                if state(unit).get('ActiveState') != 'active':
+                    call('start',unit)
+                if state(unit).get('ActiveState') != 'active':
+                    raise RuntimeError('Service did not become active')
+            except (RuntimeError,subprocess.TimeoutExpired):
+                failed.append(unit)
+        if failed:
+            raise RuntimeError('Service recovery failed; journal retained: ' + ', '.join(failed))
+        if units:
+            print('HOST_SERVICES_RESUMED count=' + str(len(units)))
+        if mode != 'resume':
+            journal.unlink(missing_ok=True)
+    else:
+        raise RuntimeError('Invalid service recovery operation')
+except (OSError,ValueError,RuntimeError,subprocess.TimeoutExpired) as error:
+    sys.exit('ERROR: ' + str(error))
+PYSERVICES
+}
+
 install -d -m 700 "$STATE_DIR"
 if [ "$TASK_KIND" = root ]; then
     STATE_DIR="${DAIMON_ROOT_STATE_DIR:-/var/lib/daimon/root-backups/$BACKUP_NAME}"
     [ ! -L "$STATE_DIR" ] || { echo 'ERROR: Recovery directory is a symlink'; exit 1; }
     install -d -m 700 "$STATE_DIR"
     STATE_FILE="$STATE_DIR/containers.pending"
+    root_services reconcile
     # An old ID-only journal is reconciled only when every surviving container is ready.
     python3 - "$RUNTIME_DIR/daimon-root/containers.pending" "$STATE_FILE" <<'PYROOT'
 import json, os, re, subprocess, sys, time
@@ -22828,6 +22920,7 @@ restore_containers() {
     set +e
     stop_transfer
     recover_writers || recovery_failed=1
+    root_services finish || recovery_failed=1
     [ -z "$INVENTORY" ] || rm -f -- "$INVENTORY"
     [ -z "$MOUNTS" ] || rm -f -- "$MOUNTS"
     [ -z "$GENERATION" ] || rm -f -- "$GENERATION"
@@ -22970,6 +23063,7 @@ verify_backup_state() {
     fi
     [ "$OWNS_STATE" -eq 1 ] || return 0
     [ "$WRITERS_RESUMED" -eq 0 ] || return 0
+    root_services verify || return 1
     while IFS= read -r id; do
         state=$(container_state "$id") || return
         [ "${state%% *}" = false ] || { printf 'ERROR: 备份期间容器被外部启动: %s\n' "$id" >&2; return 1; }
@@ -23156,6 +23250,7 @@ for target, content in (
     os.replace(tmp,target)
 PYORDER
 fi
+root_services stop
 while IFS= read -r id; do
     timeout 60s docker stop --timeout 30 "$id" >> "$LOG_FILE" 2>&1
     state=$(container_state "$id")
@@ -23217,6 +23312,7 @@ if ! recover_writers "$recovery_mode"; then
         exit 1
     fi
 fi
+root_services resume
 if [ "$TASK_KIND" = root ]; then exec 6>&-; fi
 STAGE=primary_recheck
 capture_generation "$AFTER_GENERATION"

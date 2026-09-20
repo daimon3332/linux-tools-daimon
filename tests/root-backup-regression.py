@@ -20,6 +20,59 @@ def function(name):
     return match.group()
 
 
+@unittest.skipUnless(sys.platform.startswith('linux'), 'Linux systemd writer fixture')
+class SystemdWriters(unittest.TestCase):
+    def test_recovery_and_failed_start_retain_original_service_set(self):
+        base = pathlib.Path(__file__).resolve().parents[1] / '.tmp'
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as directory:
+            work = pathlib.Path(directory)
+            (work/'bin').mkdir()
+            (work/'state').mkdir()
+            (work/'services').write_text('app.service\nstopped.service\n')
+            (work/'active').write_text('active')
+            command = work/'bin/systemctl'
+            command.write_text('''#!/bin/bash
+set -eu
+echo "$*" >> "$FIXTURE/calls"
+case "$1" in
+show)
+ if [ "$2" = stopped.service ]; then state=inactive; else state=$(cat "$FIXTURE/active"); fi
+ printf 'LoadState=loaded\\nActiveState=%s\\nCanStop=yes\\nRefuseManualStop=no\\nTriggeredBy=\\n' "$state" ;;
+stop) echo inactive > "$FIXTURE/active" ;;
+start) [ ! -e "$FIXTURE/fail" ] || exit 1; echo active > "$FIXTURE/active" ;;
+*) exit 99 ;;
+esac
+''')
+            command.chmod(0o700)
+            env = dict(os.environ, FIXTURE=str(work), PATH=str(work/'bin')+':'+os.environ['PATH'],
+                       TASK_KIND='root', STATE_DIR=str(work/'state'), DAIMON_ROOT_SERVICES_FILE=str(work/'services'))
+            def run(mode):
+                return subprocess.run(['bash','-c',function('root_services')+'\nroot_services "$1"','fixture',mode],
+                                      env=env,capture_output=True,text=True)
+            self.assertEqual(run('stop').returncode,0)
+            self.assertEqual((work/'active').read_text().strip(),'inactive')
+            self.assertEqual(run('verify').returncode,0)
+            (work/'fail').touch()
+            self.assertNotEqual(run('finish').returncode,0)
+            self.assertTrue((work/'state/services.pending').exists())
+            (work/'fail').unlink()
+            self.assertEqual(run('reconcile').returncode,0)
+            self.assertFalse((work/'state/services.pending').exists())
+            self.assertEqual((work/'active').read_text().strip(),'active')
+            calls=(work/'calls').read_text()
+            self.assertNotIn('stop stopped.service',calls)
+            self.assertNotIn('start stopped.service',calls)
+            (work/'services').write_text('../bad.service\n')
+            self.assertNotEqual(run('stop').returncode,0)
+            self.assertEqual((work/'calls').read_text(),calls)
+            (work/'services').write_text('app.service\n')
+            self.assertEqual(run('stop').returncode,0)
+            (work/'active').write_text('active')
+            self.assertNotEqual(run('verify').returncode,0)
+            self.assertEqual(run('finish').returncode,0)
+
+
 class Recovery(unittest.TestCase):
     def test_application_first_does_not_block_database_start(self):
         script = r'''
@@ -286,6 +339,9 @@ if args[0]=='lsjson':
 elif args[0] in ('sync','check','copy'):
  state=json.loads((p/'state.json').read_text())
  snapshot='config-snapshot' in args[1]
+ if (p/'service-active').exists():
+  active=(p/'service-active').read_text().strip()
+  assert active == ('inactive' if args[1]==str(p/'src') or snapshot else 'active')
  if args[1]==str(p/'src') or snapshot: assert not state['a'*64] and not state['b'*64]
  else: assert state['a'*64] and state['b'*64]
  if mode=='rotating-config':
@@ -325,6 +381,39 @@ else: sys.exit(99)
         self.assertNotIn('docker start '+'c'*64,calls)
         self.assertFalse((self.work/'state/containers.pending').exists())
         self.assertFalse(list((self.work/'work').glob('run.*')))
+
+    def service_fixture(self):
+        (self.work/'.root-backup.services').write_text('app.service\n')
+        (self.work/'service-active').write_text('active')
+        command=self.work/'bin/systemctl'
+        command.write_text('''#!/bin/bash
+set -eu
+echo "systemctl $*" >> "$FIXTURE/calls"
+case "$1" in
+show) printf 'LoadState=loaded\\nActiveState=%s\\nCanStop=yes\\nRefuseManualStop=no\\nTriggeredBy=\\n' "$(cat "$FIXTURE/service-active")" ;;
+stop) echo inactive > "$FIXTURE/service-active" ;;
+start) echo active > "$FIXTURE/service-active" ;;
+*) exit 99 ;;
+esac
+''')
+        command.chmod(0o700)
+
+    def test_host_service_resumes_before_secondary(self):
+        self.service_fixture()
+        result=self.execute()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr+(self.work/'logs/run.log').read_text())
+        calls=(self.work/'calls').read_text()
+        self.assertLess(calls.index('systemctl stop'),calls.index('docker stop'))
+        self.assertLess(calls.index('systemctl start'),calls.index('rclone sync qq'))
+        self.assertEqual((self.work/'service-active').read_text().strip(),'active')
+        self.assertFalse((self.work/'state/services.pending').exists())
+
+    def test_host_service_recovers_after_transfer_failure(self):
+        self.service_fixture()
+        result=self.execute('sync-failure')
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual((self.work/'service-active').read_text().strip(),'active')
+        self.assertFalse((self.work/'state/services.pending').exists())
 
     def test_inventory_larger_than_lock_partition(self):
         result=self.execute('large')
