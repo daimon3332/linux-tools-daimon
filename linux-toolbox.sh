@@ -22717,9 +22717,9 @@ stop_transfer() {
 
 container_recovery_timeout() {
     if [ -n "${DAIMON_RECOVERY_TIMEOUT:-}" ]; then printf '%s\n' "$DAIMON_RECOVERY_TIMEOUT"; return; fi
-    local timing
+    local timing budget
     timing=$(timeout 30s docker inspect -f '{{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod}} {{.Config.Healthcheck.Interval}} {{.Config.Healthcheck.Timeout}} {{.Config.Healthcheck.Retries}}{{end}}' "$1" 2>/dev/null) || timing=""
-    python3 - "$timing" <<'PYHEALTH'
+    budget=$(python3 - "$timing" <<'PYHEALTH'
 import sys
 try:
     start, interval, timeout, retries = map(int, sys.argv[1].split())
@@ -22728,6 +22728,9 @@ try:
 except ValueError:
     print(180)
 PYHEALTH
+    ) || budget=180
+    [[ "$budget" =~ ^[0-9]+$ ]] || budget=180
+    printf '%s\n' "$budget"
 }
 
 recover_writers() {
