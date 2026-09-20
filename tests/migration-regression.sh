@@ -532,6 +532,7 @@ args = sys.argv[1:]
 mode = os.environ['EMBY_TEST_MODE']
 with (root / 'calls').open('a') as out:
     out.write('rclone ' + ' '.join(args) + '\n')
+if args[0] == 'lsd': sys.exit(0)
 if args[0] == 'lsjson' and args[1].startswith('qq3303338052@outlook:'):
     counter = root / 'generation-count'
     count = int(counter.read_text()) + 1 if counter.exists() else 1

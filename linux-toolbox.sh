@@ -22968,6 +22968,15 @@ INVENTORY=$(mktemp "${WORK_DIR:-$STATE_DIR}/inventory.XXXXXX")
 MOUNTS=$(mktemp "${WORK_DIR:-$STATE_DIR}/mounts.XXXXXX")
 printf '===== %s 开始 %s 一致性备份 =====\n' "$(date -Is)" "$BACKUP_NAME" >> "$LOG_FILE"
 backup_preflight >> "$LOG_FILE" 2>&1
+if [ "$TASK_KIND" = root ]; then
+    for remote in "${PRIMARY%%:*}:" "${SECONDARY%%:*}:"; do
+        timeout --kill-after=5s 60s rclone lsd "$remote" --max-depth 1 \
+            --contimeout=10s --timeout=20s --retries=1 --low-level-retries=1 >/dev/null 2>> "$LOG_FILE" || {
+            echo "ERROR: Remote preflight failed before stopping writers: $remote" >&2
+            exit 1
+        }
+    done
+fi
 ids=""
 if command -v docker >/dev/null 2>&1; then
     timeout 30s docker info >> "$LOG_FILE" 2>&1

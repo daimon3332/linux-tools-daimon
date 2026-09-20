@@ -215,6 +215,7 @@ import json,os,sys
 from pathlib import Path
 p=Path(os.environ['FIXTURE']); args=sys.argv[1:]; mode=os.environ.get('MODE','success')
 with (p/'calls').open('a') as f: f.write('rclone '+' '.join(args)+'\n')
+if args[0]=='lsd': sys.exit(21 if mode=='remote-failure' else 0)
 if args[0]=='lsjson':
  if mode=='large' and args[1]==str(p/'src'):
   print(json.dumps([{'Path':'files/'+str(n)+'x'*120,'Size':1,'IsDir':False} for n in range(35000)]))
@@ -319,6 +320,11 @@ else: sys.exit(99)
             result=self.execute()
         self.assertNotEqual(result.returncode,0)
         self.assertIn('Unmanaged host writer',result.stderr)
+
+    def test_unavailable_remote_prevents_stopping_services(self):
+        result=self.execute('remote-failure')
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn('docker stop',(self.work/'calls').read_text())
 
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))
