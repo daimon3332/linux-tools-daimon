@@ -84,18 +84,18 @@ class CheckRetries(unittest.TestCase):
         base=pathlib.Path(__file__).resolve().parents[1]/'.tmp'
         base.mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=base) as directory:
-            for failures,guard,kind,expected,calls in ((1,0,'root',0,2),(9,0,'root',7,3),(1,1,'root',1,1),(9,0,'emby',7,1)):
+            for failures,guard,kind,code,expected,calls in ((1,0,'root',5,0,2),(9,0,'root',5,5,3),(1,1,'root',5,1,1),(9,0,'emby',5,5,1),(9,0,'root',143,143,1),(9,0,'root',7,7,1)):
                 with self.subTest(failures=failures,guard=guard,kind=kind):
                     log=pathlib.Path(directory)/'retry.log'
                     log.write_text('ERROR: throttledRequest: trying again in 2m0s\n')
                     setup='''calls=0; waited=0
-run_transfer() { calls=$((calls+1)); [ "$calls" -gt "$FAILURES" ] || return 7; }
+run_transfer() { calls=$((calls+1)); [ "$calls" -gt "$FAILURES" ] || return "$FAIL_CODE"; }
 root_space_ok() { return 0; }
 verify_backup_state() { return "$GUARD"; }
 sleep() { waited=$((waited+$1)); }
 '''
                     script=setup+function('checked_transfer')+'\nchecked_transfer source target; rc=$?\necho "$rc $calls $waited"\n'
-                    env=dict(os.environ,FAILURES=str(failures),GUARD=str(guard),TASK_KIND=kind,LOG_FILE=str(log))
+                    env=dict(os.environ,FAILURES=str(failures),FAIL_CODE=str(code),GUARD=str(guard),TASK_KIND=kind,LOG_FILE=str(log))
                     result=subprocess.run(['bash','-c',script],env=env,capture_output=True,text=True,timeout=10)
                     self.assertEqual(result.returncode,0,result.stderr)
                     rc,count,waited=map(int,result.stdout.split())
@@ -398,7 +398,7 @@ elif args[0] in ('sync','check','copy'):
  if mode=='sync-failure' and args[0]=='sync': sys.exit(23)
  if mode in ('check-once','check-always') and args[0]=='check' and args[1]==str(p/'src'):
   counter=p/'check-count'; count=int(counter.read_text())+1 if counter.exists() else 1; counter.write_text(str(count))
-  if count==1 or mode=='check-always': sys.exit(27)
+  if count==1 or mode=='check-always': sys.exit(5 if mode=='check-once' else 1)
  if mode=='secondary-failure' and args[1].startswith('qq'): sys.exit(24)
  if mode=='writer-restart' and args[0]=='sync' and args[1]==str(p/'src'):
   state['a'*64]=True; (p/'state.json').write_text(json.dumps(state))

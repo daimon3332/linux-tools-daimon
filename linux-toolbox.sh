@@ -23072,7 +23072,7 @@ checked_transfer() {
     local attempt rc=0 delay pause
     for attempt in 1 2 3; do
         if run_transfer check "$@"; then return 0; else rc=$?; fi
-        [ "$TASK_KIND" = root ] && [ "$attempt" -lt 3 ] || return "$rc"
+        [ "$TASK_KIND" = root ] && [ "$attempt" -lt 3 ] && [ "$rc" -le 6 ] || return "$rc"
         root_space_ok && verify_backup_state || return 1
         delay=$(python3 - "$LOG_FILE" "$((60 * attempt))" <<'PYBACKOFF'
 import math, re, sys
