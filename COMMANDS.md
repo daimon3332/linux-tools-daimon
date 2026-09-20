@@ -1747,7 +1747,7 @@ Emby 目录备份脚本：
 
 已有任务升级保留原调度时间。root 任务按可识别的 Compose 依赖倒序停止、正序恢复；健康等待有上限且一个失败不会阻止其他容器恢复。临时清单放在 `/var/tmp/daimon-root-backups`，恢复记录位于 `/var/lib/daimon/root-backups/<服务器名>`，`/run/lock` 只用于小型锁。扫描发现备份期间写入者被重启、替换，或有未管理的宿主机写入者时停止并恢复，不能自动保证所有数据库的一致性。
 
-主备份校验后先启动原运行容器，复制第二远端期间允许服务预热，最终健康检查通过才算整体成功。备份内的 rclone 配置使用临时私有副本上传并单独校验，保留在线令牌刷新。可通过任务旁 `.root-backup.exclude` 或 `DAIMON_ROOT_EXCLUDE_FILE` 添加逐行排除规则，例如 `/snap/chromium/**`；不会停止或删除被排除的浏览器数据。
+主备份校验后先启动原运行容器，复制第二远端期间允许服务预热，最终健康检查通过才算整体成功。备份范围内的 rclone 配置及 `.bash_history`、`.zsh_history` 使用临时私有副本上传并单独校验，保留在线令牌刷新和历史追加。root 默认限制为每秒 4 次请求、突发 1 次，可用 `DAIMON_ROOT_TPS_LIMIT` 调整；内容校验有限重试，取消及致命错误直接退出。可通过任务旁 `.root-backup.exclude` 或 `DAIMON_ROOT_EXCLUDE_FILE` 添加逐行排除规则，例如 `/snap/chromium/**`；不会停止或删除被排除的浏览器数据。
 
 宿主机服务暂停名单使用任务旁 `.root-backup.services`，每行一个明确的 systemd `.service` 单元名；也可用 `DAIMON_ROOT_SERVICES_FILE` 指定。只暂停原来 active 的配置服务，主备份校验后及失败退出时恢复，恢复失败保留清单。此操作会暂时中断相应服务，不自动选择或停止未知业务服务。
 
