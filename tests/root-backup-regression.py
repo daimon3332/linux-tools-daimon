@@ -151,7 +151,7 @@ class LogPolicy(unittest.TestCase):
                                  str(self.runs),str(self.cache),str(self.active)],env=self.env,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
-    def test_runtime_readonly_log_cancels_task_and_runs_recovery(self):
+    def test_runtime_full_log_cancels_task_and_runs_recovery(self):
         if os.geteuid() != 0:
             self.skipTest('private mount namespace requires root')
         start=SOURCE.index('#!/bin/bash\nset -u\nTASK="${1:-custom}"')
@@ -167,7 +167,7 @@ mount -t tmpfs -o size=1m tmpfs "$1" || exit 1
 bash "$2" fixture "$3" > "$TEST_WORK/runner-output" 2>&1 & task=$!
 for ((i=0;i<100;i++)); do test ! -e "$TEST_WORK/ready" || break; sleep 0.05; done
 test -e "$TEST_WORK/ready" || { kill "$task"; exit 1; }
-mount -o remount,ro "$1" || exit 1
+dd if=/dev/zero of="$1/business.bin" bs=4096 count=256 status=none 2>/dev/null || true
 wait "$task"; result=$?
 test "$result" = 74 && test -e "$TEST_WORK/recovered"
 '''
