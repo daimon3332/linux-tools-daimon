@@ -23064,17 +23064,20 @@ services = {}
 for item in records:
     labels = item['Config'].get('Labels') or {}
     services[(labels.get('com.docker.compose.project'),labels.get('com.docker.compose.service'))] = item['Id']
-deps = {}
+deps, health_deps = {}, {}
 names = {}
 for item in records:
     labels = item['Config'].get('Labels') or {}
     cid = item['Id']
     names[cid] = item['Name']
     deps[cid] = []
+    health_deps[cid] = []
     for dependency in labels.get('com.docker.compose.depends_on','').split(','):
-        other = services.get((labels.get('com.docker.compose.project'),dependency.split(':')[0]))
+        parts = dependency.split(':')
+        other = services.get((labels.get('com.docker.compose.project'),parts[0]))
         if other and other != cid:
             deps[cid].append(other)
+            if len(parts) > 1 and parts[1] == 'service_healthy': health_deps[cid].append(other)
 ordered, visiting = [], set()
 def visit(cid):
     if cid in ordered: return
@@ -23085,7 +23088,7 @@ def visit(cid):
     ordered.append(cid)
 for cid in ids: visit(cid)
 for target, content in (
-    (directory/'dependencies.tsv', ''.join(cid+'\t'+'\t'.join(deps[cid])+'\n' for cid in ordered)),
+    (directory/'dependencies.tsv', ''.join(cid+'\t'+'\t'.join(health_deps[cid])+'\n' for cid in ordered)),
     (directory/'writers.json', json.dumps({'names':names,'dependencies':deps})),
     (path, ''.join(cid+'\n' for cid in ordered))):
     tmp = target.with_suffix(target.suffix + '.tmp')

@@ -198,6 +198,25 @@ class Space(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
 
+    def test_dependency_plan_preserves_started_vs_healthy(self):
+        body=SOURCE.split("<<'PYORDER'\n",1)[1].split('\nPYORDER',1)[0]
+        workroot=pathlib.Path(__file__).resolve().parents[1]/'.tmp'
+        workroot.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=workroot,prefix='root-order.') as name:
+            work=pathlib.Path(name); pending=work/'containers.pending'
+            pending.write_text('a\nb\nc\n')
+            records=[
+                {'Id':'a','Name':'app','Config':{'Labels':{'com.docker.compose.project':'x','com.docker.compose.service':'app','com.docker.compose.depends_on':'db:service_started:false,cache:service_healthy:false'}}},
+                {'Id':'b','Name':'db','Config':{'Labels':{'com.docker.compose.project':'x','com.docker.compose.service':'db'}}},
+                {'Id':'c','Name':'cache','Config':{'Labels':{'com.docker.compose.project':'x','com.docker.compose.service':'cache'}}},
+            ]
+            setup='import subprocess\nsubprocess.check_output=lambda *a,**k: '+repr(json.dumps(records).encode())+'\n'
+            result=subprocess.run([sys.executable,'-c',setup+body,str(pending),str(work)],capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            self.assertEqual(pending.read_text().splitlines(),['b','c','a'])
+            app=next(line for line in (work/'dependencies.tsv').read_text().splitlines() if line.startswith('a\t'))
+            self.assertEqual(app.split(),'a c'.split())
+
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux generated root-task integration')
 class RootLifecycle(unittest.TestCase):
