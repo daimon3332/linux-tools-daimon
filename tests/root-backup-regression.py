@@ -131,6 +131,7 @@ class LogPolicy(unittest.TestCase):
         finally:
             proc.terminate()
             proc.wait(timeout=5)
+            proc.stderr.close()
 
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux disk checks')
@@ -141,6 +142,127 @@ class Space(unittest.TestCase):
                                  function('root_space_ok') + '\nroot_space_ok'], env=env,
                                 capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
+
+
+@unittest.skipUnless(sys.platform.startswith('linux'), 'Linux generated root-task integration')
+class RootLifecycle(unittest.TestCase):
+    def setUp(self):
+        root = pathlib.Path(__file__).resolve().parents[1] / '.tmp'
+        root.mkdir(exist_ok=True)
+        self.directory = tempfile.TemporaryDirectory(dir=root, prefix='root-lifecycle.')
+        self.work = pathlib.Path(self.directory.name)
+        for name in ('bin','src','logs','locks','state','work'):
+            (self.work/name).mkdir()
+        body = SOURCE.split('PRIMARY="qq3303338052@outlook:$BACKUP_NAME"',1)[1].split('\nEOF\n',1)[0]
+        body = 'PRIMARY="qq3303338052@outlook:$BACKUP_NAME"' + body
+        body = body.replace('LOG_DIR="/var/log/rclone"', f'LOG_DIR="{self.work}/logs"')
+        self.task = self.work/'task.sh'
+        self.task.write_text('#!/bin/bash\nset -Eeuo pipefail\nTASK_KIND=root\nBACKUP_NAME=Fixture\nSRC1="'+str(self.work/'src')+'"\n'+body)
+        self.env = dict(os.environ, FIXTURE=str(self.work), PATH=str(self.work/'bin')+':'+os.environ['PATH'],
+                        DAIMON_LOCK_DIR=str(self.work/'locks'), DAIMON_ROOT_STATE_DIR=str(self.work/'state'),
+                        DAIMON_BACKUP_WORK_DIR=str(self.work/'work'), DAIMON_RUN_LOG=str(self.work/'logs/run.log'),
+                        DAIMON_BACKUP_MIN_FREE_BYTES='1', DAIMON_BACKUP_MIN_FREE_INODES='1', DAIMON_RECOVERY_TIMEOUT='2')
+        (self.work/'state.json').write_text(json.dumps({'a'*64:True,'b'*64:True,'c'*64:False}))
+        docker = r'''#!/usr/bin/env python3
+import json,os,sys
+from pathlib import Path
+p=Path(os.environ['FIXTURE']); args=sys.argv[1:]; mode=os.environ.get('MODE','success')
+state=json.loads((p/'state.json').read_text()); op=args[0]
+with (p/'calls').open('a') as f: f.write('docker '+' '.join(args)+'\n')
+if op=='info': sys.exit(0)
+if op=='ps':
+ print('\n'.join(k for k,v in state.items() if v or '-aq' in args)); sys.exit(0)
+if op=='inspect':
+ if '-f' in args:
+  fmt=args[2]
+  for cid in args[3:]:
+   if cid not in state: sys.exit(1)
+   if '.Mounts' in fmt: print(cid+' '+json.dumps([{'Type':'bind','Source':str(p/'src'),'RW':True}]))
+   else:
+    health='healthy' if cid!='a'*64 or state['b'*64] else 'starting'
+    if mode=='unhealthy' and cid=='a'*64: health='unhealthy'
+    print(('true '+health) if state[cid] else 'false none')
+ else:
+  print(json.dumps([{'Id':cid,'Name':cid,'Mounts':[{'Type':'bind','Source':str(p/'src'),'RW':True}],
+   'Config':{'Labels':{'com.docker.compose.project':'fixture','com.docker.compose.service':'app' if cid=='a'*64 else 'db',
+   'com.docker.compose.depends_on':'db:service_healthy:false' if cid=='a'*64 else ''}}} for cid in args[1:]]))
+elif op in ('stop','start'):
+ cid=args[-1]
+ if mode=='start-failure' and op=='start' and cid=='b'*64: sys.exit(2)
+ state[cid]=(op=='start'); (p/'state.json').write_text(json.dumps(state))
+else: sys.exit(99)
+'''
+        rclone = r'''#!/usr/bin/env python3
+import json,os,sys
+from pathlib import Path
+p=Path(os.environ['FIXTURE']); args=sys.argv[1:]; mode=os.environ.get('MODE','success')
+with (p/'calls').open('a') as f: f.write('rclone '+' '.join(args)+'\n')
+if args[0]=='lsjson':
+ if mode=='large' and args[1]==str(p/'src'):
+  print(json.dumps([{'Path':'files/'+str(n)+'x'*120,'Size':1,'IsDir':False} for n in range(35000)]))
+ else: print(json.dumps([{'Path':'data.sqlite','Size':1,'IsDir':False,'ModTime':'2026-01-01T00:00:00Z','Hashes':{'sha1':'x'}}]))
+elif args[0] in ('sync','check'):
+ state=json.loads((p/'state.json').read_text())
+ if args[1]==str(p/'src'): assert not state['a'*64] and not state['b'*64]
+ else: assert state['a'*64] and state['b'*64]
+ if mode=='sync-failure' and args[0]=='sync': sys.exit(23)
+ if mode=='secondary-failure' and args[1].startswith('qq'): sys.exit(24)
+else: sys.exit(99)
+'''
+        for name, text in [('docker',docker),('rclone',rclone)]:
+            path=self.work/'bin'/name
+            path.write_text(text)
+            path.chmod(0o700)
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def execute(self, mode='success', **env):
+        return subprocess.run(['bash',str(self.task)], env=dict(self.env,MODE=mode,**env),capture_output=True,text=True,timeout=50)
+
+    def test_success_starts_database_first_and_cleans_work(self):
+        result=self.execute()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr+(self.work/'logs/run.log').read_text())
+        calls=(self.work/'calls').read_text()
+        self.assertLess(calls.index('docker start '+'b'*64),calls.index('docker start '+'a'*64))
+        self.assertNotIn('docker start '+'c'*64,calls)
+        self.assertFalse((self.work/'state/containers.pending').exists())
+        self.assertFalse(list((self.work/'work').glob('run.*')))
+
+    def test_inventory_larger_than_lock_partition(self):
+        result=self.execute('large')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertFalse(list((self.work/'locks').rglob('inventory.*')))
+
+    def test_sync_failure_still_restores_all_writers(self):
+        result=self.execute('sync-failure')
+        self.assertEqual(result.returncode,23,result.stdout+result.stderr)
+        state=json.loads((self.work/'state.json').read_text())
+        self.assertTrue(state['a'*64] and state['b'*64])
+        self.assertFalse((self.work/'logs/Fixture.last-success').exists())
+
+    def test_space_failure_does_not_stop_writers(self):
+        result=self.execute(DAIMON_BACKUP_MIN_FREE_BYTES=str(2**62))
+        self.assertNotEqual(result.returncode,0)
+        calls=(self.work/'calls').read_text() if (self.work/'calls').exists() else ''
+        self.assertNotIn('docker stop',calls)
+
+    def test_removed_legacy_ids_and_healthy_survivors_are_reconciled(self):
+        legacy=self.work/'locks/daimon-root'
+        legacy.mkdir()
+        (legacy/'containers.pending').write_text('d'*64+'\n'+'b'*64+'\n')
+        result=self.execute()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('RECOVERY_RECONCILED ready=1 removed=1',result.stdout)
+
+    def test_unresolved_legacy_stopped_container_blocks_without_starting(self):
+        legacy=self.work/'locks/daimon-root'
+        legacy.mkdir()
+        (legacy/'containers.pending').write_text('c'*64+'\n')
+        result=self.execute()
+        self.assertNotEqual(result.returncode,0)
+        self.assertTrue((legacy/'containers.pending').exists())
+        self.assertNotIn('docker start',(self.work/'calls').read_text())
 
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))

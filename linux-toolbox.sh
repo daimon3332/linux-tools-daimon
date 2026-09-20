@@ -22203,7 +22203,7 @@ crontab_sync_upgrade_installed() (
     trap 'rm -f -- "$stage"/*.sh; rmdir -- "$stage"' EXIT
     export DAIMON_SKIP_RUNNER_WRITE=1 DAIMON_UPGRADE_LOCKED=1
     export -f crontab_sync_write_script crontab_sync_root_name crontab_sync_backup_dir crontab_sync_log_dir
-    python3 - "$dir" "$stage" <<'PY'
+    python3 - "$dir" "$stage" <<'PY' || return 1
 import hashlib, os, re, subprocess, sys, tempfile
 from pathlib import Path
 root, stage = (Path(arg).resolve() for arg in sys.argv[1:])
@@ -22633,7 +22633,7 @@ if [ "$TASK_KIND" = root ]; then
     STATE_FILE="$STATE_DIR/containers.pending"
     # An old ID-only journal is reconciled only when every surviving container is ready.
     python3 - "$RUNTIME_DIR/daimon-root/containers.pending" "$STATE_FILE" <<'PYROOT'
-import json, os, re, subprocess, sys
+import json, os, re, subprocess, sys, time
 from pathlib import Path
 for path in dict.fromkeys(Path(p) for p in sys.argv[1:]):
     if not path.exists():
@@ -22648,14 +22648,36 @@ for path in dict.fromkeys(Path(p) for p in sys.argv[1:]):
         sys.exit('ERROR: Cannot inventory Docker; recovery journal retained')
     all_ids = live.stdout.splitlines()
     removed = []
+    metadata = path.with_name('writers.json')
+    known = json.loads(metadata.read_text()).get('names', {}) if metadata.exists() else {}
+    recovery = []
     for cid in ids:
         matches = [value for value in all_ids if value.startswith(cid)]
         if not matches:
             removed.append(cid)
             continue
         state = subprocess.run(['docker', 'inspect', '-f', '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}', cid], capture_output=True, text=True, timeout=30)
-        if state.returncode or state.stdout.strip() not in ('true none', 'true healthy'):
-            sys.exit('ERROR: Previous writer still needs recovery: ' + cid + '; journal retained')
+        if state.returncode:
+            sys.exit('ERROR: Cannot inspect previous writer; journal retained')
+        if state.stdout.strip() not in ('true none', 'true healthy'):
+            if cid not in known:
+                sys.exit('ERROR: Previous writer still needs recovery: ' + cid + '; journal retained')
+            recovery.append(cid)
+    for cid in recovery:
+        if subprocess.run(['docker','start',cid], stdout=subprocess.DEVNULL, timeout=60).returncode:
+            sys.exit('ERROR: Previous writer start failed; journal retained')
+    deadline = time.monotonic() + 180
+    while recovery:
+        pending = []
+        for cid in recovery:
+            state = subprocess.run(['docker','inspect','-f','{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}',cid],capture_output=True,text=True,timeout=30)
+            if state.returncode or state.stdout.strip() not in ('true none','true healthy'):
+                pending.append(cid)
+        if not pending: break
+        if time.monotonic() >= deadline:
+            sys.exit('ERROR: Previous writers not healthy; journal retained')
+        recovery = pending
+        time.sleep(1)
     audit = path.with_name('recovery-last.json')
     audit.write_text(json.dumps({'resolved_ids': ids, 'removed_ids': removed}))
     os.chmod(audit, 0o600)
@@ -22840,7 +22862,7 @@ run_transfer() {
     timeout --kill-after=30s 7d rclone "$@" >> "$LOG_FILE" 2>&1 &
     CHILD_PID=$!
     local rc=0
-    if [ "$TASK_KIND" = root ] && [ "$OWNS_STATE" = 1 ]; then
+    if [ "$TASK_KIND" = root ]; then
         while kill -0 "$CHILD_PID" 2>/dev/null; do
             if ! root_space_ok || ! verify_backup_state; then
                 stop_transfer
@@ -22882,6 +22904,33 @@ if ids:
             if os.path.commonpath((root,path)) in (root,path):
                 sys.exit('ERROR: Active/replaced writer during backup: ' + record['Name'])
 PYWRITERS
+    fi
+    if [ "$TASK_KIND" = root ]; then
+        python3 - "$SRC1" <<'PYHOST'
+import os, sys
+from pathlib import Path
+root = Path(sys.argv[1]).resolve()
+for proc in Path('/proc').glob('[0-9]*'):
+    try:
+        group = (proc/'cgroup').read_text()
+        if 'docker' in group or 'kubepods' in group or 'containerd' in group:
+            continue
+        for fd in (proc/'fd').iterdir():
+            try:
+                target = Path(os.readlink(fd))
+                if not target.is_absolute() or not target.is_relative_to(root) or not target.is_file():
+                    continue
+                relative = target.relative_to(root)
+                if relative.parts[0] in ('.cache','.npm','.nvm','emby') or any(part in ('logs','node_modules','.tmp') for part in relative.parts) or target.suffix in ('.log','.tmp','.temp'):
+                    continue
+                flags = next(line.split()[1] for line in (proc/'fdinfo'/fd.name).read_text().splitlines() if line.startswith('flags:'))
+                if int(flags,8) & 3:
+                    sys.exit('ERROR: Unmanaged host writer holds a writable file in backup source: pid=' + proc.name + ' path=' + str(relative))
+            except (FileNotFoundError,ProcessLookupError,PermissionError,StopIteration):
+                continue
+    except (FileNotFoundError,ProcessLookupError,PermissionError):
+        continue
+PYHOST
     fi
 }
 
@@ -22976,6 +23025,7 @@ while IFS= read -r id; do
     [ "${state%% *}" = false ] || { printf 'ERROR: 容器未停止: %s\n' "$id" >&2; exit 1; }
 done < <(if [ "$TASK_KIND" = root ]; then tac "$STATE_FILE"; else cat "$STATE_FILE"; fi)
 
+if [ "$TASK_KIND" = root ]; then verify_backup_state; fi
 backup_preflight >> "$LOG_FILE" 2>&1
 STAGE=primary_sync
 run_transfer sync "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
@@ -22992,6 +23042,12 @@ capture_generation() {
         "${FILTERS[@]}" "${NETWORK[@]}" > "$1" 2>> "$LOG_FILE" &
     CHILD_PID=$!
     local rc=0
+    if [ "$TASK_KIND" = root ]; then
+        while kill -0 "$CHILD_PID" 2>/dev/null; do
+            if ! root_space_ok || ! verify_backup_state; then stop_transfer; return 1; fi
+            sleep 5
+        done
+    fi
     wait "$CHILD_PID" || rc=$?
     CHILD_PID=""
     [ "$rc" -eq 0 ] || return "$rc"
