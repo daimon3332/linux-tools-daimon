@@ -38,6 +38,7 @@ echo "$*" >> "$FIXTURE/calls"
 case "$1" in
 show)
  if [ "$2" = stopped.service ]; then state=inactive; else state=$(cat "$FIXTURE/active"); fi
+ if [ -e "$FIXTURE/refuse-start" ]; then echo RefuseManualStart=yes; fi
  printf 'LoadState=loaded\\nActiveState=%s\\nCanStop=yes\\nRefuseManualStop=no\\nTriggeredBy=\\n' "$state" ;;
 stop) echo inactive > "$FIXTURE/active" ;;
 start) [ ! -e "$FIXTURE/fail" ] || exit 1; echo active > "$FIXTURE/active" ;;
@@ -71,6 +72,10 @@ esac
             (work/'active').write_text('active')
             self.assertNotEqual(run('verify').returncode,0)
             self.assertEqual(run('finish').returncode,0)
+            (work/'refuse-start').touch()
+            before=(work/'calls').read_text().count('stop app.service')
+            self.assertNotEqual(run('stop').returncode,0)
+            self.assertEqual((work/'calls').read_text().count('stop app.service'),before)
 
 
 class Recovery(unittest.TestCase):

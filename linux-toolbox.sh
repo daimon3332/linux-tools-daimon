@@ -22652,7 +22652,7 @@ def call(*args):
         raise RuntimeError('systemctl failed: ' + ' '.join(args[:2]))
     return result.stdout
 def state(unit):
-    values = dict(line.split('=',1) for line in call('show',unit,'--property=LoadState,ActiveState,CanStop,RefuseManualStop,TriggeredBy').splitlines() if '=' in line)
+    values = dict(line.split('=',1) for line in call('show',unit,'--property=LoadState,ActiveState,CanStop,RefuseManualStop,RefuseManualStart,TriggeredBy').splitlines() if '=' in line)
     if values.get('LoadState') != 'loaded':
         raise RuntimeError('Service is unavailable: ' + unit)
     return values
@@ -22674,7 +22674,7 @@ try:
             info = state(unit)
             if info.get('ActiveState') in ('inactive','failed'):
                 continue
-            if info.get('ActiveState') != 'active' or info.get('CanStop') != 'yes' or info.get('RefuseManualStop') == 'yes':
+            if info.get('ActiveState') != 'active' or info.get('CanStop') != 'yes' or info.get('RefuseManualStop') == 'yes' or info.get('RefuseManualStart') == 'yes':
                 raise RuntimeError('Service cannot be safely paused: ' + unit)
             if info.get('TriggeredBy'):
                 raise RuntimeError('Timer/socket-triggered services require a separate pause policy: ' + unit)
@@ -22706,8 +22706,7 @@ try:
         failed = []
         for unit in units:
             try:
-                if state(unit).get('ActiveState') != 'active':
-                    call('start',unit)
+                call('start',unit)
                 if state(unit).get('ActiveState') != 'active':
                     raise RuntimeError('Service did not become active')
             except (RuntimeError,subprocess.TimeoutExpired):
