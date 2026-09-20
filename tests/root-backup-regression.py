@@ -255,6 +255,7 @@ if op=='inspect':
    else:
     health='healthy' if cid!='a'*64 or state['b'*64] else 'starting'
     if mode=='unhealthy' and cid=='a'*64: health='unhealthy'
+    if mode=='warming' and cid=='a'*64 and not (p/'ready').exists(): health='starting'
     print(('true '+health) if state[cid] else 'false none')
  else:
   print(json.dumps([{'Id':cid,'Name':cid,'Mounts':[{'Type':'bind','Source':str(p/'src'),'RW':True}],
@@ -284,6 +285,7 @@ elif args[0] in ('sync','check'):
  if mode=='secondary-failure' and args[1].startswith('qq'): sys.exit(24)
  if mode=='writer-restart' and args[0]=='sync' and args[1]==str(p/'src'):
   state['a'*64]=True; (p/'state.json').write_text(json.dumps(state))
+ if mode=='warming' and args[0]=='check' and args[1].startswith('qq'): (p/'ready').touch()
 else: sys.exit(99)
 '''
         for name, text in [('docker',docker),('rclone',rclone)]:
@@ -393,6 +395,19 @@ else: sys.exit(99)
         self.assertFalse((self.work/'work/run.orphan').exists())
         self.assertTrue((self.work/'work/run.active').exists())
         self.assertTrue(unowned.exists())
+
+    def test_warming_writer_does_not_skip_verified_secondary_backup(self):
+        result=self.execute('warming')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertTrue((self.work/'logs/Fixture.last-success').exists())
+        self.assertFalse((self.work/'state/containers.pending').exists())
+
+    def test_persistent_unhealthy_writer_never_reports_full_success(self):
+        result=self.execute('unhealthy')
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.work/'logs/Fixture.last-success').exists())
+        self.assertTrue((self.work/'state/containers.pending').exists())
+        self.assertIn('secondary_verified=1',(self.work/'logs/run.log').read_text())
 
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))

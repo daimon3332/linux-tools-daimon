@@ -22594,7 +22594,7 @@ fi
 STAGE=preflight
 INVENTORY="" MOUNTS="" CHILD_PID="" GENERATION="" AFTER_GENERATION=""
 OWNS_STATE=0 BACKUP_OK=0
-WORK_DIR="" PRIMARY_VERIFIED=0
+WORK_DIR="" PRIMARY_VERIFIED=0 WRITERS_RESUMED=0
 FILTERS=(--exclude '/logs/**' --exclude '**/logs/**' --exclude '/*.log' --exclude '**/*.log'
     --exclude '/.migration-*/**' --exclude '**/.migration-*/**'
     --exclude '/.tmp/**' --exclude '**/.tmp/**')
@@ -22797,6 +22797,16 @@ recover_writers() {
     return "$recovery_failed"
 }
 
+writers_running() {
+    local id state
+    [ -f "$STATE_FILE" ] || return 1
+    while IFS= read -r id; do
+        [ -n "$id" ] || continue
+        state=$(container_state "$id") || return 1
+        [ "${state%% *}" = true ] || return 1
+    done < "$STATE_FILE"
+}
+
 restore_containers() {
     local rc=$? recovery_failed=0
     trap - EXIT
@@ -22820,7 +22830,7 @@ restore_containers() {
         fi
     else
         [ "$rc" -ne 0 ] || rc=1
-        printf 'ERROR: stage=%s rc=%s qq_verified=%s recovery_failed=%s\n' "$STAGE" "$rc" "$([ "$PRIMARY_VERIFIED" = 1 ] || [ -f "$PRIMARY_SUCCESS" ] && echo yes || echo no)" "$recovery_failed" >> "$LOG_FILE"
+        printf 'ERROR: stage=%s rc=%s qq_verified=%s secondary_verified=%s recovery_failed=%s\n' "$STAGE" "$rc" "$([ "$PRIMARY_VERIFIED" = 1 ] || [ -f "$PRIMARY_SUCCESS" ] && echo yes || echo no)" "$BACKUP_OK" "$recovery_failed" >> "$LOG_FILE"
     fi
     exit "$rc"
 }
@@ -22945,6 +22955,7 @@ verify_backup_state() {
         return 1
     fi
     [ "$OWNS_STATE" -eq 1 ] || return 0
+    [ "$WRITERS_RESUMED" -eq 0 ] || return 0
     while IFS= read -r id; do
         state=$(container_state "$id") || return
         [ "${state%% *}" = false ] || { printf 'ERROR: 备份期间容器被外部启动: %s\n' "$id" >&2; return 1; }
@@ -23142,14 +23153,21 @@ PY
 }
 capture_generation "$GENERATION"
 STAGE=recover_writers
-recover_writers
+if ! recover_writers; then
+    if [ "$TASK_KIND" = root ] && writers_running; then
+        WRITERS_RESUMED=1
+        printf 'WARN: 原运行容器均已启动，健康状态待确认；继续复制已校验的主备份，完成前再次验证健康。\n' >> "$LOG_FILE"
+    else
+        exit 1
+    fi
+fi
 if [ "$TASK_KIND" = root ]; then exec 6>&-; fi
 STAGE=primary_recheck
 capture_generation "$AFTER_GENERATION"
 cmp -s "$GENERATION" "$AFTER_GENERATION" || { echo 'ERROR: QQ backup changed after primary verification' >&2; exit 1; }
 date -Is > "$PRIMARY_SUCCESS"
 chmod 600 "$PRIMARY_SUCCESS"
-printf '===== %s QQ 校验完成，原运行容器已恢复 =====\n' "$(date -Is)" >> "$LOG_FILE"
+printf '===== %s QQ 校验完成，原容器已运行，待最终健康确认=%s =====\n' "$(date -Is)" "$WRITERS_RESUMED" >> "$LOG_FILE"
 STAGE=secondary_sync
 run_transfer sync "$PRIMARY" "$SECONDARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
