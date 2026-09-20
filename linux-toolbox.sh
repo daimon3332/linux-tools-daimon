@@ -22809,6 +22809,8 @@ PYSPACE
 if [ "$TASK_KIND" = root ]; then
     [[ "${DAIMON_RECOVERY_TIMEOUT:-180}" =~ ^[0-9]{1,4}$ ]] &&
         [ "${DAIMON_RECOVERY_TIMEOUT:-180}" -ge 1 ] && [ "${DAIMON_RECOVERY_TIMEOUT:-180}" -le 3600 ] || exit 1
+    for tool in findmnt realpath tac; do command -v "$tool" >/dev/null || { echo "ERROR: Missing root backup capability: $tool"; exit 1; }; done
+    python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 9) else "ERROR: Python 3.9+ required")'
     WORK_BASE="${DAIMON_BACKUP_WORK_DIR:-/var/tmp/daimon-root-backups}"
     [ ! -L "$WORK_BASE" ] || { echo 'ERROR: Work directory is a symlink'; exit 1; }
     install -d -m 700 "$WORK_BASE"
@@ -22818,7 +22820,31 @@ if [ "$TASK_KIND" = root ]; then
         exit 1
     fi
     WORK_DIR=$(mktemp -d "$WORK_BASE/run.XXXXXX")
-    touch "$WORK_DIR/.daimon-work"
+    printf '%s %s\n' "$$" "$(cat /proc/sys/kernel/random/boot_id)" > "$WORK_DIR/.daimon-work"
+    python3 - "$WORK_BASE" "$WORK_DIR" <<'PYCLEAN'
+import os, shutil, sys
+from pathlib import Path
+base, current = (Path(p).resolve() for p in sys.argv[1:])
+boot = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+for path in base.glob('run.*'):
+    if path == current or path.is_symlink() or not path.is_dir() or path.resolve().parent != base:
+        continue
+    marker = path / '.daimon-work'
+    if not marker.is_file() or marker.is_symlink():
+        continue
+    parts = marker.read_text().split()
+    if len(parts) != 2 or not parts[0].isdigit():
+        continue
+    if parts[1] == boot:
+        try:
+            os.kill(int(parts[0]), 0)
+            continue
+        except ProcessLookupError:
+            pass
+        except PermissionError:
+            continue
+    shutil.rmtree(path)
+PYCLEAN
     for path in "$WORK_BASE" "$STATE_DIR" "$LOG_DIR"; do
         case "$(realpath -m "$path")" in "$(realpath "$SRC1")"/*) FILTERS+=(--exclude "/${path#"$SRC1"/}/**") ;; esac
     done
