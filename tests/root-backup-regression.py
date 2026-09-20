@@ -133,6 +133,24 @@ class LogPolicy(unittest.TestCase):
             proc.wait(timeout=5)
             proc.stderr.close()
 
+    def test_readonly_log_mount_rejects_start(self):
+        if os.geteuid() != 0:
+            self.skipTest('private mount namespace requires root')
+        script = 'set -e\nmount -t tmpfs -o size=1m tmpfs "$1"\nmount -o remount,ro "$1"\n'
+        script += function('log_policy') + '\nif log_policy prepare "$1" "$2" "$3"; then exit 90; fi\n'
+        result = subprocess.run(['unshare','--mount','--propagation','private','bash','-c',script,'test',
+                                 str(self.runs),str(self.cache),str(self.active)],env=self.env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
+    def test_full_log_mount_rejects_start(self):
+        if os.geteuid() != 0:
+            self.skipTest('private mount namespace requires root')
+        script = 'set -e\nmount -t tmpfs -o size=16k tmpfs "$1"\ndd if=/dev/zero of="$1/business.bin" bs=4096 count=4 status=none\n'
+        script += function('log_policy') + '\nif log_policy prepare "$1" "$2" "$3"; then exit 90; fi\ntest -f "$1/business.bin"\n'
+        result = subprocess.run(['unshare','--mount','--propagation','private','bash','-c',script,'test',
+                                 str(self.runs),str(self.cache),str(self.active)],env=self.env,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux disk checks')
 class Space(unittest.TestCase):
@@ -207,6 +225,8 @@ elif args[0] in ('sync','check'):
  else: assert state['a'*64] and state['b'*64]
  if mode=='sync-failure' and args[0]=='sync': sys.exit(23)
  if mode=='secondary-failure' and args[1].startswith('qq'): sys.exit(24)
+ if mode=='writer-restart' and args[0]=='sync' and args[1]==str(p/'src'):
+  state['a'*64]=True; (p/'state.json').write_text(json.dumps(state))
 else: sys.exit(99)
 '''
         for name, text in [('docker',docker),('rclone',rclone)]:
@@ -263,6 +283,28 @@ else: sys.exit(99)
         self.assertNotEqual(result.returncode,0)
         self.assertTrue((legacy/'containers.pending').exists())
         self.assertNotIn('docker start',(self.work/'calls').read_text())
+
+    def test_persistent_journal_recovers_only_recorded_original_writer(self):
+        (self.work/'state.json').write_text(json.dumps({'a'*64:False,'b'*64:True,'c'*64:False}))
+        (self.work/'state/containers.pending').write_text('a'*64+'\n')
+        (self.work/'state/writers.json').write_text(json.dumps({'names':{'a'*64:'app'}}))
+        result=self.execute()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertNotIn('docker start '+'c'*64,(self.work/'calls').read_text())
+
+    def test_secondary_failure_preserves_primary_verified_result(self):
+        result=self.execute('secondary-failure')
+        self.assertEqual(result.returncode,24,result.stdout+result.stderr)
+        self.assertTrue((self.work/'logs/Fixture.qq-success').exists())
+        self.assertFalse((self.work/'logs/Fixture.last-success').exists())
+        self.assertIn('qq_verified=yes',(self.work/'logs/run.log').read_text())
+
+    def test_external_writer_restart_aborts_before_success(self):
+        result=self.execute('writer-restart')
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.work/'logs/Fixture.last-success').exists())
+        state=json.loads((self.work/'state.json').read_text())
+        self.assertTrue(state['a'*64] and state['b'*64])
 
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))

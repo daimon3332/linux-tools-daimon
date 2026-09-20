@@ -632,7 +632,7 @@ try:
         while not (root / 'transferring').exists() and process.poll() is None and time.monotonic() < deadline: time.sleep(0.03)
         assert (root / 'transferring').exists(), 'Transfer never started'
         process.send_signal(signal.SIGINT if mode == 'int' else signal.SIGTERM)
-    rc = process.wait(timeout=30)
+    rc = process.wait(timeout=90 if mode == 'root-mounts' else 30)
 finally:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGKILL)

@@ -6,6 +6,7 @@ AGENTS.md
 *.log
 *.tmp
 .tmp/
+__pycache__/
 .idea/
 .vscode/
 .DS_Store
