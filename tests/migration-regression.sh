@@ -490,6 +490,14 @@ if op == 'ps':
     print('\n'.join(key for key, value in state.items() if value))
 elif op == 'inspect':
     if mode == 'inspect-failure': sys.exit(18)
+    if '-f' not in args and '--format' not in args:
+        records = []
+        for key in args[1:]:
+            source = root / 'src' if key in ('a' * 64, 'b' * 64) else root / 'unrelated'
+            if mode == 'root-mounts' and key == 'c' * 64: source = root / 'src/emby'
+            records.append({'Id':key, 'Name':key, 'Config':{'Labels':{}}, 'Mounts':[{'Type':'bind','Source':str(source),'RW':True}]})
+        print(json.dumps(records))
+        sys.exit(0)
     fmt = args[args.index('-f') + 1] if '-f' in args else args[args.index('--format') + 1]
     for key in args[3:]:
         if key not in state: sys.exit(19)
@@ -606,6 +614,10 @@ command = ['bash', str(root / 'isolated.sh')]
 if mode == 'runner-term': command = ['bash', os.environ['DAIMON_RCLONE_RUNNER_FILE'], 'emby', str(root / 'isolated.sh')]
 output = (root / 'output').open('w')
 environment = os.environ.copy()
+if mode == 'root-mounts':
+    environment['DAIMON_ROOT_STATE_DIR'] = str(root / 'state')
+    environment['DAIMON_BACKUP_WORK_DIR'] = str(root / 'work')
+    environment['DAIMON_RUN_LOG'] = str(root / 'logs/task.log')
 environment.pop('DAIMON_EMBY_BWLIMIT', None)
 if mode == 'bandwidth-override': environment['DAIMON_EMBY_BWLIMIT'] = '768K'
 process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, start_new_session=True, env=environment)
@@ -620,7 +632,7 @@ try:
         while not (root / 'transferring').exists() and process.poll() is None and time.monotonic() < deadline: time.sleep(0.03)
         assert (root / 'transferring').exists(), 'Transfer never started'
         process.send_signal(signal.SIGINT if mode == 'int' else signal.SIGTERM)
-    rc = process.wait(timeout=12)
+    rc = process.wait(timeout=30)
 finally:
     if process.poll() is None:
         os.killpg(process.pid, signal.SIGKILL)

@@ -21871,17 +21871,106 @@ set -u
 TASK="${1:-custom}"
 SCRIPT="${2:-}"
 [ -x "$SCRIPT" ] || { printf '%s\n' "同步脚本不存在或不可执行: $SCRIPT" >&2; exit 126; }
+log_policy() {
+local log_exec=()
+[ "$1" != monitor ] || log_exec=(exec)
+"${log_exec[@]}" python3 - "$@" <<'PYLOG'
+import fcntl, os, re, signal, sys, time
+from pathlib import Path
+
+mode, directory, cache, filename = sys.argv[1:5]
+root, cache, active = Path(directory), Path(cache), Path(filename)
+limit = int(os.environ.get('DAIMON_LOG_FILE_BYTES', 8*1024*1024))
+budget = int(os.environ.get('DAIMON_LOG_TOTAL_BYTES', 128*1024*1024))
+reserve = int(os.environ.get('DAIMON_LOG_MIN_FREE_BYTES', 64*1024*1024))
+inodes = int(os.environ.get('DAIMON_LOG_MIN_FREE_INODES', 128))
+days = int(os.environ.get('DAIMON_LOG_RETENTION_DAYS', 30))
+if limit < 4096 or budget < 2*limit or reserve < 1 or inodes < 1 or days < 1:
+    sys.exit('ERROR: Invalid log space/retention policy')
+if root.is_symlink() or active.is_symlink() or cache.is_symlink() or active.parent != root:
+    sys.exit('ERROR: Unsafe log path')
+pattern = re.compile(r'\d{8}-\d{6}-\d+-[A-Za-z0-9_.-]+\.log')
+
+def prune():
+    with (root / '.retention.lock').open('a') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        files = [p for p in root.iterdir() if pattern.fullmatch(p.name) and not p.is_symlink() and p.is_file()]
+        files.sort(key=lambda p: p.stat().st_mtime)
+        total = sum(p.stat().st_size for p in files)
+        for path in files:
+            if path == active:
+                continue
+            info = path.stat()
+            free = os.statvfs(root)
+            if total + limit <= budget and time.time()-info.st_mtime <= days*86400 and free.f_bavail*free.f_frsize >= reserve+limit:
+                continue
+            with path.open('rb') as fd:
+                try:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    continue
+                path.unlink()
+                total -= info.st_size
+        if total + (limit if mode == 'prepare' else 0) > budget:
+            raise OSError('Owned log budget exhausted by active/recent logs')
+
+def space():
+    for path in (root, cache.parent):
+        info = os.statvfs(path)
+        if info.f_bavail*info.f_frsize < reserve or (info.f_files and info.f_favail < inodes):
+            raise OSError('Insufficient log bytes/inodes: ' + str(path))
+
+try:
+    if mode == 'prepare':
+        prune()
+        space()
+        with active.open('xb') as out:
+            out.write(b'LOG_POLICY_READY\n')
+            out.flush()
+            os.fsync(out.fileno())
+        os.chmod(active, 0o600)
+    else:
+        parent = int(sys.argv[5])
+        while True:
+            os.kill(parent, 0)
+            if active.stat().st_size > limit:
+                with active.open('r+b') as out:
+                    out.seek(-limit//2, os.SEEK_END)
+                    tail = out.read(limit//2).split(b'\n', 1)[-1]
+                    out.seek(0)
+                    out.write(b'LOG_ROTATED: older detail discarded by configured size limit\n' + tail)
+                    out.truncate()
+            prune()
+            space()
+            time.sleep(0.5)
+except (OSError, ValueError) as error:
+    print('ERROR: Log policy: ' + str(error), file=sys.stderr)
+    if mode != 'prepare':
+        try:
+            # O_APPEND producers keep the same inode after truncation.
+            with active.open('r+b') as out:
+                out.truncate(0)
+                out.write(b'ERROR: LOG_STORAGE_FAILURE; task cancelled; check writer recovery\n')
+            os.kill(parent, signal.SIGUSR1)
+        except OSError:
+            try: os.kill(parent, signal.SIGUSR1)
+            except OSError: pass
+    sys.exit(1)
+PYLOG
+}
 RUN_DIR="${DAIMON_RCLONE_RUN_LOG_DIR:-/var/log/rclone/runs}"
 CACHE_FILE="${DAIMON_RCLONE_STATUS_CACHE:-/var/cache/daimon/rclone-sync-status.tsv}"
 LOCK_FILE="${DAIMON_RCLONE_STATUS_LOCK:-/run/lock/daimon-rclone-status.lock}"
 mkdir -p "$RUN_DIR" "$(dirname "$CACHE_FILE")" "$(dirname "$LOCK_FILE")" || exit 1
 chmod 700 "$RUN_DIR" "$(dirname "$CACHE_FILE")" 2>/dev/null || true
-touch "$CACHE_FILE" && chmod 600 "$CACHE_FILE"
-find "$RUN_DIR" -maxdepth 1 -type f -name '*.log' -mtime +30 -delete 2>/dev/null || true
+command -v python3 >/dev/null 2>&1 || { echo 'ERROR: python3 required for bounded logs'; exit 1; }
+touch "$CACHE_FILE" && chmod 600 "$CACHE_FILE" || exit 1
 safe_task=$(printf '%s' "$TASK" | tr -c 'A-Za-z0-9_.-' '_')
 epoch=$(date +%s); started=$(date -Is)
 run_id="$(date +%Y%m%d-%H%M%S)-$$-$safe_task"
 run_log="$RUN_DIR/$run_id.log"
+log_policy prepare "$RUN_DIR" "$CACHE_FILE" "$run_log" || exit 1
+exec 10>>"$run_log"; flock -x 10 || exit 1
 exec 9>"$LOCK_FILE"; flock -x 9
 cutoff=$((epoch - 30 * 86400)); tmp_cache=$(mktemp "$CACHE_FILE.XXXXXX") || exit 1
 active_pids=" "
@@ -21898,7 +21987,7 @@ chmod 600 "$tmp_cache" && mv -f "$tmp_cache" "$CACHE_FILE" || { rm -f -- "$tmp_c
 flock -u 9
 export DAIMON_RUN_LOG="$run_log"
 printf '===== %s 开始任务=%s 脚本=%s =====\n' "$started" "$safe_task" "$SCRIPT" > "$run_log"; chmod 600 "$run_log"
-child_pid=""; interrupted=0
+child_pid=""; guard_pid=""; interrupted=0
 cancel_run() {
     interrupted="$1"
     trap '' INT TERM
@@ -21909,11 +21998,15 @@ cancel_run() {
 }
 trap 'cancel_run 130' INT
 trap 'cancel_run 143' TERM
+trap 'cancel_run 74' USR1
+log_policy monitor "$RUN_DIR" "$CACHE_FILE" "$run_log" "$$" >/dev/null 2>&1 & guard_pid=$!
 "$SCRIPT" >> "$run_log" 2>&1 & child_pid=$!
 wait "$child_pid"; rc=$?
 [ "$interrupted" -eq 0 ] || rc="$interrupted"
 child_pid=""
-trap - INT TERM
+kill "$guard_pid" 2>/dev/null || true
+wait "$guard_pid" 2>/dev/null || true
+trap - INT TERM USR1
 finished=$(date -Is); end_epoch=$(date +%s); duration=$((end_epoch - epoch))
 status="成功"; reason="-"
 if [ "$rc" -eq 130 ] || [ "$rc" -eq 143 ]; then
@@ -21922,6 +22015,7 @@ elif [ "$rc" -ne 0 ]; then
     status="失败"
     reason=$(grep -Ei 'error|failed|fatal|denied|timeout|cannot|无法|失败' "$run_log" 2>/dev/null | tail -n 1 | tr '\t\r\n' '   ' | sed -E -e 's/([Bb]earer[[:space:]]+)[^[:space:]]+/\1[REDACTED]/g' -e 's/((access_token|refresh_token|client_secret|tempauth|password)"?[[:space:]]*[=:][[:space:]]*"?)[^"[:space:]&,}]+/\1[REDACTED]/Ig' | cut -c1-240)
     reason=${reason:-"脚本退出码 $rc"}
+    [ "$interrupted" != 74 ] || reason='日志空间或写入故障，任务已取消；请核对服务恢复'
 elif grep -Eiq '已有 .*运行.*跳过|已有.*运行，跳过' "$run_log"; then
     status="被锁跳过"; reason="检测到已有同类任务运行"
 elif grep -Eiq 'Duplicate (directory|file|object) found in (source|destination) - ignoring' "$run_log"; then
@@ -21949,6 +22043,7 @@ crontab_sync_write_run_tools() { crontab_sync_write_runner "$(crontab_sync_runne
 
 crontab_sync_log_sanitize() {
 	sed -E \
+		-e 's@(https?://[^[:space:]"?]+)\?[^[:space:]"]*@\1?[REDACTED]@g' \
 		-e 's/([Bb]earer[[:space:]]+)[^[:space:]]+/\1[REDACTED]/g' \
 		-e 's/((access_token|refresh_token|client_secret|tempauth|password)"?[[:space:]]*[=:][[:space:]]*"?)[^"[:space:]&,}]+/\1[REDACTED]/Ig' "$1"
 }
@@ -22219,6 +22314,7 @@ except BaseException:
     raise
 print('BACKUP_UPGRADE updated=' + ','.join(p.name for p in changes) + ' removed=' + ','.join(p.name for p in obsolete))
 PY
+    crontab_sync_write_run_tools
 )
 
 crontab_sync_script_file_by_id() {
@@ -22490,9 +22586,15 @@ STATE_DIR="$RUNTIME_DIR/daimon-$TASK_KIND"
 STATE_FILE="$STATE_DIR/containers.pending"
 SUCCESS_FILE="$LOG_DIR/${BACKUP_NAME}.last-success"
 PRIMARY_SUCCESS="$LOG_DIR/${BACKUP_NAME}.qq-success"
+if [ "$TASK_KIND" = root ] && [ -z "${DAIMON_RUN_LOG:-}" ]; then
+    runner="$(dirname "$(readlink -f "$0")")/.rclone-runner.sh"
+    [ -x "$runner" ] || { echo 'ERROR: Missing bounded-log runner; update the installed backup task'; exit 1; }
+    exec bash "$runner" root "$0"
+fi
 STAGE=preflight
 INVENTORY="" MOUNTS="" CHILD_PID="" GENERATION="" AFTER_GENERATION=""
 OWNS_STATE=0 BACKUP_OK=0
+WORK_DIR="" PRIMARY_VERIFIED=0
 FILTERS=(--exclude '/logs/**' --exclude '**/logs/**' --exclude '/*.log' --exclude '**/*.log'
     --exclude '/.migration-*/**' --exclude '**/.migration-*/**'
     --exclude '/.tmp/**' --exclude '**/.tmp/**')
@@ -22524,6 +22626,43 @@ flock -n 9 || { printf '%s\n' "已有 $BACKUP_NAME 备份运行，跳过本次�
 exec 8>"$GLOBAL_LOCK_FILE"
 flock -x 8
 install -d -m 700 "$STATE_DIR"
+if [ "$TASK_KIND" = root ]; then
+    STATE_DIR="${DAIMON_ROOT_STATE_DIR:-/var/lib/daimon/root-backups/$BACKUP_NAME}"
+    [ ! -L "$STATE_DIR" ] || { echo 'ERROR: Recovery directory is a symlink'; exit 1; }
+    install -d -m 700 "$STATE_DIR"
+    STATE_FILE="$STATE_DIR/containers.pending"
+    # An old ID-only journal is reconciled only when every surviving container is ready.
+    python3 - "$RUNTIME_DIR/daimon-root/containers.pending" "$STATE_FILE" <<'PYROOT'
+import json, os, re, subprocess, sys
+from pathlib import Path
+for path in dict.fromkeys(Path(p) for p in sys.argv[1:]):
+    if not path.exists():
+        continue
+    if path.is_symlink() or not path.is_file():
+        sys.exit('ERROR: Unsafe recovery journal')
+    ids = path.read_text().splitlines()
+    if any(not re.fullmatch('[a-f0-9]{12,64}', cid) for cid in ids):
+        sys.exit('ERROR: Invalid recovery journal; manual review required')
+    live = subprocess.run(['docker', 'ps', '-aq', '--no-trunc'], capture_output=True, text=True, timeout=30)
+    if live.returncode:
+        sys.exit('ERROR: Cannot inventory Docker; recovery journal retained')
+    all_ids = live.stdout.splitlines()
+    removed = []
+    for cid in ids:
+        matches = [value for value in all_ids if value.startswith(cid)]
+        if not matches:
+            removed.append(cid)
+            continue
+        state = subprocess.run(['docker', 'inspect', '-f', '{{.State.Running}} {{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}', cid], capture_output=True, text=True, timeout=30)
+        if state.returncode or state.stdout.strip() not in ('true none', 'true healthy'):
+            sys.exit('ERROR: Previous writer still needs recovery: ' + cid + '; journal retained')
+    audit = path.with_name('recovery-last.json')
+    audit.write_text(json.dumps({'resolved_ids': ids, 'removed_ids': removed}))
+    os.chmod(audit, 0o600)
+    path.unlink()
+    print('RECOVERY_RECONCILED ready=' + str(len(ids)-len(removed)) + ' removed=' + str(len(removed)))
+PYROOT
+fi
 [ ! -e "$STATE_FILE" ] || { printf 'ERROR: 存在待恢复容器清单，确认恢复后再重试: %s\n' "$STATE_FILE" >> "$LOG_FILE"; exit 1; }
 rm -f -- "$SUCCESS_FILE" "$PRIMARY_SUCCESS"
 if [ "$TASK_KIND" = root ] && [ -d "$SRC1/linux-daimon/backup/nginx-domain" ]; then
@@ -22544,8 +22683,34 @@ stop_transfer() {
 }
 
 recover_writers() {
-    local id state deadline recovery_failed=0
+    local id state deadline recovery_failed=0 LOG_FILE="$LOG_FILE"
     if [ "$OWNS_STATE" -eq 1 ]; then
+        if [ "$TASK_KIND" = root ]; then
+            # Recovery must remain executable even when the log filesystem fails.
+            LOG_FILE=/dev/null
+        fi
+        if [ "$TASK_KIND" = root ]; then
+            # Start every original writer before waiting for readiness of any writer.
+            while IFS= read -r id; do
+                [ -n "$id" ] || continue
+                if [ -f "${STATE_DIR:-}/dependencies.tsv" ]; then
+                    local dependency
+                    for dependency in $(awk -v id="$id" '$1==id {for(i=2;i<=NF;i++) print $i}' "$STATE_DIR/dependencies.tsv"); do
+                        deadline=$((SECONDS + ${DAIMON_RECOVERY_TIMEOUT:-180}))
+                        while true; do
+                            state=$(container_state "$dependency") || state=""
+                            case "$state" in 'true healthy'|'true none') break ;; esac
+                            [ "$SECONDS" -lt "$deadline" ] || { recovery_failed=1; break; }
+                            sleep 1
+                        done
+                    done
+                fi
+                state=$(container_state "$id") || state=""
+                if [ "${state%% *}" != true ]; then
+                    timeout 60s docker start "$id" >> "$LOG_FILE" 2>&1 || recovery_failed=1
+                fi
+            done < "$STATE_FILE"
+        fi
         while IFS= read -r id; do
             [ -n "$id" ] || continue
             state=$(container_state "$id") || state=""
@@ -22553,11 +22718,12 @@ recover_writers() {
                 timeout 60s docker start "$id" >> "$LOG_FILE" 2>&1 || { recovery_failed=1; continue; }
             fi
             deadline=$((SECONDS + 60))
+            if [ "$TASK_KIND" = root ]; then deadline=$((SECONDS + ${DAIMON_RECOVERY_TIMEOUT:-180})); fi
             while true; do
                 state=$(container_state "$id") || state=""
                 case "$state" in 'true none'|'true healthy') break ;; esac
-                if [ "$SECONDS" -ge "$deadline" ] || [ "$state" != 'true starting' ]; then
-                    printf 'ERROR: 备份相关容器恢复验证失败: %s (%s)\n' "$id" "$state" >> "$LOG_FILE"
+                if [ "$SECONDS" -ge "$deadline" ] || { [ "$TASK_KIND" != root ] && [ "$state" != 'true starting' ]; }; then
+                    printf 'ERROR: 备份相关容器恢复验证失败: %s (%s)\n' "$id" "$state" >&2
                     recovery_failed=1
                     break
                 fi
@@ -22567,7 +22733,7 @@ recover_writers() {
         if [ "$recovery_failed" -eq 0 ]; then
             if rm -f -- "$STATE_FILE"; then OWNS_STATE=0; else recovery_failed=1; fi
         else
-            printf 'ERROR: 请检查并恢复清单中的原运行容器: %s\n' "$STATE_FILE" >> "$LOG_FILE"
+            printf 'ERROR: 请检查并恢复清单中的原运行容器: %s\n' "$STATE_FILE" >&2
         fi
     fi
     return "$recovery_failed"
@@ -22584,6 +22750,9 @@ restore_containers() {
     [ -z "$MOUNTS" ] || rm -f -- "$MOUNTS"
     [ -z "$GENERATION" ] || rm -f -- "$GENERATION"
     [ -z "$AFTER_GENERATION" ] || rm -f -- "$AFTER_GENERATION"
+    if [ -n "$WORK_DIR" ]; then
+        case "$(realpath -m "$WORK_DIR")" in "$(realpath -m "$WORK_BASE")"/run.*) [ -f "$WORK_DIR/.daimon-work" ] && rm -rf -- "$WORK_DIR" ;; esac
+    fi
     if [ "$rc" -eq 0 ] && [ "$BACKUP_OK" -eq 1 ] && [ "$recovery_failed" -eq 0 ]; then
         if date -Is > "$SUCCESS_FILE" && chmod 600 "$SUCCESS_FILE"; then
             printf '===== %s %s 双备份完成 =====\n' "$(date -Is)" "$BACKUP_NAME" >> "$LOG_FILE"
@@ -22593,7 +22762,7 @@ restore_containers() {
         fi
     else
         [ "$rc" -ne 0 ] || rc=1
-        printf 'ERROR: stage=%s rc=%s qq_verified=%s recovery_failed=%s\n' "$STAGE" "$rc" "$([ -f "$PRIMARY_SUCCESS" ] && echo yes || echo no)" "$recovery_failed" >> "$LOG_FILE"
+        printf 'ERROR: stage=%s rc=%s qq_verified=%s recovery_failed=%s\n' "$STAGE" "$rc" "$([ "$PRIMARY_VERIFIED" = 1 ] || [ -f "$PRIMARY_SUCCESS" ] && echo yes || echo no)" "$recovery_failed" >> "$LOG_FILE"
     fi
     exit "$rc"
 }
@@ -22601,8 +22770,43 @@ trap restore_containers EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
+root_space_ok() {
+    python3 - "$WORK_BASE" "$STATE_DIR" "$LOG_DIR" <<'PYSPACE'
+import os, sys
+minimum = int(os.environ.get('DAIMON_BACKUP_MIN_FREE_BYTES', 256*1024*1024))
+inodes = int(os.environ.get('DAIMON_BACKUP_MIN_FREE_INODES', 128))
+if minimum < 1 or inodes < 1:
+    sys.exit('ERROR: Invalid backup space budget')
+for directory in sys.argv[1:]:
+    stat = os.statvfs(directory)
+    if stat.f_bavail * stat.f_frsize < minimum or (stat.f_files and stat.f_favail < inodes):
+        sys.exit('ERROR: Insufficient backup bytes/inodes: ' + directory)
+PYSPACE
+}
+
+if [ "$TASK_KIND" = root ]; then
+    [[ "${DAIMON_RECOVERY_TIMEOUT:-180}" =~ ^[0-9]{1,4}$ ]] &&
+        [ "${DAIMON_RECOVERY_TIMEOUT:-180}" -ge 1 ] && [ "${DAIMON_RECOVERY_TIMEOUT:-180}" -le 3600 ] || exit 1
+    WORK_BASE="${DAIMON_BACKUP_WORK_DIR:-/var/tmp/daimon-root-backups}"
+    [ ! -L "$WORK_BASE" ] || { echo 'ERROR: Work directory is a symlink'; exit 1; }
+    install -d -m 700 "$WORK_BASE"
+    root_space_ok
+    if [ "$(findmnt -n -o FSTYPE -T "$WORK_BASE")" = tmpfs ]; then
+        echo 'ERROR: Backup inventory requires a disk-backed work directory'
+        exit 1
+    fi
+    WORK_DIR=$(mktemp -d "$WORK_BASE/run.XXXXXX")
+    touch "$WORK_DIR/.daimon-work"
+    for path in "$WORK_BASE" "$STATE_DIR" "$LOG_DIR"; do
+        case "$(realpath -m "$path")" in "$(realpath "$SRC1")"/*) FILTERS+=(--exclude "/${path#"$SRC1"/}/**") ;; esac
+    done
+    FILTERS+=(--exclude '/linux-daimon/tests/**' --exclude '/linux-daimon/audit-*/**')
+    NETWORK+=(--no-update-dir-modtime)
+fi
+
 backup_preflight() {
     [ -d "$SRC1" ] && [ -r "$SRC1" ] || { printf 'ERROR: 备份源目录不存在或不可读: %s\n' "$SRC1" >&2; return 1; }
+    if [ "$TASK_KIND" = root ]; then root_space_ok || return 1; fi
     rclone lsjson "$SRC1" --recursive "${FILTERS[@]}" > "$INVENTORY" || return
     python3 - "$INVENTORY" <<'PY'
 import json
@@ -22636,6 +22840,15 @@ run_transfer() {
     timeout --kill-after=30s 7d rclone "$@" >> "$LOG_FILE" 2>&1 &
     CHILD_PID=$!
     local rc=0
+    if [ "$TASK_KIND" = root ] && [ "$OWNS_STATE" = 1 ]; then
+        while kill -0 "$CHILD_PID" 2>/dev/null; do
+            if ! root_space_ok || ! verify_backup_state; then
+                stop_transfer
+                return 1
+            fi
+            sleep 5
+        done
+    fi
     wait "$CHILD_PID" || rc=$?
     CHILD_PID=""
     return "$rc"
@@ -22652,10 +22865,28 @@ verify_backup_state() {
         state=$(container_state "$id") || return
         [ "${state%% *}" = false ] || { printf 'ERROR: 备份期间容器被外部启动: %s\n' "$id" >&2; return 1; }
     done < "$STATE_FILE"
+    if [ "$TASK_KIND" = root ] && command -v docker >/dev/null 2>&1; then
+        python3 - "$SRC1" <<'PYWRITERS'
+import json, os, subprocess, sys
+root = os.path.realpath(sys.argv[1])
+ids = subprocess.check_output(['docker','ps','-q'], text=True, timeout=30).split()
+if ids:
+    records = json.loads(subprocess.check_output(['docker','inspect',*ids], timeout=30))
+    for record in records:
+        for mount in record['Mounts']:
+            if mount['Type'] != 'bind' or not mount.get('RW'):
+                continue
+            path = os.path.realpath(mount['Source'])
+            if os.path.commonpath((root + '/emby', path)) == root + '/emby':
+                continue
+            if os.path.commonpath((root,path)) in (root,path):
+                sys.exit('ERROR: Active/replaced writer during backup: ' + record['Name'])
+PYWRITERS
+    fi
 }
 
-INVENTORY=$(mktemp "$STATE_DIR/inventory.XXXXXX")
-MOUNTS=$(mktemp "$STATE_DIR/mounts.XXXXXX")
+INVENTORY=$(mktemp "${WORK_DIR:-$STATE_DIR}/inventory.XXXXXX")
+MOUNTS=$(mktemp "${WORK_DIR:-$STATE_DIR}/mounts.XXXXXX")
 printf '===== %s 开始 %s 一致性备份 =====\n' "$(date -Is)" "$BACKUP_NAME" >> "$LOG_FILE"
 backup_preflight >> "$LOG_FILE" 2>&1
 ids=""
@@ -22694,13 +22925,56 @@ with open(sys.argv[2], encoding="utf-8") as source:
                 break
 with open(sys.argv[3], "x", encoding="utf-8") as target:
     target.writelines(container + "\n" for container in selected)
+    target.flush()
+    os.fsync(target.fileno())
 PY
 OWNS_STATE=1
+if [ "$TASK_KIND" = root ] && [ -s "$STATE_FILE" ]; then
+    python3 - "$STATE_FILE" "$STATE_DIR" <<'PYORDER'
+import json, os, subprocess, sys
+from pathlib import Path
+path, directory = Path(sys.argv[1]), Path(sys.argv[2])
+ids = path.read_text().splitlines()
+records = json.loads(subprocess.check_output(['docker','inspect',*ids], timeout=30))
+services = {}
+for item in records:
+    labels = item['Config'].get('Labels') or {}
+    services[(labels.get('com.docker.compose.project'),labels.get('com.docker.compose.service'))] = item['Id']
+deps = {}
+names = {}
+for item in records:
+    labels = item['Config'].get('Labels') or {}
+    cid = item['Id']
+    names[cid] = item['Name']
+    deps[cid] = []
+    for dependency in labels.get('com.docker.compose.depends_on','').split(','):
+        other = services.get((labels.get('com.docker.compose.project'),dependency.split(':')[0]))
+        if other and other != cid:
+            deps[cid].append(other)
+ordered, visiting = [], set()
+def visit(cid):
+    if cid in ordered: return
+    if cid in visiting: sys.exit('ERROR: Cyclic writer dependencies')
+    visiting.add(cid)
+    for dep in deps[cid]: visit(dep)
+    visiting.remove(cid)
+    ordered.append(cid)
+for cid in ids: visit(cid)
+for target, content in (
+    (directory/'dependencies.tsv', ''.join(cid+'\t'+'\t'.join(deps[cid])+'\n' for cid in ordered)),
+    (directory/'writers.json', json.dumps({'names':names,'dependencies':deps})),
+    (path, ''.join(cid+'\n' for cid in ordered))):
+    tmp = target.with_suffix(target.suffix + '.tmp')
+    with tmp.open('w') as out:
+        out.write(content); out.flush(); os.fsync(out.fileno())
+    os.replace(tmp,target)
+PYORDER
+fi
 while IFS= read -r id; do
     timeout 60s docker stop --timeout 30 "$id" >> "$LOG_FILE" 2>&1
     state=$(container_state "$id")
     [ "${state%% *}" = false ] || { printf 'ERROR: 容器未停止: %s\n' "$id" >&2; exit 1; }
-done < "$STATE_FILE"
+done < <(if [ "$TASK_KIND" = root ]; then tac "$STATE_FILE"; else cat "$STATE_FILE"; fi)
 
 backup_preflight >> "$LOG_FILE" 2>&1
 STAGE=primary_sync
@@ -22709,8 +22983,10 @@ verify_backup_state
 STAGE=primary_check
 run_transfer check "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
-GENERATION=$(mktemp "$STATE_DIR/qq-generation.XXXXXX")
-AFTER_GENERATION=$(mktemp "$STATE_DIR/qq-after.XXXXXX")
+PRIMARY_VERIFIED=1
+printf 'PRIMARY_VERIFIED: content check passed\n' >> "$LOG_FILE"
+GENERATION=$(mktemp "${WORK_DIR:-$STATE_DIR}/qq-generation.XXXXXX")
+AFTER_GENERATION=$(mktemp "${WORK_DIR:-$STATE_DIR}/qq-after.XXXXXX")
 capture_generation() {
     timeout --kill-after=30s 7d rclone lsjson "$PRIMARY" --recursive --files-only --hash \
         "${FILTERS[@]}" "${NETWORK[@]}" > "$1" 2>> "$LOG_FILE" &
