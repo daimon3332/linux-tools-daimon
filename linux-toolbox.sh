@@ -22932,10 +22932,11 @@ if ids:
 PYWRITERS
     fi
     if [ "$TASK_KIND" = root ]; then
-        python3 - "$SRC1" <<'PYHOST'
-import os, sys
+        python3 - "$SRC1" "${FILTERS[@]}" <<'PYHOST'
+import fnmatch, os, sys
 from pathlib import Path
 root = Path(sys.argv[1]).resolve()
+patterns = [sys.argv[i+1] for i in range(2,len(sys.argv)-1) if sys.argv[i]=='--exclude']
 for proc in Path('/proc').glob('[0-9]*'):
     try:
         group = (proc/'cgroup').read_text()
@@ -22947,6 +22948,9 @@ for proc in Path('/proc').glob('[0-9]*'):
                 if not target.is_absolute() or not target.is_relative_to(root) or not target.is_file():
                     continue
                 relative = target.relative_to(root)
+                if any(fnmatch.fnmatchcase('/'+relative.as_posix(), pattern) or
+                       fnmatch.fnmatchcase(relative.as_posix(),pattern) for pattern in patterns):
+                    continue
                 if relative.parts[0] in ('.cache','.npm','.nvm','emby') or any(part in ('logs','node_modules','.tmp') for part in relative.parts) or target.suffix in ('.log','.tmp','.temp'):
                     continue
                 flags = next(line.split()[1] for line in (proc/'fdinfo'/fd.name).read_text().splitlines() if line.startswith('flags:'))

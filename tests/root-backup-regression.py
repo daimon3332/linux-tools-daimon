@@ -306,6 +306,20 @@ else: sys.exit(99)
         state=json.loads((self.work/'state.json').read_text())
         self.assertTrue(state['a'*64] and state['b'*64])
 
+    def test_excluded_backup_lock_is_not_a_host_writer(self):
+        lock=self.work/'src/linux-daimon/backup/nginx-domain/.bundle.lock'
+        lock.parent.mkdir(parents=True)
+        with lock.open('w'):
+            result=self.execute()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+
+    def test_unmanaged_host_database_writer_is_rejected(self):
+        database=self.work/'src/live.sqlite'
+        with database.open('w'):
+            result=self.execute()
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Unmanaged host writer',result.stderr)
+
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))
         result = subprocess.run(['bash', '-c', 'WORK_BASE=/tmp STATE_DIR=/tmp LOG_DIR=/tmp\n' +
