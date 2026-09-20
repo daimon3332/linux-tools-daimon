@@ -22621,6 +22621,16 @@ if [ "$TASK_KIND" = root ]; then
 fi
 NETWORK=(--bwlimit=0 --transfers=4 --checkers=8 --contimeout=30s --timeout=2m --retries=3 --low-level-retries=2
     --log-file="$LOG_FILE" --log-level INFO)
+if [ "$TASK_KIND" = root ]; then
+    backup_transfers=${DAIMON_ROOT_TRANSFERS:-4}
+    backup_checkers=${DAIMON_ROOT_CHECKERS:-8}
+    [[ "$backup_transfers" =~ ^[1-9][0-9]?$ ]] && [ "$backup_transfers" -le 32 ] &&
+        [[ "$backup_checkers" =~ ^[1-9][0-9]?$ ]] && [ "$backup_checkers" -le 64 ] || {
+        echo 'ERROR: Root transfers must be 1-32 and checkers 1-64'; exit 1;
+    }
+    NETWORK[1]="--transfers=$backup_transfers"
+    NETWORK[2]="--checkers=$backup_checkers"
+fi
 
 for tool in flock python3 rclone timeout; do
     command -v "$tool" >/dev/null 2>&1 || { printf 'ERROR: 缺少依赖 %s\n' "$tool" >&2; exit 1; }

@@ -333,6 +333,8 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 | `DAIMON_ROOT_STATE_DIR` | `/var/lib/daimon/root-backups/<服务器名>` | 持久恢复状态目录 |
 | `DAIMON_BACKUP_MIN_FREE_BYTES` | 268435456 | 备份工作/状态/日志目录最低剩余空间 |
 | `DAIMON_BACKUP_MIN_FREE_INODES` | 128 | 备份最低剩余 inode |
+| `DAIMON_ROOT_TRANSFERS` | 4 | root 并行传输数，允许 1–32；提高会增加内存和远端请求压力 |
+| `DAIMON_ROOT_CHECKERS` | 8 | root 并行检查数，允许 1–64 |
 | `DAIMON_RECOVERY_TIMEOUT` | 自动计算 | 按容器启动宽限、检查间隔、超时和重试数计算 180–3600 秒；显式设置可覆盖为 1–3600 秒 |
 
 预算通过启动任务的环境设置；降低阈值不能解决实际容量不足。此流程依赖 Linux、Bash、Python 3.9+、util-linux、rclone，Docker 数据还需可用 Docker daemon。云厂商和 CPU 架构不写死；能力或一致性检查不通过会拒绝继续。

@@ -405,9 +405,10 @@ esac
 
     def test_host_service_resumes_before_secondary(self):
         self.service_fixture()
-        result=self.execute()
+        result=self.execute(DAIMON_ROOT_TRANSFERS='16',DAIMON_ROOT_CHECKERS='32')
         self.assertEqual(result.returncode,0,result.stdout+result.stderr+(self.work/'logs/run.log').read_text())
         calls=(self.work/'calls').read_text()
+        self.assertIn('--transfers=16 --checkers=32',calls)
         self.assertLess(calls.index('systemctl stop'),calls.index('docker stop'))
         self.assertLess(calls.index('systemctl start'),calls.index('rclone sync qq'))
         self.assertEqual((self.work/'service-active').read_text().strip(),'active')
@@ -419,6 +420,13 @@ esac
         self.assertNotEqual(result.returncode,0)
         self.assertEqual((self.work/'service-active').read_text().strip(),'active')
         self.assertFalse((self.work/'state/services.pending').exists())
+
+    def test_invalid_concurrency_does_not_pause_services(self):
+        self.service_fixture()
+        result=self.execute(DAIMON_ROOT_TRANSFERS='999')
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual((self.work/'service-active').read_text(),'active')
+        self.assertFalse((self.work/'calls').exists())
 
     def test_inventory_larger_than_lock_partition(self):
         result=self.execute('large')
