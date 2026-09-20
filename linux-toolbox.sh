@@ -23168,13 +23168,13 @@ STAGE=primary_sync
 run_transfer sync "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
 if [ -n "$CREDENTIAL_ROOT" ]; then
-    run_transfer copy "$CREDENTIAL_ROOT" "$PRIMARY" "${NETWORK[@]}"
+    run_transfer copy "$CREDENTIAL_ROOT" "$PRIMARY" --no-traverse "${NETWORK[@]}"
 fi
 STAGE=primary_check
 run_transfer check "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
 if [ -n "$CREDENTIAL_ROOT" ]; then
-    run_transfer check "$CREDENTIAL_ROOT" "$PRIMARY" --one-way "${NETWORK[@]}"
+    run_transfer check "$CREDENTIAL_ROOT" "$PRIMARY" --one-way --files-from "$WORK_DIR/credential.path" "${NETWORK[@]}"
     verify_backup_state
 fi
 PRIMARY_VERIFIED=1
