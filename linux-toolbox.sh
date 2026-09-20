@@ -22768,6 +22768,11 @@ recover_writers() {
                     timeout 60s docker start "$id" >> "$LOG_FILE" 2>&1 || recovery_failed=1
                 fi
             done < "$STATE_FILE"
+            if [ "${1:-}" = start-only ]; then
+                writers_running || return 1
+                WRITERS_RESUMED=1
+                return 0
+            fi
         fi
         while IFS= read -r id; do
             [ -n "$id" ] || continue
@@ -23153,7 +23158,8 @@ PY
 }
 capture_generation "$GENERATION"
 STAGE=recover_writers
-if ! recover_writers; then
+if [ "$TASK_KIND" = root ]; then recovery_mode=start-only; else recovery_mode=health; fi
+if ! recover_writers "$recovery_mode"; then
     if [ "$TASK_KIND" = root ] && writers_running; then
         WRITERS_RESUMED=1
         printf 'WARN: 原运行容器均已启动，健康状态待确认；继续复制已校验的主备份，完成前再次验证健康。\n' >> "$LOG_FILE"
