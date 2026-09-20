@@ -310,7 +310,30 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 
 ### crontab同步脚本管理
 
-同步脚本采用原子写入并传播 rclone 失败。所有定时和手动 `/root` 执行都经过 `/root/linux-daimon/backup-sh/.rclone-runner.sh`，记录状态到 `/var/cache/daimon/rclone-sync-status.tsv`，独立日志放在 `/var/log/rclone/runs`。状态缓存默认保留 30 天，菜单默认显示最近 15 次；失败记录包含退出码和脱敏原因，复制使用 OSC 52/cpcat，导出文件使用 600 权限。已生成的旧脚本需通过原菜单重新配置才会更新；更新主脚本不会立即运行生产备份或云端同步。
+同步脚本采用原子写入并传播 rclone 失败。所有定时和手动 `/root` 执行都经过 `/root/linux-daimon/backup-sh/.rclone-runner.sh`，记录状态到 `/var/cache/daimon/rclone-sync-status.tsv`，独立日志放在 `/var/log/rclone/runs`。状态缓存默认保留 30 天，菜单默认显示最近 15 次；失败记录包含退出码和脱敏原因，复制使用 OSC 52/cpcat，导出文件使用 600 权限。受管 root 任务通过内置升级更新，未知自定义脚本保持不变；更新主脚本不会立即运行生产备份或云端同步。
+
+升级保留服务器名称和原定时。锁仍放在 `/run/lock`，大清单使用磁盘目录 `/var/tmp/daimon-root-backups`，恢复清单保存在 `/var/lib/daimon/root-backups/<服务器名>`。按现有 Compose 依赖先恢复依赖服务，仅启动备份前运行的容器；传输期间检测外部启动/替换及宿主机可写文件句柄，发现无法保证一致性时失败并恢复。未知宿主机写入者需要另行停止或采用数据库原生备份，不能保证扫描能发现所有短暂写入。
+
+主备份内容校验后，先恢复原运行容器，再复制到第二个远端，让服务预热与复制并行；最终健康检查通过才记录整体成功。Compose 的 `service_started` 仅要求依赖已运行，`service_healthy` 要求依赖健康。rclone 配置如在备份范围内，使用权限受限的临时副本上传并单独校验，避免令牌自动刷新造成内容不一致；不替换正在使用的配置，结束后清理副本。
+
+可在任务目录的 `.root-backup.exclude` 中逐行写入 rclone 排除模式，或通过 `DAIMON_ROOT_EXCLUDE_FILE` 指定文件。例如 `/snap/chromium/**` 排除 `/root/snap/chromium`；仅在无需备份这些数据时配置。排除规则同时用于扫描、传输、校验和宿主机写入者检查，更新保留该文件。
+
+运行日志默认单文件达到 8 MiB 后保留后半段，总预算 128 MiB、保留 30 天，只清理本脚本格式匹配且未被活动任务锁住的文件。每 0.5 秒检查，瞬间突发写入可能短暂超过阈值；磁盘空间被其他程序耗尽时取消任务并尝试恢复服务，不能保证物理空间永不耗尽。被轮转的早期详细输出不再保留，状态缓存继续保存结果。历史非受管日志和导出文件不会被自动删除。
+
+| 环境变量 | 默认值 | 用途 |
+|---|---:|---|
+| `DAIMON_LOG_FILE_BYTES` | 8388608 | 单次日志轮转阈值 |
+| `DAIMON_LOG_TOTAL_BYTES` | 134217728 | 受管运行日志总预算 |
+| `DAIMON_LOG_RETENTION_DAYS` | 30 | 详细日志保留天数 |
+| `DAIMON_LOG_MIN_FREE_BYTES` | 67108864 | 日志/状态分区最低剩余空间 |
+| `DAIMON_LOG_MIN_FREE_INODES` | 128 | 日志/状态分区最低剩余 inode |
+| `DAIMON_BACKUP_WORK_DIR` | `/var/tmp/daimon-root-backups` | 磁盘工作目录，拒绝 tmpfs |
+| `DAIMON_ROOT_STATE_DIR` | `/var/lib/daimon/root-backups/<服务器名>` | 持久恢复状态目录 |
+| `DAIMON_BACKUP_MIN_FREE_BYTES` | 268435456 | 备份工作/状态/日志目录最低剩余空间 |
+| `DAIMON_BACKUP_MIN_FREE_INODES` | 128 | 备份最低剩余 inode |
+| `DAIMON_RECOVERY_TIMEOUT` | 自动计算 | 按容器启动宽限、检查间隔、超时和重试数计算 180–3600 秒；显式设置可覆盖为 1–3600 秒 |
+
+预算通过启动任务的环境设置；降低阈值不能解决实际容量不足。此流程依赖 Linux、Bash、Python 3.9+、util-linux、rclone，Docker 数据还需可用 Docker daemon。云厂商和 CPU 架构不写死；能力或一致性检查不通过会拒绝继续。
 
 内置脚本编号：
 
