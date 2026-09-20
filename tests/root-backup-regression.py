@@ -273,14 +273,32 @@ from pathlib import Path
 p=Path(os.environ['FIXTURE']); args=sys.argv[1:]; mode=os.environ.get('MODE','success')
 with (p/'calls').open('a') as f: f.write('rclone '+' '.join(args)+'\n')
 if args[0]=='lsd': sys.exit(21 if mode=='remote-failure' else 0)
+if args[:2]==['config','file']:
+ print(str(p/'src/.config/rclone/rclone.conf')); sys.exit(0)
 if args[0]=='lsjson':
  if mode=='large' and args[1]==str(p/'src'):
   print(json.dumps([{'Path':'files/'+str(n)+'x'*120,'Size':1,'IsDir':False} for n in range(35000)]))
- else: print(json.dumps([{'Path':'data.sqlite','Size':1,'IsDir':False,'ModTime':'2026-01-01T00:00:00Z','Hashes':{'sha1':'x'}}]))
-elif args[0] in ('sync','check'):
+ else:
+  entries=[{'Path':'data.sqlite','Size':1,'IsDir':False,'ModTime':'2026-01-01T00:00:00Z','Hashes':{'sha1':'x'}}]
+  if mode=='rotating-config' and '/.config/rclone/rclone.conf' not in args:
+   entries.append({'Path':'.config/rclone/rclone.conf','Size':14,'IsDir':False})
+  print(json.dumps(entries))
+elif args[0] in ('sync','check','copy'):
  state=json.loads((p/'state.json').read_text())
- if args[1]==str(p/'src'): assert not state['a'*64] and not state['b'*64]
+ snapshot='config-snapshot' in args[1]
+ if args[1]==str(p/'src') or snapshot: assert not state['a'*64] and not state['b'*64]
  else: assert state['a'*64] and state['b'*64]
+ if mode=='rotating-config':
+  if args[0]=='sync' and args[1]==str(p/'src'):
+   assert '/.config/rclone/rclone.conf' in args
+   (p/'src/.config/rclone/rclone.conf').write_text('token=rotated')
+  if snapshot:
+   data=(Path(args[1])/'.config/rclone/rclone.conf').read_text()
+   assert data=='token=original'
+   if args[0]=='copy': (p/'copied-credentials').write_text(data)
+   if args[0]=='check': assert '--one-way' in args and (p/'copied-credentials').read_text()==data
+  if args[1].startswith('qq'):
+   assert '/.config/rclone/rclone.conf' not in args
  if mode=='sync-failure' and args[0]=='sync': sys.exit(23)
  if mode=='secondary-failure' and args[1].startswith('qq'): sys.exit(24)
  if mode=='writer-restart' and args[0]=='sync' and args[1]==str(p/'src'):
@@ -408,6 +426,26 @@ else: sys.exit(99)
         self.assertFalse((self.work/'logs/Fixture.last-success').exists())
         self.assertTrue((self.work/'state/containers.pending').exists())
         self.assertIn('secondary_verified=1',(self.work/'logs/run.log').read_text())
+
+    def test_token_refresh_does_not_change_backed_up_credential_snapshot(self):
+        config=self.work/'src/.config/rclone/rclone.conf'
+        config.parent.mkdir(parents=True)
+        config.write_text('token=original')
+        result=self.execute('rotating-config')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(config.read_text(),'token=rotated')
+        self.assertEqual((self.work/'copied-credentials').read_text(),'token=original')
+        self.assertFalse(list((self.work/'work').glob('run.*')))
+
+    def test_per_server_exclusion_is_respected_by_host_writer_detection(self):
+        config=self.work/'.root-backup.exclude'
+        config.write_text('# local policy\n/snap/browser/**\n')
+        database=self.work/'src/snap/browser/profile.db'
+        database.parent.mkdir(parents=True)
+        with database.open('w'):
+            result=self.execute()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('--exclude /snap/browser/**',(self.work/'calls').read_text())
 
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))

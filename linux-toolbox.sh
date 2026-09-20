@@ -22594,7 +22594,7 @@ fi
 STAGE=preflight
 INVENTORY="" MOUNTS="" CHILD_PID="" GENERATION="" AFTER_GENERATION=""
 OWNS_STATE=0 BACKUP_OK=0
-WORK_DIR="" PRIMARY_VERIFIED=0 WRITERS_RESUMED=0
+WORK_DIR="" CREDENTIAL_ROOT="" PRIMARY_VERIFIED=0 WRITERS_RESUMED=0
 FILTERS=(--exclude '/logs/**' --exclude '**/logs/**' --exclude '/*.log' --exclude '**/*.log'
     --exclude '/.migration-*/**' --exclude '**/.migration-*/**'
     --exclude '/.tmp/**' --exclude '**/.tmp/**')
@@ -22609,6 +22609,15 @@ if [ "$TASK_KIND" = root ]; then
         --exclude '/linux-daimon/backup/nginx-domain/challenge-fix-*/**'
         --exclude '/linux-daimon/backup/nginx-domain/migration_*/**'
         --exclude '/linux-daimon/backup/nginx-domain/cpa-renew-20260820_112206/**')
+    exclude_file="${DAIMON_ROOT_EXCLUDE_FILE:-$(dirname "$(readlink -f "$0")")/.root-backup.exclude}"
+    if [ -e "$exclude_file" ] || [ -L "$exclude_file" ]; then
+        [ -f "$exclude_file" ] && [ ! -L "$exclude_file" ] || { echo 'ERROR: Unsafe root exclusion file'; exit 1; }
+        while IFS= read -r pattern || [ -n "$pattern" ]; do
+            pattern=${pattern%$'\r'}
+            case "$pattern" in ''|'#'*) continue ;; esac
+            FILTERS+=(--exclude "$pattern")
+        done < "$exclude_file"
+    fi
 fi
 NETWORK=(--bwlimit=0 --transfers=4 --checkers=8 --contimeout=30s --timeout=2m --retries=3 --low-level-retries=2
     --log-file="$LOG_FILE" --log-level INFO)
@@ -23020,6 +23029,7 @@ INVENTORY=$(mktemp "${WORK_DIR:-$STATE_DIR}/inventory.XXXXXX")
 MOUNTS=$(mktemp "${WORK_DIR:-$STATE_DIR}/mounts.XXXXXX")
 printf '===== %s 开始 %s 一致性备份 =====\n' "$(date -Is)" "$BACKUP_NAME" >> "$LOG_FILE"
 backup_preflight >> "$LOG_FILE" 2>&1
+REMOTE_FILTERS=("${FILTERS[@]}")
 if [ "$TASK_KIND" = root ]; then
     for remote in "${PRIMARY%%:*}:" "${SECONDARY%%:*}:"; do
         timeout --kill-after=5s 60s rclone lsd "$remote" --max-depth 1 \
@@ -23028,6 +23038,39 @@ if [ "$TASK_KIND" = root ]; then
             exit 1
         }
     done
+    config_file=$(rclone config file | tail -n 1)
+    python3 - "$config_file" "$SRC1" "$INVENTORY" "$WORK_DIR" <<'PYCREDENTIAL'
+import json, os, shutil, sys
+from pathlib import Path
+config, source, inventory, work = map(Path, sys.argv[1:])
+if config.is_symlink() or not config.is_file():
+    sys.exit(0)
+try:
+    relative = config.resolve().relative_to(source.resolve()).as_posix()
+except ValueError:
+    sys.exit(0)
+entries = json.loads(inventory.read_text())
+if not any(entry['Path'] == relative and not entry['IsDir'] for entry in entries):
+    sys.exit(0)
+if any(char in relative for char in '*?[]\\\r\n'):
+    sys.exit('ERROR: Unsupported special characters in backed-up rclone configuration path')
+snapshot = work/'config-snapshot'/relative
+snapshot.parent.mkdir(parents=True, mode=0o700)
+for _ in range(3):
+    shutil.copy2(config,snapshot)
+    os.chmod(snapshot,0o600)
+    if snapshot.read_bytes() == config.read_bytes():
+        (work/'credential.path').write_text(relative+'\n')
+        break
+else:
+    sys.exit('ERROR: rclone configuration is changing concurrently; writers were not stopped')
+PYCREDENTIAL
+    if [ -s "$WORK_DIR/credential.path" ]; then
+        IFS= read -r config_relative < "$WORK_DIR/credential.path"
+        FILTERS+=(--exclude "/$config_relative")
+        CREDENTIAL_ROOT="$WORK_DIR/config-snapshot"
+        echo 'CONFIG_SNAPSHOT: rclone credentials captured privately; live token refresh remains enabled' >> "$LOG_FILE"
+    fi
 fi
 ids=""
 if command -v docker >/dev/null 2>&1; then
@@ -23124,16 +23167,23 @@ backup_preflight >> "$LOG_FILE" 2>&1
 STAGE=primary_sync
 run_transfer sync "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
+if [ -n "$CREDENTIAL_ROOT" ]; then
+    run_transfer copy "$CREDENTIAL_ROOT" "$PRIMARY" "${NETWORK[@]}"
+fi
 STAGE=primary_check
 run_transfer check "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
+if [ -n "$CREDENTIAL_ROOT" ]; then
+    run_transfer check "$CREDENTIAL_ROOT" "$PRIMARY" --one-way "${NETWORK[@]}"
+    verify_backup_state
+fi
 PRIMARY_VERIFIED=1
 printf 'PRIMARY_VERIFIED: content check passed\n' >> "$LOG_FILE"
 GENERATION=$(mktemp "${WORK_DIR:-$STATE_DIR}/qq-generation.XXXXXX")
 AFTER_GENERATION=$(mktemp "${WORK_DIR:-$STATE_DIR}/qq-after.XXXXXX")
 capture_generation() {
     timeout --kill-after=30s 7d rclone lsjson "$PRIMARY" --recursive --files-only --hash \
-        "${FILTERS[@]}" "${NETWORK[@]}" > "$1" 2>> "$LOG_FILE" &
+        "${REMOTE_FILTERS[@]}" "${NETWORK[@]}" > "$1" 2>> "$LOG_FILE" &
     CHILD_PID=$!
     local rc=0
     if [ "$TASK_KIND" = root ]; then
@@ -23175,10 +23225,10 @@ date -Is > "$PRIMARY_SUCCESS"
 chmod 600 "$PRIMARY_SUCCESS"
 printf '===== %s QQ 校验完成，原容器已运行，待最终健康确认=%s =====\n' "$(date -Is)" "$WRITERS_RESUMED" >> "$LOG_FILE"
 STAGE=secondary_sync
-run_transfer sync "$PRIMARY" "$SECONDARY" "${FILTERS[@]}" "${NETWORK[@]}"
+run_transfer sync "$PRIMARY" "$SECONDARY" "${REMOTE_FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
 STAGE=secondary_check
-run_transfer check "$PRIMARY" "$SECONDARY" "${FILTERS[@]}" "${NETWORK[@]}"
+run_transfer check "$PRIMARY" "$SECONDARY" "${REMOTE_FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
 capture_generation "$AFTER_GENERATION"
 cmp -s "$GENERATION" "$AFTER_GENERATION" || { echo 'ERROR: QQ backup changed during replication' >&2; exit 1; }
