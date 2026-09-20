@@ -151,6 +151,30 @@ class LogPolicy(unittest.TestCase):
                                  str(self.runs),str(self.cache),str(self.active)],env=self.env,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_runtime_readonly_log_cancels_task_and_runs_recovery(self):
+        if os.geteuid() != 0:
+            self.skipTest('private mount namespace requires root')
+        start=SOURCE.index('#!/bin/bash\nset -u\nTASK="${1:-custom}"')
+        runner=self.work/'runner.sh'
+        runner.write_text(SOURCE[start:SOURCE.index('\nEOF\n',start)])
+        worker=self.work/'worker.sh'
+        worker.write_text('#!/bin/bash\ntrap \'touch "$TEST_WORK/recovered"; exit 143\' TERM\ntouch "$TEST_WORK/ready"\nwhile :; do sleep 0.1; done\n')
+        worker.chmod(0o700)
+        env=dict(self.env,TEST_WORK=str(self.work),DAIMON_RCLONE_RUN_LOG_DIR=str(self.runs),
+                 DAIMON_RCLONE_STATUS_CACHE=str(self.cache),DAIMON_RCLONE_STATUS_LOCK=str(self.work/'status.lock'))
+        script=r'''set -u
+mount -t tmpfs -o size=1m tmpfs "$1" || exit 1
+bash "$2" fixture "$3" > "$TEST_WORK/runner-output" 2>&1 & task=$!
+for ((i=0;i<100;i++)); do test ! -e "$TEST_WORK/ready" || break; sleep 0.05; done
+test -e "$TEST_WORK/ready" || { kill "$task"; exit 1; }
+mount -o remount,ro "$1" || exit 1
+wait "$task"; result=$?
+test "$result" = 74 && test -e "$TEST_WORK/recovered"
+'''
+        result=subprocess.run(['unshare','--mount','--propagation','private','bash','-c',script,'test',
+                               str(self.runs),str(runner),str(worker)],env=env,capture_output=True,text=True,timeout=20)
+        self.assertEqual(result.returncode,0,result.stderr+(self.work/'runner-output').read_text())
+
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux disk checks')
 class Space(unittest.TestCase):
@@ -325,6 +349,18 @@ else: sys.exit(99)
         result=self.execute('remote-failure')
         self.assertNotEqual(result.returncode,0)
         self.assertNotIn('docker stop',(self.work/'calls').read_text())
+
+    def test_orphan_cleanup_keeps_active_and_unowned_directories(self):
+        boot=pathlib.Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+        for name,pid in [('run.orphan',999999999),('run.active',os.getpid())]:
+            path=self.work/'work'/name; path.mkdir()
+            (path/'.daimon-work').write_text(str(pid)+' '+boot)
+        unowned=self.work/'work/run.business'; unowned.mkdir()
+        result=self.execute()
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertFalse((self.work/'work/run.orphan').exists())
+        self.assertTrue((self.work/'work/run.active').exists())
+        self.assertTrue(unowned.exists())
 
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))
