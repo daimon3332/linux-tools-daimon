@@ -45,7 +45,7 @@ timeout() {
 sleep() { SECONDS=$((SECONDS+60)); }
 rm() { :; }
 '''
-        script += function('recover_writers') + '\nrecover_writers 3<<<$\'app\\ndb\'\nrc=$?\ncat "$LOG_FILE"\nexit "$rc"\n'
+        script += function('container_recovery_timeout') + '\n' + function('recover_writers') + '\nrecover_writers 3<<<$\'app\\ndb\'\nrc=$?\ncat "$LOG_FILE"\nexit "$rc"\n'
         binary = os.environ.get('BASH_BIN', 'bash')
         root = pathlib.Path(__file__).resolve().parents[1] / '.tmp'
         root.mkdir(exist_ok=True)
@@ -53,6 +53,19 @@ rm() { :; }
             env = dict(os.environ, LOG_FILE=pathlib.Path(work, 'test.log').as_posix())
             result = subprocess.run([binary, '-s'], input=script, text=True, encoding='utf-8', capture_output=True, env=env)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'POSIX Python helper')
+    def test_health_budget_includes_start_period_and_retries(self):
+        script='timeout() { echo "180000000000 15000000000 5000000000 8"; }\n'+function('container_recovery_timeout')+'\ncontainer_recovery_timeout fixture\n'
+        result=subprocess.run(['bash','-s'],input=script,capture_output=True,text=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+        self.assertEqual(result.stdout.strip(),'370')
+
+    @unittest.skipUnless(sys.platform.startswith('linux'), 'POSIX Python helper')
+    def test_health_budget_is_bounded_and_override_is_respected(self):
+        script='timeout() { echo "7200000000000 15000000000 5000000000 8"; }\n'+function('container_recovery_timeout')+'\ncontainer_recovery_timeout fixture\nDAIMON_RECOVERY_TIMEOUT=900 container_recovery_timeout fixture\n'
+        result=subprocess.run(['bash','-s'],input=script,capture_output=True,text=True)
+        self.assertEqual(result.stdout.split(),['3600','900'])
 
 
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Linux filesystem/log integration tests')

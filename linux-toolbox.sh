@@ -22666,7 +22666,18 @@ for path in dict.fromkeys(Path(p) for p in sys.argv[1:]):
     for cid in recovery:
         if subprocess.run(['docker','start',cid], stdout=subprocess.DEVNULL, timeout=60).returncode:
             sys.exit('ERROR: Previous writer start failed; journal retained')
-    deadline = time.monotonic() + 180
+    budget = 180
+    for cid in recovery:
+        info = subprocess.run(['docker','inspect','-f','{{json .Config.Healthcheck}}',cid],capture_output=True,text=True,timeout=30)
+        try:
+            health = json.loads(info.stdout) or {}
+            seconds = (health.get('StartPeriod',0) + ((health.get('Interval') or 30000000000) + (health.get('Timeout') or 30000000000)) * (health.get('Retries') or 3)) // 1000000000 + 30
+            budget = max(budget, min(3600, seconds))
+        except (ValueError, TypeError, AttributeError):
+            pass
+    budget = int(os.environ.get('DAIMON_RECOVERY_TIMEOUT',budget))
+    if not 1 <= budget <= 3600: sys.exit('ERROR: Invalid recovery timeout')
+    deadline = time.monotonic() + budget
     while recovery:
         pending = []
         for cid in recovery:
@@ -22704,6 +22715,21 @@ stop_transfer() {
     fi
 }
 
+container_recovery_timeout() {
+    if [ -n "${DAIMON_RECOVERY_TIMEOUT:-}" ]; then printf '%s\n' "$DAIMON_RECOVERY_TIMEOUT"; return; fi
+    local timing
+    timing=$(timeout 30s docker inspect -f '{{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod}} {{.Config.Healthcheck.Interval}} {{.Config.Healthcheck.Timeout}} {{.Config.Healthcheck.Retries}}{{end}}' "$1" 2>/dev/null) || timing=""
+    python3 - "$timing" <<'PYHEALTH'
+import sys
+try:
+    start, interval, timeout, retries = map(int, sys.argv[1].split())
+    seconds = (start + ((interval or 30000000000) + (timeout or 30000000000)) * (retries or 3)) // 1000000000 + 30
+    print(max(180, min(3600, seconds)))
+except ValueError:
+    print(180)
+PYHEALTH
+}
+
 recover_writers() {
     local id state deadline recovery_failed=0 LOG_FILE="$LOG_FILE"
     if [ "$OWNS_STATE" -eq 1 ]; then
@@ -22718,7 +22744,7 @@ recover_writers() {
                 if [ -f "${STATE_DIR:-}/dependencies.tsv" ]; then
                     local dependency
                     for dependency in $(awk -v id="$id" '$1==id {for(i=2;i<=NF;i++) print $i}' "$STATE_DIR/dependencies.tsv"); do
-                        deadline=$((SECONDS + ${DAIMON_RECOVERY_TIMEOUT:-180}))
+                        deadline=$((SECONDS + $(container_recovery_timeout "$dependency")))
                         while true; do
                             state=$(container_state "$dependency") || state=""
                             case "$state" in 'true healthy'|'true none') break ;; esac
@@ -22740,7 +22766,7 @@ recover_writers() {
                 timeout 60s docker start "$id" >> "$LOG_FILE" 2>&1 || { recovery_failed=1; continue; }
             fi
             deadline=$((SECONDS + 60))
-            if [ "$TASK_KIND" = root ]; then deadline=$((SECONDS + ${DAIMON_RECOVERY_TIMEOUT:-180})); fi
+            if [ "$TASK_KIND" = root ]; then deadline=$((SECONDS + $(container_recovery_timeout "$id"))); fi
             while true; do
                 state=$(container_state "$id") || state=""
                 case "$state" in 'true none'|'true healthy') break ;; esac
