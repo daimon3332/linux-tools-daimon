@@ -22594,7 +22594,7 @@ fi
 STAGE=preflight
 INVENTORY="" MOUNTS="" CHILD_PID="" GENERATION="" AFTER_GENERATION=""
 OWNS_STATE=0 BACKUP_OK=0
-WORK_DIR="" CREDENTIAL_ROOT="" PRIMARY_VERIFIED=0 WRITERS_RESUMED=0
+WORK_DIR="" METADATA_ROOT="" PRIMARY_VERIFIED=0 WRITERS_RESUMED=0
 FILTERS=(--exclude '/logs/**' --exclude '**/logs/**' --exclude '/*.log' --exclude '**/*.log'
     --exclude '/.migration-*/**' --exclude '**/.migration-*/**'
     --exclude '/.tmp/**' --exclude '**/.tmp/**')
@@ -22624,12 +22624,16 @@ NETWORK=(--bwlimit=0 --transfers=4 --checkers=8 --contimeout=30s --timeout=2m --
 if [ "$TASK_KIND" = root ]; then
     backup_transfers=${DAIMON_ROOT_TRANSFERS:-4}
     backup_checkers=${DAIMON_ROOT_CHECKERS:-8}
+    backup_tps=${DAIMON_ROOT_TPS_LIMIT:-4}
     [[ "$backup_transfers" =~ ^[1-9][0-9]?$ ]] && [ "$backup_transfers" -le 32 ] &&
-        [[ "$backup_checkers" =~ ^[1-9][0-9]?$ ]] && [ "$backup_checkers" -le 64 ] || {
-        echo 'ERROR: Root transfers must be 1-32 and checkers 1-64'; exit 1;
+        [[ "$backup_checkers" =~ ^[1-9][0-9]?$ ]] && [ "$backup_checkers" -le 64 ] &&
+        [[ "$backup_tps" =~ ^[1-9][0-9]?$ ]] && [ "$backup_tps" -le 32 ] || {
+        echo 'ERROR: Root transfers/TPS must be 1-32 and checkers 1-64'; exit 1;
     }
     NETWORK[1]="--transfers=$backup_transfers"
     NETWORK[2]="--checkers=$backup_checkers"
+    NETWORK[6]=--low-level-retries=10
+    NETWORK+=(--tpslimit="$backup_tps" --tpslimit-burst=1)
 fi
 
 for tool in flock python3 rclone timeout; do
@@ -23064,6 +23068,35 @@ run_transfer() {
     return "$rc"
 }
 
+checked_transfer() {
+    local attempt rc=0 delay pause
+    for attempt in 1 2 3; do
+        if run_transfer check "$@"; then return 0; else rc=$?; fi
+        [ "$TASK_KIND" = root ] && [ "$attempt" -lt 3 ] || return "$rc"
+        root_space_ok && verify_backup_state || return 1
+        delay=$(python3 - "$LOG_FILE" "$((60 * attempt))" <<'PYBACKOFF'
+import math, re, sys
+from pathlib import Path
+delay = int(sys.argv[2])
+for value in re.findall(r'trying again in ((?:\d+(?:\.\d+)?(?:ms|s|m|h))+)', Path(sys.argv[1]).read_text(errors='replace'), re.I):
+    seconds = sum(float(n) * {'ms':0.001,'s':1,'m':60,'h':3600}[unit.lower()] for n,unit in re.findall(r'(\d+(?:\.\d+)?)(ms|s|m|h)',value,re.I))
+    delay = max(delay,math.ceil(seconds))
+if delay > 3600:
+    sys.exit('ERROR: Remote retry delay exceeds one hour; preserving failure instead of retrying early')
+print(delay)
+PYBACKOFF
+        ) || return "$rc"
+        printf 'CHECK_RETRY: attempt=%s rc=%s backoff=%ss\n' "$attempt" "$rc" "$delay" >> "$LOG_FILE" || return 1
+        while [ "$delay" -gt 0 ]; do
+            root_space_ok && verify_backup_state || return 1
+            pause=5; [ "$delay" -ge 5 ] || pause=$delay
+            sleep "$pause" || return 1
+            delay=$((delay-pause))
+        done
+    done
+    return "$rc"
+}
+
 verify_backup_state() {
     local id state
     if grep -Eiq 'Duplicate (directory|file|object) found in (source|destination) - ignoring' "$LOG_FILE"; then
@@ -23142,37 +23175,41 @@ if [ "$TASK_KIND" = root ]; then
         }
     done
     config_file=$(rclone config file | tail -n 1)
-    python3 - "$config_file" "$SRC1" "$INVENTORY" "$WORK_DIR" <<'PYCREDENTIAL'
+    python3 - "$config_file" "$SRC1" "$INVENTORY" "$WORK_DIR" <<'PYMETADATA'
 import json, os, shutil, sys
 from pathlib import Path
 config, source, inventory, work = map(Path, sys.argv[1:])
-if config.is_symlink() or not config.is_file():
-    sys.exit(0)
-try:
-    relative = config.resolve().relative_to(source.resolve()).as_posix()
-except ValueError:
-    sys.exit(0)
 entries = json.loads(inventory.read_text())
-if not any(entry['Path'] == relative and not entry['IsDir'] for entry in entries):
-    sys.exit(0)
-if any(char in relative for char in '*?[]\\\r\n'):
-    sys.exit('ERROR: Unsupported special characters in backed-up rclone configuration path')
-snapshot = work/'config-snapshot'/relative
-snapshot.parent.mkdir(parents=True, mode=0o700)
-for _ in range(3):
-    shutil.copy2(config,snapshot)
-    os.chmod(snapshot,0o600)
-    if snapshot.read_bytes() == config.read_bytes():
-        (work/'credential.path').write_text(relative+'\n')
-        break
-else:
-    sys.exit('ERROR: rclone configuration is changing concurrently; writers were not stopped')
-PYCREDENTIAL
-    if [ -s "$WORK_DIR/credential.path" ]; then
-        IFS= read -r config_relative < "$WORK_DIR/credential.path"
-        FILTERS+=(--exclude "/$config_relative")
-        CREDENTIAL_ROOT="$WORK_DIR/config-snapshot"
-        echo 'CONFIG_SNAPSHOT: rclone credentials captured privately; live token refresh remains enabled' >> "$LOG_FILE"
+included = {entry['Path'] for entry in entries if not entry['IsDir']}
+captured = []
+for item in dict.fromkeys((config, source/'.bash_history', source/'.zsh_history')):
+    if item.is_symlink() or not item.is_file():
+        continue
+    try:
+        relative = item.resolve().relative_to(source.resolve()).as_posix()
+    except ValueError:
+        continue
+    if relative not in included:
+        continue
+    if any(char in relative for char in '*?[]\\\r\n') or relative.strip() != relative or relative.startswith('#'):
+        sys.exit('ERROR: Unsupported special characters in backed-up metadata path')
+    snapshot = work/'metadata-snapshot'/relative
+    snapshot.parent.mkdir(parents=True, mode=0o700)
+    for _ in range(3):
+        shutil.copy2(item,snapshot)
+        os.chmod(snapshot,0o600)
+        if snapshot.read_bytes() == item.read_bytes():
+            captured.append(relative)
+            break
+    else:
+        sys.exit('ERROR: Metadata is changing concurrently; writers were not stopped')
+if captured:
+    (work/'snapshot.paths').write_text('\n'.join(captured)+'\n')
+PYMETADATA
+    if [ -s "$WORK_DIR/snapshot.paths" ]; then
+        while IFS= read -r snapshot_relative; do FILTERS+=(--exclude "/$snapshot_relative"); done < "$WORK_DIR/snapshot.paths"
+        METADATA_ROOT="$WORK_DIR/metadata-snapshot"
+        echo 'METADATA_SNAPSHOT: included credentials and shell histories captured privately; live files remain writable' >> "$LOG_FILE"
     fi
 fi
 ids=""
@@ -23271,14 +23308,14 @@ backup_preflight >> "$LOG_FILE" 2>&1
 STAGE=primary_sync
 run_transfer sync "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
-if [ -n "$CREDENTIAL_ROOT" ]; then
-    run_transfer copy "$CREDENTIAL_ROOT" "$PRIMARY" --no-traverse "${NETWORK[@]}"
+if [ -n "$METADATA_ROOT" ]; then
+    run_transfer copy "$METADATA_ROOT" "$PRIMARY" --no-traverse "${NETWORK[@]}"
 fi
 STAGE=primary_check
-run_transfer check "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
+checked_transfer "$SRC1" "$PRIMARY" "${FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
-if [ -n "$CREDENTIAL_ROOT" ]; then
-    run_transfer check "$CREDENTIAL_ROOT" "$PRIMARY" --one-way --files-from "$WORK_DIR/credential.path" "${NETWORK[@]}"
+if [ -n "$METADATA_ROOT" ]; then
+    checked_transfer "$METADATA_ROOT" "$PRIMARY" --one-way --files-from "$WORK_DIR/snapshot.paths" "${NETWORK[@]}"
     verify_backup_state
 fi
 PRIMARY_VERIFIED=1
@@ -23333,7 +23370,7 @@ STAGE=secondary_sync
 run_transfer sync "$PRIMARY" "$SECONDARY" "${REMOTE_FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
 STAGE=secondary_check
-run_transfer check "$PRIMARY" "$SECONDARY" "${REMOTE_FILTERS[@]}" "${NETWORK[@]}"
+checked_transfer "$PRIMARY" "$SECONDARY" "${REMOTE_FILTERS[@]}" "${NETWORK[@]}"
 verify_backup_state
 capture_generation "$AFTER_GENERATION"
 cmp -s "$GENERATION" "$AFTER_GENERATION" || { echo 'ERROR: QQ backup changed during replication' >&2; exit 1; }

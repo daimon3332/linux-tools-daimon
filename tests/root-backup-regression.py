@@ -78,6 +78,31 @@ esac
             self.assertEqual((work/'calls').read_text().count('stop app.service'),before)
 
 
+@unittest.skipUnless(sys.platform.startswith('linux'), 'Linux check retry fixture')
+class CheckRetries(unittest.TestCase):
+    def test_bounded_retries_backoff_and_guard_failures(self):
+        base=pathlib.Path(__file__).resolve().parents[1]/'.tmp'
+        base.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=base) as directory:
+            for failures,guard,kind,expected,calls in ((1,0,'root',0,2),(9,0,'root',7,3),(1,1,'root',1,1),(9,0,'emby',7,1)):
+                with self.subTest(failures=failures,guard=guard,kind=kind):
+                    log=pathlib.Path(directory)/'retry.log'
+                    log.write_text('ERROR: throttledRequest: trying again in 2m0s\n')
+                    setup='''calls=0; waited=0
+run_transfer() { calls=$((calls+1)); [ "$calls" -gt "$FAILURES" ] || return 7; }
+root_space_ok() { return 0; }
+verify_backup_state() { return "$GUARD"; }
+sleep() { waited=$((waited+$1)); }
+'''
+                    script=setup+function('checked_transfer')+'\nchecked_transfer source target; rc=$?\necho "$rc $calls $waited"\n'
+                    env=dict(os.environ,FAILURES=str(failures),GUARD=str(guard),TASK_KIND=kind,LOG_FILE=str(log))
+                    result=subprocess.run(['bash','-c',script],env=env,capture_output=True,text=True,timeout=10)
+                    self.assertEqual(result.returncode,0,result.stderr)
+                    rc,count,waited=map(int,result.stdout.split())
+                    self.assertEqual((rc,count),(expected,calls))
+                    if calls>1: self.assertGreaterEqual(waited,120)
+
+
 class Recovery(unittest.TestCase):
     def test_application_first_does_not_block_database_start(self):
         script = r'''
@@ -338,18 +363,20 @@ if args[0]=='lsjson':
   print(json.dumps([{'Path':'files/'+str(n)+'x'*120,'Size':1,'IsDir':False} for n in range(35000)]))
  else:
   entries=[{'Path':'data.sqlite','Size':1,'IsDir':False,'ModTime':'2026-01-01T00:00:00Z','Hashes':{'sha1':'x'}}]
-  if mode=='rotating-config' and '/.config/rclone/rclone.conf' not in args:
+  if mode in ('rotating-config','rotating-history') and '/.config/rclone/rclone.conf' not in args:
    entries.append({'Path':'.config/rclone/rclone.conf','Size':14,'IsDir':False})
+  if mode=='rotating-history' and '/.bash_history' not in args:
+   entries.append({'Path':'.bash_history','Size':8,'IsDir':False})
   print(json.dumps(entries))
 elif args[0] in ('sync','check','copy'):
  state=json.loads((p/'state.json').read_text())
- snapshot='config-snapshot' in args[1]
+ snapshot='metadata-snapshot' in args[1]
  if (p/'service-active').exists():
   active=(p/'service-active').read_text().strip()
   assert active == ('inactive' if args[1]==str(p/'src') or snapshot else 'active')
  if args[1]==str(p/'src') or snapshot: assert not state['a'*64] and not state['b'*64]
  else: assert state['a'*64] and state['b'*64]
- if mode=='rotating-config':
+ if mode in ('rotating-config','rotating-history'):
   if args[0]=='sync' and args[1]==str(p/'src'):
    assert '/.config/rclone/rclone.conf' in args
    (p/'src/.config/rclone/rclone.conf').write_text('token=rotated')
@@ -360,7 +387,18 @@ elif args[0] in ('sync','check','copy'):
    if args[0]=='check': assert '--one-way' in args and (p/'copied-credentials').read_text()==data
   if args[1].startswith('qq'):
    assert '/.config/rclone/rclone.conf' not in args
+ if mode=='rotating-history':
+  if args[0]=='sync' and args[1]==str(p/'src'):
+   (p/'src/.bash_history').write_text('before\nafter\n')
+  if args[0]=='check' and args[1]==str(p/'src'): assert '/.bash_history' in args, 'Mutable history was checked live'
+  if snapshot:
+   assert (Path(args[1])/'.bash_history').read_text()=='before\n'
+   if args[0]=='copy': (p/'copied-history').write_text('before\n')
+  if args[1].startswith('qq'): assert '/.bash_history' not in args
  if mode=='sync-failure' and args[0]=='sync': sys.exit(23)
+ if mode in ('check-once','check-always') and args[0]=='check' and args[1]==str(p/'src'):
+  counter=p/'check-count'; count=int(counter.read_text())+1 if counter.exists() else 1; counter.write_text(str(count))
+  if count==1 or mode=='check-always': sys.exit(27)
  if mode=='secondary-failure' and args[1].startswith('qq'): sys.exit(24)
  if mode=='writer-restart' and args[0]=='sync' and args[1]==str(p/'src'):
   state['a'*64]=True; (p/'state.json').write_text(json.dumps(state))
@@ -426,6 +464,9 @@ esac
         result=self.execute(DAIMON_ROOT_TRANSFERS='999')
         self.assertNotEqual(result.returncode,0)
         self.assertEqual((self.work/'service-active').read_text(),'active')
+        self.assertFalse((self.work/'calls').exists())
+        result=self.execute(DAIMON_ROOT_TPS_LIMIT='999')
+        self.assertNotEqual(result.returncode,0)
         self.assertFalse((self.work/'calls').exists())
 
     def test_inventory_larger_than_lock_partition(self):
@@ -548,6 +589,45 @@ esac
             result=self.execute()
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)
         self.assertIn('--exclude /snap/browser/**',(self.work/'calls').read_text())
+
+    def test_live_history_changes_preserve_private_snapshot(self):
+        config=self.work/'src/.config/rclone/rclone.conf'
+        config.parent.mkdir(parents=True)
+        config.write_text('token=original')
+        history=self.work/'src/.bash_history'
+        history.write_text('before\n')
+        result=self.execute('rotating-history',DAIMON_ROOT_TPS_LIMIT='2')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual(history.read_text(),'before\nafter\n')
+        self.assertEqual((self.work/'copied-history').read_text(),'before\n')
+        self.assertIn('--tpslimit=2 --tpslimit-burst=1',(self.work/'calls').read_text())
+        self.assertFalse(list((self.work/'work').glob('run.*')))
+
+    def test_check_retries_without_hiding_persistent_differences(self):
+        sleep=self.work/'bin/sleep'; sleep.write_text('#!/bin/sh\nexit 0\n'); sleep.chmod(0o700)
+        self.service_fixture()
+        result=self.execute('check-once')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual((self.work/'check-count').read_text(),'2')
+        (self.work/'check-count').unlink()
+        result=self.execute('check-always')
+        self.assertNotEqual(result.returncode,0)
+        self.assertEqual((self.work/'check-count').read_text(),'3')
+        self.assertFalse((self.work/'logs/Fixture.last-success').exists())
+        self.assertEqual((self.work/'service-active').read_text().strip(),'active')
+
+    def test_snapshot_works_without_config_file(self):
+        config=self.work/'src/.config/rclone/rclone.conf'
+        config.parent.mkdir(parents=True)
+        config.write_text('token=original')
+        history=self.work/'src/.bash_history'
+        history.write_text('before\n')
+        self.task.write_text(self.task.read_text().replace("config_file=$(rclone config file | tail -n 1)","config_file=/nonexistent-config"))
+        command=self.work/'bin/rclone'
+        command.write_text(command.read_text().replace("if mode in ('rotating-config','rotating-history'):","if mode=='rotating-config':"))
+        result=self.execute('rotating-history')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertEqual((self.work/'copied-history').read_text(),'before\n')
 
     def test_root_inode_failure(self):
         env = dict(os.environ, DAIMON_BACKUP_MIN_FREE_INODES=str(2**62))

@@ -314,7 +314,7 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 
 升级保留服务器名称和原定时。锁仍放在 `/run/lock`，大清单使用磁盘目录 `/var/tmp/daimon-root-backups`，恢复清单保存在 `/var/lib/daimon/root-backups/<服务器名>`。按现有 Compose 依赖先恢复依赖服务，仅启动备份前运行的容器；传输期间检测外部启动/替换及宿主机可写文件句柄，发现无法保证一致性时失败并恢复。未知宿主机写入者需要另行停止或采用数据库原生备份，不能保证扫描能发现所有短暂写入。
 
-主备份内容校验后，先恢复原运行容器，再复制到第二个远端，让服务预热与复制并行；最终健康检查通过才记录整体成功。Compose 的 `service_started` 仅要求依赖已运行，`service_healthy` 要求依赖健康。rclone 配置如在备份范围内，使用权限受限的临时副本上传并单独校验，避免令牌自动刷新造成内容不一致；不替换正在使用的配置，结束后清理副本。
+主备份内容校验后，先恢复原运行容器，再复制到第二个远端，让服务预热与复制并行；最终健康检查通过才记录整体成功。Compose 的 `service_started` 仅要求依赖已运行，`service_healthy` 要求依赖健康。rclone 配置及标准 `.bash_history`、`.zsh_history` 如在备份范围内，使用权限受限的临时副本上传并单独校验，保留副本生成时的内容；在线配置与历史文件继续正常更新，任务结束后清理副本。
 
 可在任务目录的 `.root-backup.exclude` 中逐行写入 rclone 排除模式，或通过 `DAIMON_ROOT_EXCLUDE_FILE` 指定文件。例如 `/snap/chromium/**` 排除 `/root/snap/chromium`；仅在无需备份这些数据时配置。排除规则同时用于扫描、传输、校验和宿主机写入者检查，更新保留该文件。
 
@@ -335,7 +335,10 @@ Compose 自动更新不会预先执行 `docker compose down`。每个任务使�
 | `DAIMON_BACKUP_MIN_FREE_INODES` | 128 | 备份最低剩余 inode |
 | `DAIMON_ROOT_TRANSFERS` | 4 | root 并行传输数，允许 1–32；提高会增加内存和远端请求压力 |
 | `DAIMON_ROOT_CHECKERS` | 8 | root 并行检查数，允许 1–64 |
+| `DAIMON_ROOT_TPS_LIMIT` | 4 | root 每秒请求上限，允许 1–32；突发为 1，多个服务器共用账号时需分配请求预算 |
 | `DAIMON_RECOVERY_TIMEOUT` | 自动计算 | 按容器启动宽限、检查间隔、超时和重试数计算 180–3600 秒；显式设置可覆盖为 1–3600 秒 |
+
+root 低层请求最多重试 10 次，遵守后端的重试等待。完整内容校验最多执行 3 次，重试等待至少 60／120 秒，并尊重日志中的更长退避时间；单次等待超过一小时则保留失败。等待期间继续检查写入者和空间。持续的内容差异、缺失或服务恢复失败仍判失败。
 
 预算通过启动任务的环境设置；降低阈值不能解决实际容量不足。此流程依赖 Linux、Bash、Python 3.9+、util-linux、rclone，Docker 数据还需可用 Docker daemon。云厂商和 CPU 架构不写死；能力或一致性检查不通过会拒绝继续。
 
