@@ -22718,14 +22718,21 @@ stop_transfer() {
 container_recovery_timeout() {
     if [ -n "${DAIMON_RECOVERY_TIMEOUT:-}" ]; then printf '%s\n' "$DAIMON_RECOVERY_TIMEOUT"; return; fi
     local timing budget
-    timing=$(timeout 30s docker inspect -f '{{if .Config.Healthcheck}}{{.Config.Healthcheck.StartPeriod}} {{.Config.Healthcheck.Interval}} {{.Config.Healthcheck.Timeout}} {{.Config.Healthcheck.Retries}}{{end}}' "$1" 2>/dev/null) || timing=""
+    timing=$(timeout 30s docker inspect -f '{{json .Config.Healthcheck}}' "$1" 2>/dev/null) || timing=""
     budget=$(python3 - "$timing" <<'PYHEALTH'
-import sys
+import json, sys
 try:
-    start, interval, timeout, retries = map(int, sys.argv[1].split())
-    seconds = (start + ((interval or 30000000000) + (timeout or 30000000000)) * (retries or 3)) // 1000000000 + 30
+    config = json.loads(sys.argv[1]) or {}
+    if not config:
+        print(180)
+        sys.exit(0)
+    start = int(config.get('StartPeriod') or 0)
+    interval = int(config.get('Interval') or 30000000000)
+    timeout = int(config.get('Timeout') or 30000000000)
+    retries = int(config.get('Retries') or 3)
+    seconds = (start + (interval + timeout) * retries + 999999999) // 1000000000 + 30
     print(max(180, min(3600, seconds)))
-except ValueError:
+except (ValueError, TypeError, AttributeError):
     print(180)
 PYHEALTH
     ) || budget=180

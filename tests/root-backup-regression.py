@@ -56,14 +56,14 @@ rm() { :; }
 
     @unittest.skipUnless(sys.platform.startswith('linux'), 'POSIX Python helper')
     def test_health_budget_includes_start_period_and_retries(self):
-        script='timeout() { echo "180000000000 15000000000 5000000000 8"; }\n'+function('container_recovery_timeout')+'\ncontainer_recovery_timeout fixture\n'
+        script="timeout() { echo '{\"StartPeriod\":180000000000,\"Interval\":15000000000,\"Timeout\":5000000000,\"Retries\":8}'; }\n"+function('container_recovery_timeout')+'\ncontainer_recovery_timeout fixture\n'
         result=subprocess.run(['bash','-s'],input=script,capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertEqual(result.stdout.strip(),'370')
 
     @unittest.skipUnless(sys.platform.startswith('linux'), 'POSIX Python helper')
     def test_health_budget_is_bounded_and_override_is_respected(self):
-        script='timeout() { echo "7200000000000 15000000000 5000000000 8"; }\n'+function('container_recovery_timeout')+'\ncontainer_recovery_timeout fixture\nDAIMON_RECOVERY_TIMEOUT=900 container_recovery_timeout fixture\n'
+        script="timeout() { echo '{\"StartPeriod\":7200000000000,\"Interval\":15000000000,\"Timeout\":5000000000,\"Retries\":8}'; }\n"+function('container_recovery_timeout')+'\ncontainer_recovery_timeout fixture\nDAIMON_RECOVERY_TIMEOUT=900 container_recovery_timeout fixture\n'
         result=subprocess.run(['bash','-s'],input=script,capture_output=True,text=True)
         self.assertEqual(result.stdout.split(),['3600','900'])
 
