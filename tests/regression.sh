@@ -843,7 +843,9 @@ test_batch_continues() {
     exec() { exit 77; }
     linux_tools() { restart_shell_after_tool_install; }
     one_click_set_timezone_locale() { echo timezone >> "$trace"; }
-    one_click_config_run_all <<< '9 10'
+    local rc=0
+    (one_click_config_run_all <<< '9 10') || rc=$?
+    [ "$rc" = 77 ] || return 1
     grep -q timezone "$trace"
 }
 test_main_menu() {

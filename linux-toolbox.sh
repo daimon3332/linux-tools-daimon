@@ -405,12 +405,12 @@ send_stats() {
 		return
 	fi
 
-	local country=$(curl -s ipinfo.io/country)
+	local country=$(curl -s --connect-timeout 3 --max-time 5 ipinfo.io/country)
 	local os_info=$(grep PRETTY_NAME /etc/os-release | cut -d '=' -f2 | tr -d '"')
 	local cpu_arch=$(uname -m)
 
 	(
-		curl -s -X POST "https://api.kejilion.pro/api/log" \
+		curl -s --connect-timeout 3 --max-time 5 -X POST "https://api.kejilion.pro/api/log" \
 			-H "Content-Type: application/json" \
 			-d "{\"action\":\"$1\",\"timestamp\":\"$(date -u '+%Y-%m-%d %H:%M:%S')\",\"country\":\"$country\",\"os_info\":\"$os_info\",\"cpu_arch\":\"$cpu_arch\",\"version\":\"$sh_v\"}" \
 		&>/dev/null
@@ -527,7 +527,7 @@ CheckFirstRun_false
 ip_address() {
 
 get_public_ip() {
-	curl -s https://ipinfo.io/ip && echo
+	curl -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/ip && echo
 }
 
 get_local_ip() {
@@ -766,6 +766,7 @@ enable() {
 
 
 break_end() {
+	  [ "${DAIMON_BATCH_MODE:-0}" = 1 ] && return 0
 	  echo -e "${gl_lv}操作完成${gl_bai}"
 	  echo "按任意键继续..."
 	  read -n 1 -s -r -p ""
@@ -5404,11 +5405,11 @@ current_timezone() {
 set_timedate() {
 	local shiqu="$1"
 	if grep -q 'Alpine' /etc/issue; then
-		install tzdata
-		cp /usr/share/zoneinfo/${shiqu} /etc/localtime
+		install tzdata || return 1
+		cp "/usr/share/zoneinfo/$shiqu" /etc/localtime || return 1
 		hwclock --systohc
 	else
-		timedatectl set-timezone ${shiqu}
+		timedatectl set-timezone "$shiqu"
 	fi
 }
 
@@ -5440,13 +5441,13 @@ linux_update() {
 	elif command -v pacman &>/dev/null; then
 		pacman -Syu --noconfirm
 	elif command -v zypper &>/dev/null; then
-		zypper refresh
+		zypper refresh || return 1
 		zypper update
 	elif command -v opkg &>/dev/null; then
 		opkg update
 	else
 		echo "未知的包管理器!"
-		return
+		return 1
 	fi
 }
 
@@ -5529,29 +5530,15 @@ sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
 
 
 set_dns() {
-
-ip_address
-
- chattr -i /etc/resolv.conf
-> /etc/resolv.conf
-
-if [ -n "$ipv4_address" ]; then
-	echo "nameserver $dns1_ipv4" >> /etc/resolv.conf
-	echo "nameserver $dns2_ipv4" >> /etc/resolv.conf
-fi
-
-if [ -n "$ipv6_address" ]; then
-	echo "nameserver $dns1_ipv6" >> /etc/resolv.conf
-	echo "nameserver $dns2_ipv6" >> /etc/resolv.conf
-fi
-
-if [ ! -s /etc/resolv.conf ]; then
-	echo "nameserver 223.5.5.5" >> /etc/resolv.conf
-	echo "nameserver 8.8.8.8" >> /etc/resolv.conf
-fi
-
-chattr +i /etc/resolv.conf
-
+	ip_address
+	local -a servers=()
+	if [ -n "$ipv4_address" ]; then servers+=("$dns1_ipv4" "$dns2_ipv4"); fi
+	if [ -n "$ipv6_address" ]; then servers+=("$dns1_ipv6" "$dns2_ipv6"); fi
+	if [ "${#servers[@]}" -eq 0 ]; then servers=("$dns1_ipv4" "$dns2_ipv4"); fi
+	chattr -i /etc/resolv.conf 2>/dev/null || true
+	printf 'nameserver %s\n' "${servers[@]}" > /etc/resolv.conf || return 1
+	chattr +i /etc/resolv.conf 2>/dev/null || echo "DNS 已写入，但此文件系统不支持锁定 resolv.conf。"
+	return 0
 }
 
 
@@ -6888,14 +6875,15 @@ update_locale() {
 		. /etc/os-release
 		case $ID in
 			debian|ubuntu|kali)
-				install locales
+				install locales || return 1
 				if grep -Eq "^[[:space:]]*#?[[:space:]]*${locale_pattern}([[:space:]]|$)" /etc/locale.gen; then
-					sed -i "s/^\s*#\?\s*${locale_file}/${locale_file}/" /etc/locale.gen
+					sed -i "s/^\s*#\?\s*${locale_pattern}/${locale_file}/" /etc/locale.gen || return 1
 				else
-					echo "${locale_file} UTF-8" >> /etc/locale.gen
+					echo "${locale_file} UTF-8" >> /etc/locale.gen || return 1
 				fi
-				locale-gen
-				echo "LANG=${lang}" > /etc/default/locale
+				locale-gen || return 1
+				LC_ALL=C locale -a | awk -v wanted="$lang" 'BEGIN {gsub(/[-.]/,"",wanted); wanted=tolower(wanted)} {gsub(/[-.]/,""); if(tolower($0)==wanted) found=1} END {exit !found}' || return 1
+				echo "LANG=${lang}" > /etc/default/locale || return 1
 				export LANG=${lang}
 				echo -e "${gl_lv}系统语言已经修改为: $lang 重新连接SSH生效。${gl_bai}"
 				hash -r
@@ -6903,9 +6891,10 @@ update_locale() {
 
 				;;
 			centos|rhel|almalinux|rocky|fedora)
-				install glibc-langpack-zh
-				localectl set-locale LANG=${lang}
-				echo "LANG=${lang}" | tee /etc/locale.conf
+				install "glibc-langpack-${lang%%_*}" || return 1
+				localectl set-locale "LANG=$lang" || return 1
+				echo "LANG=${lang}" > /etc/locale.conf || return 1
+				export LANG="$lang"
 				echo -e "${gl_lv}系统语言已经修改为: $lang 重新连接SSH生效。${gl_bai}"
 				hash -r
 				[ "$pause_after" = "false" ] || break_end
@@ -6913,11 +6902,13 @@ update_locale() {
 			*)
 				echo "不支持的系统: $ID"
 				[ "$pause_after" = "false" ] || break_end
+				return 1
 				;;
 		esac
 	else
 		echo "不支持的系统，无法识别系统类型。"
 		[ "$pause_after" = "false" ] || break_end
+		return 1
 	fi
 }
 
@@ -8658,10 +8649,17 @@ one_click_enable_bbr_fq() {
 
 one_click_install_docker_auto() {
 	root_use
-	install curl
+	if command -v docker >/dev/null 2>&1; then
+		if docker --version && docker compose version && docker info >/dev/null 2>&1; then
+			echo "Docker 与 Compose 已可用，保留现有安装和配置。"
+			return 0
+		fi
+		echo "检测到已有 Docker，但服务或 Compose 不可用；请先修复，不自动卸载现有安装。"
+		return 1
+	fi
+	install curl || return 1
 	local country mirror
-	country=$(curl -s --max-time 8 ipinfo.io 2>/dev/null | grep -oE '"country"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | cut -d'"' -f4)
-	[ -z "$country" ] && country=$(curl -s --max-time 5 ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+	country=$(daimon_country)
 	if [ "$country" = "CN" ]; then
 		mirror=1
 		echo "检测到国家/地区: CN，使用国内 Docker 镜像源（阿里云，失败切清华/官方）"
@@ -8670,10 +8668,10 @@ one_click_install_docker_auto() {
 		echo "检测到国家/地区: ${country:-未知}，使用 Docker 官方源"
 	fi
 
-	mkdir -p "$DAIMON_SCRIPT_DIR"
-	cat > "$DAIMON_SCRIPT_DIR/install-docker-auto.sh" <<'EOF'
+	mkdir -p "$DAIMON_SCRIPT_DIR" || return 1
+	cat > "$DAIMON_SCRIPT_DIR/install-docker-auto.sh" <<'EOF' || return 1
 #!/bin/bash
-set -e
+set -eo pipefail
 MIRROR=${1:-2}
 DOCKER_OFFICIAL="https://download.docker.com"
 ALIYUN_MIRROR="https://mirrors.aliyun.com/docker-ce"
@@ -8767,9 +8765,12 @@ main() {
 }
 main
 EOF
-	chmod +x "$DAIMON_SCRIPT_DIR/install-docker-auto.sh"
-	bash "$DAIMON_SCRIPT_DIR/install-docker-auto.sh" "$mirror"
-	install_add_docker_cn
+	chmod +x "$DAIMON_SCRIPT_DIR/install-docker-auto.sh" || return 1
+	bash "$DAIMON_SCRIPT_DIR/install-docker-auto.sh" "$mirror" || return 1
+	if [ "$country" = CN ] && [ ! -e /etc/docker/daemon.json ]; then
+		install_add_docker_cn || return 1
+	fi
+	docker --version && docker compose version && docker info >/dev/null 2>&1
 }
 
 daimon_network_cleanup_old_qdisc_service() {
@@ -8937,7 +8938,7 @@ one_click_auto_dns_optimize() {
 		local dns1_ipv6="2400:3200::1"
 		local dns2_ipv6="2402:4e00::"
 		echo "检测到国家/地区: CN，自动使用国内 DNS 优化"
-		set_dns
+		set_dns || return 1
 		send_stats "一键国内DNS优化"
 	else
 		local dns1_ipv4="1.1.1.1"
@@ -8945,20 +8946,21 @@ one_click_auto_dns_optimize() {
 		local dns1_ipv6="2606:4700:4700::1111"
 		local dns2_ipv6="2001:4860:4860::8888"
 		echo "检测到国家/地区: ${country:-未知}，自动使用国外 DNS 优化"
-		set_dns
+		set_dns || return 1
 		send_stats "一键国外DNS优化"
 	fi
 }
 
 one_click_set_timezone_locale() {
 	root_use
-	set_timedate Asia/Shanghai
-	update_locale "en_US.UTF-8" "en_US.UTF-8" false
+	set_timedate Asia/Shanghai || return 1
+	update_locale "en_US.UTF-8" "en_US.UTF-8" false || return 1
 	echo "已设置时区为 Asia/Shanghai，本地语言为 en_US.UTF-8"
 	send_stats "一键配置时区和本地语言"
 }
 
 one_click_config_manager() {
+	local sub_choice
 	one_click_config_run_item() {
 		export DEBIAN_FRONTEND=noninteractive
 		export NEEDRESTART_MODE=a
@@ -8973,25 +8975,51 @@ one_click_config_manager() {
 			8) one_click_network_auto_optimize ;;
 			9) linux_tools thirdparty-install-all ;;
 			10) one_click_set_timezone_locale ;;
-			*) echo "跳过无效编号: $1" ;;
+			*) echo "无效配置编号: $1"; return 1 ;;
 		esac
 	}
 
 	one_click_config_run_all() {
-		local nums n failed=0 DAIMON_DEFER_SHELL_RESTART=1
+		local nums n DAIMON_DEFER_SHELL_RESTART=1 DAIMON_BATCH_MODE=1
+		local -a selected=() succeeded=() failed=()
 		export DEBIAN_FRONTEND=noninteractive
 		export NEEDRESTART_MODE=a
 		export APT_LISTCHANGES_FRONTEND=none
-		nums="2 3 4 5 6 7 8 9 10"
-		read -e -i "$nums" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums || return 1
-		if [ -z "$nums" ]; then
+		nums="${1:-2 3 4 5 6 7 8 9 10}"
+		if [ "$#" -eq 0 ]; then
+			read -e -i "$nums" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums || return 1
+		fi
+		if [ -z "${nums//[[:space:]]/}" ] || [ "$nums" = 0 ]; then
 			echo "未选择任何配置项"
 			return
 		fi
 		for n in $nums; do
-			one_click_config_run_item "$n" || { echo "配置项 $n 执行失败"; failed=1; }
+			if ! [[ "$n" =~ ^[0-9]{1,2}$ ]] || [ "$((10#$n))" -lt 2 ] || [ "$((10#$n))" -gt 10 ]; then
+				echo "无效配置编号: $n；未执行任何配置"
+				return 1
+			fi
+			n=$((10#$n))
+			[[ " ${selected[*]} " == *" $n "* ]] || selected+=("$n")
 		done
-		return "$failed"
+		for n in "${selected[@]}"; do
+			echo "正在执行配置项: $n"
+			if one_click_config_run_item "$n"; then
+				succeeded+=("$n")
+			else
+				failed+=("$n")
+				echo "配置项 $n 执行失败，继续后续配置"
+			fi
+		done
+		echo "成功配置项: ${succeeded[*]:-无}"
+		if [ "${#failed[@]}" -gt 0 ]; then
+			echo "失败配置项: ${failed[*]}；请根据上方错误重试"
+		else
+			echo "全部配置成功"
+		fi
+		echo "配置流程结束，正在使用 exec bash 重新进入命令行..."
+		hash -r
+		exec bash
+		return 1
 	}
 
 	while true; do
@@ -9012,8 +9040,9 @@ one_click_config_manager() {
 		echo "------------------------"
 		read -e -p "请输入你的选择（默认 1 配置全部）: " sub_choice || return 1
 		case "$sub_choice" in
-			""|1) one_click_config_run_all ;;
-			2|3|4|5|6|7|8|9|10) one_click_config_run_item "$sub_choice" ;;
+			""|1) one_click_config_run_all; continue ;;
+			9) one_click_config_run_all 9; continue ;;
+			2|3|4|5|6|7|8|10) one_click_config_run_item "$sub_choice" || echo "配置项 $sub_choice 执行失败" ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
