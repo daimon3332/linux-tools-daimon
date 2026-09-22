@@ -157,7 +157,7 @@ journalctl --vacuum-size=500M
 ```bash
 read -e -i "2 3 4 5 6 7 8 9 10" -p "请确认/修改要执行的配置编号（默认全选，空格分隔）: " nums
 ```
-解释：默认选择全部配置项，执行前允许删减编号；最终按输入的编号逐项执行。
+解释：默认全选，执行前可删减。先验证所有编号并去重；无效编号会阻止整批开始，清空或输入 `0` 取消。按顺序执行时跳过中间暂停，失败项不阻断后续步骤。全部结束后打印成功和失败编号，统一 `exec bash` 使 Shell 配置生效；有失败时不会显示“全部配置成功”。
 
 ### 4.2 系统更新
 
@@ -216,11 +216,11 @@ sysctl -p /etc/sysctl.d/99-daimon-bbr-fq.conf
 ### 4.7 安装 Docker
 
 ```bash
-curl -s --max-time 8 ipinfo.io
+daimon_country
 bash /root/linux-daimon/daimon/install-docker-auto.sh 1   # 中国大陆：阿里云，失败切清华/官方
 bash /root/linux-daimon/daimon/install-docker-auto.sh 2   # 国外和香港：Docker 官方源
 ```
-解释：根据 `ipinfo.io` 的 `country` 字段判断；`CN` 使用国内镜像源，其他地区包括香港使用 Docker 官方源。
+解释：根据 `ipinfo.io` 的 `country` 字段判断；`CN` 使用国内镜像源，其他地区包括香港使用 Docker 官方源。已有 Docker/Compose 与 daemon 均正常时直接保留，不重装、不覆盖配置；已有安装异常时报告失败。新安装的下载、签名或安装命令失败立即返回，只有国内新安装且不存在原 daemon.json 时才补充镜像配置。
 
 ### 4.8 系统网络自适应优化
 
@@ -234,6 +234,7 @@ sysctl -e -p /etc/sysctl.d/99-network-optimize.conf
 ```bash
 linux_tools thirdparty-install-all
 ```
+解释：一键配置第 9 项安装全部 15 项工具，逐项检查实际可用性；安装失败会在汇总中标明，成功配置通过最终 `exec bash` 加载。
 
 ### 4.10 修改时区和本地语言
 
@@ -242,7 +243,7 @@ timedatectl set-timezone Asia/Shanghai
 locale-gen
 echo "LANG=en_US.UTF-8" > /etc/default/locale
 ```
-解释：一键设置系统时区为中国/上海时区，本地语言为 `en_US.UTF-8`。
+解释：先设置上海时区，再生成并验证 `en_US.UTF-8`。任一步失败返回失败，不继续打印设置成功；已成功的前一步不做隐式回滚。
 
 ## 5. 系统工具
 
