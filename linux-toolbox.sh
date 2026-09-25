@@ -9130,6 +9130,13 @@ daimon_tcp_median() {
 	sort -n | awk '{v[NR]=$1} END {if (NR==0) exit 1; if (NR%2) printf "%.1f\n", v[(NR+1)/2]; else printf "%.1f\n", (v[NR/2]+v[NR/2+1])/2}'
 }
 
+daimon_tcp_prune_logs() {
+	local file
+	for file in $(ls -1t "$DAIMON_TCP_STATE_DIR"/iperf3-*.log "$DAIMON_TCP_STATE_DIR"/tcpquality-*.log 2>/dev/null | tail -n +11); do
+		rm -f "$file"
+	done
+}
+
 daimon_tcp_calc_profile() {
 	awk -v bw="$1" -v rtt="$2" -v ram="$(daimon_tcp_ram_mb)" -v role="$3" 'BEGIN{
 		if (bw <= 0 || rtt <= 0) exit 1
@@ -9521,6 +9528,7 @@ daimon_tcp_measure_iperf3() {
 	ips=$(daimon_tcp_public_ips)
 	[ -n "$ips" ] || { echo "无法获取公网地址，未修改配置。"; return 1; }
 	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	daimon_tcp_prune_logs
 	log="$DAIMON_TCP_STATE_DIR/iperf3-$(date +%Y%m%d-%H%M%S).log"
 	daimon_tcp_fw_open "$port"
 	if ! daimon_tcp_start_iperf_server "$port" "$log"; then
@@ -9640,17 +9648,19 @@ daimon_tcp_tcpquality_rows() {
 
 daimon_tcp_measure_tcpquality() {
 	root_use
-	command -v curl >/dev/null 2>&1 || install curl || { echo "curl 安装失败，无法运行 TCPquality。"; return 1; }
-	command -v script >/dev/null 2>&1 || { echo "缺少 script 命令（util-linux），无法运行 TCPquality。"; return 1; }
 	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	daimon_tcp_prune_logs
 	rm -f "$DAIMON_TCP_MEASURE_RESULT"
 	local log="$DAIMON_TCP_STATE_DIR/tcpquality-$(date +%Y%m%d-%H%M%S).log"
 	local rows top bw retr rtt manual
 	echo -e "${gl_kjlan}正在运行 TCPquality 国内三网单线程测速（通常 3-8 分钟）...${gl_bai}"
-	printf 'n\nn\nn\ny\nn\n' | TERM=xterm timeout --kill-after=10s 900s \
-		script -qec "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null \
-		> "$log" 2>&1 || true
+	daimon_tcp_tcpquality_direct "$log"
 	rows=$(daimon_tcp_tcpquality_rows "$log" | awk '$1 ~ /(电信|联通|移动)/' || true)
+	if [ -z "$rows" ]; then
+		echo -e "${gl_huang}直接运行未取得结果，改用 TCPquality 官方 rootfs 模式（需下载 Debian rootfs，耗时更长）。${gl_bai}"
+		daimon_tcp_tcpquality_rootfs "$log"
+		rows=$(daimon_tcp_tcpquality_rows "$log" | awk '$1 ~ /(电信|联通|移动)/' || true)
+	fi
 	if [ -z "$rows" ]; then
 		echo -e "${gl_huang}未能自动解析 TCPquality 结果，原始输出末尾如下：${gl_bai}"
 		sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$log" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 25
@@ -9690,6 +9700,25 @@ daimon_tcp_measure() {
 	esac
 }
 
+daimon_tcp_tcpquality_direct() {
+	local log="$1" core="$DAIMON_TCP_STATE_DIR/runTcpQuality-core.sh"
+	command -v curl >/dev/null 2>&1 || install curl || { echo "curl 安装失败，无法运行 TCPquality。"; return 1; }
+	curl -fsSL --retry 2 --connect-timeout 10 --max-time 60 \
+		"https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality-core.sh" -o "$core" 2>/dev/null || return 1
+	TERM=xterm timeout --kill-after=15s "${DAIMON_TCP_TCPQUALITY_TIMEOUT:-900}s" \
+		bash "$core" --only-speedtest > "$log" 2>&1
+	return 0
+}
+
+daimon_tcp_tcpquality_rootfs() {
+	local log="$1"
+	command -v script >/dev/null 2>&1 || { echo "缺少 script 命令（util-linux），无法用 rootfs 模式运行 TCPquality。" >&2; return 1; }
+	printf 'n\nn\nn\ny\nn\n' | TERM=xterm timeout --kill-after=10s 900s \
+		script -qec "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null \
+		> "$log" 2>&1 || true
+	return 0
+}
+
 daimon_tcp_tune_run() {
 	root_use
 	local method="$1" before_bw before_rtt before_retr after_bw after_retr role delta answer
@@ -9720,7 +9749,9 @@ daimon_tcp_tune_run() {
 	printf '变化:   %s\n' "$delta"
 	echo "------------------------------------------------"
 	daimon_tcp_save_profile "$method" "$before_bw" "$before_rtt" "$role" "$before_bw" "$after_bw" "$after_retr"
-	if awk -v b="$before_bw" -v a="$after_bw" 'BEGIN{exit !(b > 0 && a > 0 && a < b * 0.8)}'; then
+	if [ "$method" != iperf3 ]; then
+		echo -e "${gl_huang}TCPquality 走公共端点，复测波动通常很大，本次不自动回滚；需要恢复请用菜单第 2 项。${gl_bai}"
+	elif awk -v b="$before_bw" -v a="$after_bw" 'BEGIN{exit !(b > 0 && a > 0 && a < b * 0.8)}'; then
 		echo -e "${gl_hong}复测明显低于优化前，可能是链路波动或参数不适合本机。${gl_bai}"
 		read -e -i "y" -p "是否恢复调优前参数？[Y/n]: " answer || answer=y
 		case "$answer" in

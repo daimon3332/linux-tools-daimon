@@ -413,6 +413,8 @@ git diff --check
 
 主菜单 `5 → 15` 改为“先测速再调优”，只保留两个入口：`1. 动态调优`（iperf3 或 TCPquality）与 `2. 恢复调优前参数`；一键配置第 8 项改用 TCPquality 自动测速后应用。参数不再固定：`BDP = 实测带宽 × RTT`，缓冲区上限 `2×BDP+2MiB`（4MiB–256MiB、且不超过内存/32），缓冲区默认值按角色（代理 1MiB、其他 2MiB），`tcp_mem` 按内存 1/16、1/8、1/4。调优文件 `/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf` 与 `/etc/sysctl.conf` 的 daimon 标记块同步写入同一份值。
 
+TCPquality 默认改为“直接模式”：只下载 `runTcpQuality-core.sh`（约 270 KB）并执行 `--only-speedtest`，实测约 4 分钟；只有在直接模式取不到结果时才回退到官方 rootfs 入口脚本。原 rootfs 模式每轮要下载约 400 MB Debian rootfs，4 台测试机中春川第二轮曾超过 14 分钟仍未结束。
+
 ### 实测发现的缺陷（均已修复）
 
 | 缺陷 | 现象与证据 | 修复 |
@@ -439,6 +441,10 @@ passed=15 failed=1
 菜单路径用管道驱动真实脚本 `5 → 15 → 1 → 1` 验证：正确显示 iperf3 客户端命令、临时放行端口、无客户端连接时按 `DAIMON_TCP_IPERF3_WAIT=5` 超时并提示“只收到 0 次有效测试（需要 3 次），未修改配置”，随后返回上级菜单。
 
 本地回归：`tests/regression.sh` 79 passed、`tests/installation-regression.sh` 19 passed、`tests/debian-compat-regression.sh` 3 passed、`tests/menu-audit.mjs` 757 patterns / 94 case blocks / 9 embedded scripts、`bash -n` 通过。
+
+同一套功能测试在洛杉矶（Debian 13，1 核 965 MiB，无 ufw）执行 14 passed / 0 failed（`T4 ufw 未启用` 跳过），覆盖 Debian 下的参数计算、应用、运行态一致、幂等和恢复，确认 Debian 与 Ubuntu 行为一致。
+
+TCPquality 实际解析结果（春川，rootfs 模式一次）：北京联通 612.1、上海电信 610.8、北京电信 416.7、上海联通 408.4 Mbps 等 9 行国内三网结果，取最快三个中位数 610.8 Mbps、RTT 39.5 ms；直接模式复跑同机取到 403.7 Mbps（上海联通 403.7、北京联通 473.9、北京电信 301.8），两种模式都能被解析为可用的实测带宽。
 
 ### 四机 iperf3 实测（本地 Windows 客户端，单线程下载 `-R -t 8 -O 2`）
 
