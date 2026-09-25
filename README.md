@@ -14,7 +14,7 @@
 bash <(curl -fsSL https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh)
 ```
 
-Debian 12/13 首次使用时若没有 `curl`，先以 root 执行：
+Debian 首次使用时若没有 `curl`，先以 root 执行：
 
 ```bash
 apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl
@@ -57,15 +57,15 @@ d
 | 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via、域名和 Nginx 配置备份、服务器命名 `/root` 一致性备份 |
 | 18 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
 | 19 | 服务器退役 | 只读检测并按选择停止 Compose、删除托管 Nginx 配置/证书目录和自动任务脚本 |
-| 20 | Debian 12/13 基础工具 | 查看包状态，按选择安装缺失的基础工具；默认预选四项 |
+| 20 | Debian 基础工具 | 固定检查并安装四项基础工具 |
 
 ## 主要内容
 
 ### Debian 基础工具
 
-菜单 `20` 默认预选 `ca-certificates curl wget jq`，执行前可以删减或增选。`git python3 gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 仅按需安装；不包含未在脚本中直接使用的 `xz-utils`，也不自动安装 `tasksel`、`apt-listchanges` 或 `openssh-server`。只支持 Debian 12/13，已安装的软件包会跳过；需要安装时只运行一次 APT 索引更新和缺失包安装，失败会明确报告。不执行系统升级、依赖修复、清理、SSH/DNS/Swap 配置或软件源替换。
+菜单 `20` 固定检查 `ca-certificates curl wget jq` 四项，只安装缺失项，不提供其他软件包选择。其他菜单在安装对应工具或执行功能时，由现有安装流程检测缺少的命令和依赖并按需安装；不会因为打开菜单而批量安装无关工具。已安装项跳过；需要安装时只运行一次 APT 索引更新和缺失包安装，失败会明确报告。不执行系统升级、依赖修复、清理、SSH/DNS/Swap 配置或软件源替换。
 
-Debian 12/13 编程工具的 Python 选项使用发行版自带的 `python3`、`python3-venv` 和 `python3-pip`，不添加 Ubuntu PPA、不替换系统解释器；Ubuntu 保持原 Python 3.12 行为。Debian 没有 `/var/log/auth.log` 时，fail2ban SSH 配置选择 systemd journal 后端并按需安装 `python3-systemd`。这两项均属于选择相应功能后的安装，不属于默认基础包。
+Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python3-venv` 和 `python3-pip`，不添加 Ubuntu PPA、不替换系统解释器；Ubuntu 保持原 Python 3.12 行为。Debian 没有 `/var/log/auth.log` 时，fail2ban SSH 配置选择 systemd journal 后端并按需安装 `python3-systemd`。这两项均属于选择相应功能后的安装，不属于默认基础包。
 
 ### Nginx 与域名管理（统一流程）
 

@@ -4008,7 +4008,7 @@ EOF
 	# (without it, fail2ban-server may refuse to start)
 	if [ "$jail_name" = "sshd" ]; then
 		if [ -f /etc/fail2ban/jail.d/sshd.local ]; then
-			if debian_basics_supported && [ ! -f /var/log/auth.log ]; then
+			if daimon_is_debian && [ ! -f /var/log/auth.log ]; then
 				install python3-systemd || return 1
 				echo 'backend = systemd' >> /etc/fail2ban/jail.d/sshd.local
 			else
@@ -18529,7 +18529,7 @@ fail2ban_manager() {
 		elif [ -f /var/log/secure ]; then
 			echo "/var/log/secure"
 		else
-			if debian_basics_supported; then echo systemd; else echo "%(sshd_log)s"; fi
+			if daimon_is_debian; then echo systemd; else echo "%(sshd_log)s"; fi
 		fi
 	}
 
@@ -24158,18 +24158,15 @@ kejilion_update() {
 
 
 
-debian_basics_supported() {
+daimon_is_debian() {
 	[ -r /etc/os-release ] || return 1
-	local ID VERSION_ID
+	local ID
 	. /etc/os-release
-	case "$ID:$VERSION_ID" in
-		debian:12|debian:12.*|debian:13|debian:13.*) return 0 ;;
-		*) return 1 ;;
-	esac
+	[ "$ID" = debian ]
 }
 
 debian_basics_install() {
-	debian_basics_supported || { echo "仅支持 Debian 12 和 Debian 13。"; return 1; }
+	daimon_is_debian || { echo "仅支持 Debian。"; return 1; }
 	[ "$EUID" -eq 0 ] || { echo "请以 root 身份安装基础工具。"; return 1; }
 	command -v apt-get >/dev/null && command -v dpkg-query >/dev/null || {
 		echo "缺少 apt-get 或 dpkg-query，无法安装。"
@@ -24179,7 +24176,7 @@ debian_basics_install() {
 	local -a selected=() missing=()
 	for package in "$@"; do
 		case "$package" in
-			ca-certificates|curl|wget|git|jq|python3|gnupg|tar|unzip|openssl|sudo|socat|openssh-client|procps|iproute2|lsof) ;;
+			ca-certificates|curl|wget|jq) ;;
 			*) echo "无效的 Debian 软件包: $package"; return 1 ;;
 		esac
 		[[ " ${selected[*]} " == *" $package "* ]] || selected+=("$package")
@@ -24208,12 +24205,12 @@ debian_basics_install() {
 }
 
 debian_basics_menu() {
-	debian_basics_supported || { echo "仅支持 Debian 12 和 Debian 13。"; break_end; return 1; }
-	local -a packages=(ca-certificates curl wget git jq python3 gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof)
-	local -a descriptions=(HTTPS证书 下载工具 备用下载 代码仓库 JSON解析 Python运行 GPG验签 打包工具 ZIP解压 加密工具 sudo提权 TCP转发 SSH客户端 系统进程 网络命令 端口占用)
-	local i number input selected=() package
+	daimon_is_debian || { echo "仅支持 Debian。"; break_end; return 1; }
+	local -a packages=(ca-certificates curl wget jq)
+	local -a descriptions=(HTTPS证书 下载工具 备用下载 JSON解析)
+	local i package missing=0 answer
 	clear
-	echo "Debian 12/13 基础工具"
+	echo "Debian 基础工具"
 	echo "仅安装所选的缺失软件包；不升级系统、修复依赖或更改服务。"
 	for ((i=0; i<${#packages[@]}; i++)); do
 		package="${packages[i]}"
@@ -24221,21 +24218,13 @@ debian_basics_menu() {
 			printf '%2d. %-18s %-12s 已安装\n' "$((i+1))" "$package" "${descriptions[i]}"
 		else
 			printf '%2d. %-18s %-12s 未安装\n' "$((i+1))" "$package" "${descriptions[i]}"
+			missing=$((missing+1))
 		fi
 	done
-	read -e -i '1 2 3 5' -p "选择编号（默认四项，可删减；0 返回）: " input || return 1
-	[ -n "${input//[[:space:]]/}" ] && [ "$input" != 0 ] || return 0
-	for number in $input; do
-		if ! [[ "$number" =~ ^[0-9]{1,2}$ ]] || [ "$((10#$number))" -lt 1 ] || [ "$((10#$number))" -gt ${#packages[@]} ]; then
-			echo "无效编号: $number；未执行安装。"
-			break_end
-			return 1
-		fi
-		number=$((10#$number))
-		package="${packages[number-1]}"
-		[[ " ${selected[*]} " == *" $package "* ]] || selected+=("$package")
-	done
-	debian_basics_install "${selected[@]}"
+	[ "$missing" -gt 0 ] || { echo "Debian 基础工具均已安装。"; break_end; return 0; }
+	read -e -p "安装以上缺失项？(Y/n): " answer || return 1
+	case "$answer" in ''|y|Y) ;; *) echo "已取消"; return 0 ;; esac
+	debian_basics_install "${packages[@]}"
 	local status=$?
 	break_end
 	return "$status"
@@ -24281,7 +24270,7 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}18.  ${gl_bai}常用的一键脚本"
 echo -e "${gl_kjlan}19.  ${gl_bai}服务器退役"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
-echo -e "${gl_kjlan}20.  ${gl_bai}Debian 12/13 基础工具"
+echo -e "${gl_kjlan}20.  ${gl_bai}Debian 基础工具"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"

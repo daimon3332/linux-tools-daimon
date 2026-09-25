@@ -1,16 +1,12 @@
-# 2026-09-25 Debian 12/13 基础工具菜单
+# 2026-09-25 Debian 基础工具与兼容修复
 
-按现有 19 个一级菜单的实际依赖选择基础工具，而非照搬通用服务器软件清单。新增一级菜单 `20`，原 1–19 编号不变。默认仅预选 `ca-certificates curl wget git jq python3`，执行前可删减或增选；`gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 均为可选。`xz-utils` 未发现主脚本直接调用，未加入菜单。
+新增一级菜单 `20. Debian 基础工具`，原 1–19 编号不变。该菜单固定检查 `ca-certificates curl wget jq` 四项，只安装实际缺失项，不再展示或选择其他软件包。`git`、`python3` 等工具不属于该菜单默认范围；其他菜单安装对应工具或执行功能时，继续由现有安装流程检测缺少的命令与依赖并按需安装，不会因打开菜单而批量安装无关工具。
 
-依赖划分：启动命令和通用下载需要 curl、证书与 wget；源码工具使用 git；Docker/配置流程使用 jq；网络持久化、备份及部分配置流程直接需要 python3。unzip 仅在 WordPress/Bun 等分支使用；procps 和 iproute2 虽被系统信息、网络操作引用，但不默认预装。截图中的 `tasksel`、`apt-listchanges`、`openssh-server` 不默认安装；新菜单不执行 `apt --fix-broken`、系统升级或清理。
+Debian 判断统一使用 `/etc/os-release` 的 `ID=debian`，界面和文档不再写版本分支名称。编程工具的 Python 选项在 Debian 上安装发行版 `python3`、`python3-venv`、`python3-pip`，不添加 Ubuntu PPA，也不替换或卸载系统解释器；Ubuntu 保持原 Python 3.12 行为。没有 `/var/log/auth.log` 或 `/var/log/secure` 时，fail2ban 的 SSH jail 使用 systemd journal 后端，并在写配置前按需安装 `python3-systemd`。网络持久化缺少 `python3` 时会先安装，安装失败则停止写入。
 
-Debian 12 `bookworm` 与 Debian 13 `trixie` 的默认六项包名一致，Python 使用发行版的 `python3`，不强行指定小版本。现有编程工具的 Python 3.12 路径可能在 Debian 上尝试 Ubuntu PPA，这是独立风险，本次菜单不会调用；其他菜单的第三方脚本、服务和网络功能未因此获得 Debian 13 实机验证。首次运行若没有 curl，仍须先用 APT 安装 `ca-certificates curl`。
+代码已通过 Linux 语法、菜单分派及回归测试；实测在一台 Debian x86_64 服务器和一个隔离 Debian 环境完成。测试覆盖菜单默认四项、缺包安装、重复执行不调用 APT、非 Debian/非法包拒绝、编程工具 Python 路径、fail2ban journald 配置检查、网络持久化、Docker 未安装提示，以及 77 项通用和 19 项安装回归。普通菜单入口的安全进入/返回路径也逐项执行；系统升级、清理、服务安装、备份还原和退役等有实际副作用的分支没有为测试而强行执行。
 
-代码 `ea8234f` 已推送，西班牙 Ubuntu 22.04 ARM64 主机通过已安装脚本的内置更新器升级；归一化主脚本 SHA256 `d124e259664a2ccc8f4f7a80179f344a7a45ab50bdc743f3cca4bbd8efada97e`。同机隔离测试：5 项 Debian 菜单回归、76 项通用、19 项安装回归全部通过。干净 `debian:12-slim` 和 `debian:13-slim` 容器均真实从菜单安装六项，再次执行未调用 APT；另核对全部 16 个可选包名在两版仓库中都存在。测试容器以 `--rm` 退出且没有残留。菜单语法分派检查覆盖 755 个 pattern、93 个 case、9 段嵌入脚本；不等于执行了全部业务分支。
-
-按菜单边界静态复核：1/4/5/13 的信息和网络功能会调用 procps/iproute2，但本功能尊重用户选择不预装；6/7/11/14/18 的具体安装及第三方脚本各自有额外依赖；8/10/12 还依赖 Docker、防火墙、fail2ban 服务；15/16/17 的云备份依赖 rclone、Python/Docker 或已有远端配置；19 是有确认门禁的退役操作。2/3 直接使用系统 APT 和日志服务。Python 3.12 的 Ubuntu PPA、无 `/var/log/auth.log` 的 fail2ban SSH jail 和第三方外部脚本保留为独立兼容性风险，未在真实 Debian VPS 上逐项启动服务。
-
-依据：[Debian 13 发布说明](https://www.debian.org/releases/trixie/release-notes/whats-new.en.html)、[Debian 13 APT 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)、[Docker 官方 Debian 12/13 支持范围](https://docs.docker.com/engine/install/debian/)。干净 `debian:13-slim` 镜像起初缺少 curl、wget、ca-certificates、git、jq、python3 等，不代表所有 VPS 镜像都缺少。西班牙宿主机仍为 Ubuntu，最终检查时区保持 `Etc/UTC`、Docker 活跃、没有运行或残留测试容器；本次没有触碰其 SSH、DNS、Swap、业务数据或定时任务。
+测试过程中内置更新流程自动生成了证书续期脚本、定时任务、logrotate 配置、acme 辅助目录，并安装了 `ufw lsof socat python3-venv python3-pip` 及其自动依赖；核对精确路径、归属、时间与内容后，已删除这些测试生成物和测试专用软件包，恢复 root crontab 为不存在。SSH 始终正常，其余服务与测试前状态一致。
 
 # 2026-09-23 一键配置停顿与错误传播修复
 

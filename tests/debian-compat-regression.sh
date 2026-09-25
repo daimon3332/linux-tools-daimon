@@ -31,7 +31,7 @@ gl_lv='' gl_bai='' gl_hui=''
 
 test_python_uses_debian_default() {
     load install_python_312 && load remove_python_312_all || return 1
-    printf 'ID=debian\nVERSION_ID=13\n' > "$WORK/os-release"
+    printf 'ID=debian\nVERSION_ID=generic\n' > "$WORK/os-release"
     : > "$WORK/calls"
     command() {
         if [ "$1" = -v ] && [ "$2" = apt ]; then return 0; fi
@@ -51,8 +51,8 @@ test_python_uses_debian_default() {
 }
 
 test_journald_sshd_jail() {
-    load debian_basics_supported && load fail2ban_auth_logpath && load fail2ban_write_sshd_jail || return 1
-    printf 'ID=debian\nVERSION_ID=13\n' > "$WORK/os-release"
+    load daimon_is_debian && load fail2ban_auth_logpath && load fail2ban_write_sshd_jail || return 1
+    printf 'ID=debian\nVERSION_ID=generic\n' > "$WORK/os-release"
     install() { echo "INSTALL:$*" >> "$WORK/calls"; }
     : > "$WORK/calls"
     F2B_JAIL="$WORK/fail2ban/jail.local"
@@ -63,8 +63,8 @@ test_journald_sshd_jail() {
 }
 
 test_basic_config_journald() {
-    load debian_basics_supported && load f2b_basic_config || return 1
-    printf 'ID=debian\nVERSION_ID=13\n' > "$WORK/os-release"
+    load daimon_is_debian && load f2b_basic_config || return 1
+    printf 'ID=debian\nVERSION_ID=generic\n' > "$WORK/os-release"
     install() { :; }
     command() {
         if [ "$1" = -v ] && [ "$2" = fail2ban-client ]; then return 0; fi

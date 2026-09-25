@@ -9,7 +9,7 @@ bash <(curl -fsSL https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh)
 ```
 解释：在线拉取并运行主脚本。
 
-Debian 12/13 缺少 `curl` 时，先以 root 运行：
+Debian 缺少 `curl` 时，先以 root 运行：
 
 ```bash
 apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl
@@ -61,7 +61,7 @@ mkdir -p /root/linux-daimon/daimon
 ---
 18. 常用的一键脚本
 19. 服务器退役
-20. Debian 12/13 基础工具
+20. Debian 基础工具
 00. 脚本更新
 0. 退出脚本
 
@@ -925,7 +925,7 @@ read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工
 
 编程工具安装核心命令：
 
-Debian 12/13 使用发行版解释器，不添加 Ubuntu PPA，也不替换系统 `python3`：
+Debian 使用发行版解释器，不添加 Ubuntu PPA，也不替换系统 `python3`：
 
 ```bash
 apt install -y python3 python3-venv python3-pip
@@ -968,7 +968,7 @@ claude --version
 npm install -g @openai/codex@latest
 codex --version
 ```
-解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Ubuntu 的 Python 选项安装 3.12、venv、dev 包和 pip；仅 Ubuntu 在软件源缺少 Python 3.12 时尝试 deadsnakes PPA，并只调整 `python` 快捷命令，不强改系统 `python3`。Debian 12/13 使用其自带 `python3`、venv 和 pip，卸载时保留系统解释器。npm/nodejs 统一通过 nvm 安装 LTS；ClaudeCode 按 CN/非 CN 分流；Codex 不分流；ClaudeCode 写入 `~/.claude/settings.json`，Codex 写入 `~/.codex/config.toml`。
+解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Ubuntu 的 Python 选项安装 3.12、venv、dev 包和 pip；仅 Ubuntu 在软件源缺少 Python 3.12 时尝试 deadsnakes PPA，并只调整 `python` 快捷命令，不强改系统 `python3`。Debian 使用其自带 `python3`、venv 和 pip，卸载时保留系统解释器。npm/nodejs 统一通过 nvm 安装 LTS；ClaudeCode 按 CN/非 CN 分流；Codex 不分流；ClaudeCode 写入 `~/.claude/settings.json`，Codex 写入 `~/.codex/config.toml`。
 
 ## 8. Docker 管理
 
@@ -1501,7 +1501,7 @@ maxretry = 5
 bantime = 3600
 findtime = 600
 ```
-解释：脚本会重写 `jail.local` 里的 `[sshd]` 段。有 auth.log/secure 时使用该文件；Debian 12/13 缺少文件日志时，按需安装 `python3-systemd` 并改写为 `backend = systemd`，不引用不存在的 `/var/log/auth.log`。
+解释：脚本会重写 `jail.local` 里的 `[sshd]` 段。有 auth.log/secure 时使用该文件；Debian 缺少文件日志时，按需安装 `python3-systemd` 并改写为 `backend = systemd`，不引用不存在的 `/var/log/auth.log`。
 
 配置检查和重载：
 
@@ -1861,16 +1861,6 @@ crontab -l | awk -v path="/root/linux-daimon/backup-sh/脚本名.sh" '/^[[:space
 ```
 解释：菜单 1 默认预填全部 `C/N/A/U/R` 编号，用户可删减后输入 `RETIRE` 确认；每类按编号倒序执行。Compose 停止不带 `-v`，保留卷、挂载和镜像；脚本和任务仅限托管目录。不会修改 DNS、UFW、Mihomo、SSH 或 rclone 配置，也不会创建备份。
 
-## 20. Debian 12/13 基础工具
+## 20. Debian 基础工具
 
-默认预选 `ca-certificates curl wget jq`；`git python3 gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 为可选项。显示每个软件包的安装状态，输入编号可增删；输入 `0` 或清空则返回。仅在 Debian 12/13 且以 root 运行时安装，先验证所有编号、去重并跳过已安装包。
-
-```bash
-apt-get update -y
-DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none \
-  apt-get install -y --no-install-recommends --no-remove \
-  -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" 所选缺失包
-dpkg-query -W -f='${Status}' 软件包
-```
-
-没有缺失包时不运行 APT；有缺失包时只更新一次索引。安装后逐项验证 dpkg 状态，不运行 `full-upgrade`、`--fix-broken`、`tasksel` 或 `apt clean`，也不改 SSH、DNS、Swap、服务或软件源。APT 仍可能为解决所选软件包依赖而安装或更新依赖包；不能把“只选择缺失包”理解为绝对零依赖变更。
+菜单固定检查 `ca-certificates curl wget jq`，只安装缺失项，不提供其他软件包选择。没有缺失包时不运行 APT；有缺失包时只更新一次索引并安装。其他功能所需的命令和依赖由对应安装流程检测并按需安装，不会因为打开菜单而安装无关工具。APT 仍可能为解决依赖而安装或更新依赖包。
