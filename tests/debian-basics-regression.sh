@@ -107,8 +107,27 @@ test_menu_selection() {
     [ ! -s "$WORK/apt.calls" ]
 }
 
+test_default_selection() {
+    printf 'ID=debian\nVERSION_ID=13\n' > "$WORK/os-release"
+    : > "$WORK/installed"
+    : > "$WORK/apt.calls"
+    clear() { :; }
+    read() {
+        local arg previous=''
+        for arg in "$@"; do
+            if [ "$previous" = -i ]; then printf -v "${@: -1}" '%s' "$arg"; return 0; fi
+            previous="$arg"
+        done
+        return 1
+    }
+    debian_basics_menu || return 1
+    [ "$(sort -u "$WORK/installed" | tr '\n' ' ')" = 'ca-certificates curl jq wget ' ] || return 1
+    ! grep -Eq '(^|[[:space:]])(git|python3)([[:space:]]|$)' "$WORK/apt.calls"
+}
+
 check 'Debian 12 first installation and repeat' test_first_and_repeat 12
 check 'Debian 13 first installation and repeat' test_first_and_repeat 13
 check 'unknown package and non-Debian reject before APT' test_invalid_and_unsupported
 check 'APT failures propagate without claiming success' test_failures
 check 'menu validates and deduplicates selection before APT' test_menu_selection
+check 'default selection omits git and python3' test_default_selection

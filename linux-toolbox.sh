@@ -4008,7 +4008,12 @@ EOF
 	# (without it, fail2ban-server may refuse to start)
 	if [ "$jail_name" = "sshd" ]; then
 		if [ -f /etc/fail2ban/jail.d/sshd.local ]; then
-			grep -qE '^\s*logpath\s*=' /etc/fail2ban/jail.d/sshd.local || echo 'logpath = /var/log/auth.log' >> /etc/fail2ban/jail.d/sshd.local
+			if debian_basics_supported && [ ! -f /var/log/auth.log ]; then
+				install python3-systemd || return 1
+				echo 'backend = systemd' >> /etc/fail2ban/jail.d/sshd.local
+			else
+				echo 'logpath = /var/log/auth.log' >> /etc/fail2ban/jail.d/sshd.local
+			fi
 		fi
 	fi
 
@@ -8400,7 +8405,10 @@ DAIMON_NETWORK_OPTIMIZE_CONF="/etc/sysctl.d/99-daimon-network-optimize.conf"
 DAIMON_NETWORK_LEGACY_CONF="/etc/sysctl.d/99-network-optimize.conf"
 
 daimon_network_persist() {
-	command -v python3 >/dev/null 2>&1 || { echo "持久化网络配置需要 python3，未写入覆盖配置。"; return 1; }
+	if ! command -v python3 >/dev/null 2>&1; then
+		install python3 || { echo "持久化网络配置需要 python3，安装失败，未写入覆盖配置。"; return 1; }
+		command -v python3 >/dev/null 2>&1 || { echo "python3 安装后不可用，未写入覆盖配置。"; return 1; }
+	fi
 	python3 - "${DAIMON_SYSCTL_CONF:-/etc/sysctl.conf}" \
 		"${DAIMON_NETWORK_PRIORITY_CONF:-/etc/sysctl.d/zz-daimon-network.conf}" "$@" <<'PY'
 import os, re, stat, sys, tempfile
@@ -10859,6 +10867,10 @@ EOF
   }
 
   python_312_is_default() {
+    if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+      command -v python3 >/dev/null 2>&1 && python3 --version 2>&1 | grep -q '^Python 3\.'
+      return
+    fi
     command -v python3.12 >/dev/null 2>&1 || return 1
     python --version 2>&1 | grep -q '^Python 3\.12\.'
   }
@@ -10866,6 +10878,11 @@ EOF
   install_python_312() {
     root_use
     local python312_bin
+    if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+      install python3 python3-venv python3-pip || return 1
+      python3 --version
+      return
+    fi
     if command -v apt >/dev/null 2>&1; then
       DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
       if ! apt-cache show python3.12 >/dev/null 2>&1; then
@@ -10914,6 +10931,10 @@ EOF
   }
 
   remove_python_312_all() {
+    if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+      echo "Debian 系统 Python 已保留；不卸载系统解释器。"
+      return 0
+    fi
     if [ "$(readlink -f /usr/bin/python3 2>/dev/null)" = "$(readlink -f /usr/bin/python3.12 2>/dev/null)" ] && [ -x /usr/bin/python3.12 ]; then
       echo "Python 3.12 是系统 Python，保留解释器和系统依赖，仅移除 daimon 的 python 快捷配置。"
       command -v update-alternatives >/dev/null 2>&1 && update-alternatives --remove daimon-python /usr/bin/python3.12
@@ -18498,7 +18519,7 @@ fail2ban_manager() {
 		elif [ -f /var/log/secure ]; then
 			echo "/var/log/secure"
 		else
-			echo "%(sshd_log)s"
+			if debian_basics_supported; then echo systemd; else echo "%(sshd_log)s"; fi
 		fi
 	}
 
@@ -18530,22 +18551,28 @@ fail2ban_manager() {
 
 	fail2ban_write_sshd_jail() {
 		local ports="$1"
-		local logpath
+		local logpath backend=""
 		local tmp
 		logpath=$(fail2ban_auth_logpath)
+		if [ "$logpath" = systemd ]; then
+			install python3-systemd || return 1
+			backend=systemd
+			logpath=""
+		fi
 
 		mkdir -p /etc/fail2ban
 		if [ ! -f "$F2B_JAIL" ]; then
 			cp /etc/fail2ban/jail.conf "$F2B_JAIL" 2>/dev/null || touch "$F2B_JAIL"
 		fi
 		tmp=$(mktemp)
-		awk -v port="$ports" -v logpath="$logpath" '
+		awk -v port="$ports" -v logpath="$logpath" -v backend="$backend" '
 			function print_sshd_block() {
 				print "[sshd]"
 				print "enabled = true"
 				print "port = " port
 				print "filter = sshd"
-				print "logpath = " logpath
+				if (backend != "") print "backend = " backend
+				else print "logpath = " logpath
 				print "maxretry = 5"
 				print "bantime = 3600"
 				print "findtime = 600"
@@ -18597,14 +18624,14 @@ fail2ban_manager() {
 	fail2ban_install_sshd() {
 		root_use
 		if command -v apt-get >/dev/null 2>&1; then
-			apt-get update -y
-			apt-get install -y fail2ban
+			apt-get update -y || return 1
+			apt-get install -y fail2ban || return 1
 		else
-			install fail2ban
+			install fail2ban || return 1
 		fi
 		fail2ban_service start 2>/dev/null || true
 		fail2ban_service enable 2>/dev/null || true
-		fail2ban_write_sshd_jail "$(fail2ban_detect_ssh_ports)"
+		fail2ban_write_sshd_jail "$(fail2ban_detect_ssh_ports)" || return 1
 		fail2ban_reload_checked
 	}
 
@@ -24186,7 +24213,7 @@ debian_basics_menu() {
 			printf '%2d. %-18s %-12s 未安装\n' "$((i+1))" "$package" "${descriptions[i]}"
 		fi
 	done
-	read -e -i '1 2 3 4 5 6' -p "选择编号（默认六项，可删减；0 返回）: " input || return 1
+	read -e -i '1 2 3 5' -p "选择编号（默认四项，可删减；0 返回）: " input || return 1
 	[ -n "${input//[[:space:]]/}" ] && [ "$input" != 0 ] || return 0
 	for number in $input; do
 		if ! [[ "$number" =~ ^[0-9]{1,2}$ ]] || [ "$((10#$number))" -lt 1 ] || [ "$((10#$number))" -gt ${#packages[@]} ]; then

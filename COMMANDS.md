@@ -925,6 +925,15 @@ read -e -i "1 2 3 ... 最后编号" -p "请确认/修改要安装或卸载的工
 
 编程工具安装核心命令：
 
+Debian 12/13 使用发行版解释器，不添加 Ubuntu PPA，也不替换系统 `python3`：
+
+```bash
+apt install -y python3 python3-venv python3-pip
+python3 --version
+```
+
+Ubuntu 保留原 Python 3.12 流程：
+
 ```bash
 apt update -y
 apt install -y python3.12 python3.12-venv python3.12-dev python3-pip
@@ -959,7 +968,7 @@ claude --version
 npm install -g @openai/codex@latest
 codex --version
 ```
-解释：安装 Python 3.12、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Python 默认安装 3.12、venv、dev 包和 pip；软件源没有 Python 3.12 时添加 `ppa:deadsnakes/ppa` 后重试；脚本只将 `python` 指向 `/usr/bin/python3.12`，不强改系统 `python3`，避免影响系统组件。npm/nodejs 统一通过 nvm 安装 LTS；ClaudeCode 按 CN/非 CN 分流；Codex 不分流；ClaudeCode 写入 `~/.claude/settings.json`，Codex 写入 `~/.codex/config.toml`。
+解释：安装 Python、Node/npm、Bun、uv、Git、ClaudeCode、Codex。Ubuntu 的 Python 选项安装 3.12、venv、dev 包和 pip；仅 Ubuntu 在软件源缺少 Python 3.12 时尝试 deadsnakes PPA，并只调整 `python` 快捷命令，不强改系统 `python3`。Debian 12/13 使用其自带 `python3`、venv 和 pip，卸载时保留系统解释器。npm/nodejs 统一通过 nvm 安装 LTS；ClaudeCode 按 CN/非 CN 分流；Codex 不分流；ClaudeCode 写入 `~/.claude/settings.json`，Codex 写入 `~/.codex/config.toml`。
 
 ## 8. Docker 管理
 
@@ -1492,7 +1501,7 @@ maxretry = 5
 bantime = 3600
 findtime = 600
 ```
-解释：脚本会重写 `jail.local` 里的 `[sshd]` 段；Ubuntu 默认日志使用 `/var/log/auth.log`，如果不存在会尝试 `/var/log/secure` 或 Fail2ban 默认 `%(sshd_log)s`。
+解释：脚本会重写 `jail.local` 里的 `[sshd]` 段。有 auth.log/secure 时使用该文件；Debian 12/13 缺少文件日志时，按需安装 `python3-systemd` 并改写为 `backend = systemd`，不引用不存在的 `/var/log/auth.log`。
 
 配置检查和重载：
 
@@ -1854,7 +1863,7 @@ crontab -l | awk -v path="/root/linux-daimon/backup-sh/脚本名.sh" '/^[[:space
 
 ## 20. Debian 12/13 基础工具
 
-默认预选 `ca-certificates curl wget git jq python3`；`gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 为可选项。显示每个软件包的安装状态，输入编号可增删；输入 `0` 或清空则返回。仅在 Debian 12/13 且以 root 运行时安装，先验证所有编号、去重并跳过已安装包。
+默认预选 `ca-certificates curl wget jq`；`git python3 gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 为可选项。显示每个软件包的安装状态，输入编号可增删；输入 `0` 或清空则返回。仅在 Debian 12/13 且以 root 运行时安装，先验证所有编号、去重并跳过已安装包。
 
 ```bash
 apt-get update -y
