@@ -697,6 +697,14 @@ restart() {
 	local RC
 	systemctl restart "$@"
 	RC=$?
+	if [ "$RC" -ne 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		systemctl reset-failed "$@" >/dev/null 2>&1 || true
+		systemctl restart "$@"
+		RC=$?
+	fi
+	if [ "$RC" -eq 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ] && ! systemctl is-active --quiet "$@"; then
+		RC=1
+	fi
 	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务已重启。"
 	else
@@ -710,6 +718,14 @@ start() {
 	local RC
 	systemctl start "$@"
 	RC=$?
+	if [ "$RC" -ne 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		systemctl reset-failed "$@" >/dev/null 2>&1 || true
+		systemctl start "$@"
+		RC=$?
+	fi
+	if [ "$RC" -eq 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ] && ! systemctl is-active --quiet "$@"; then
+		RC=1
+	fi
 	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务已启动。"
 	else
@@ -803,7 +819,41 @@ check_port() {
 }
 
 
+docker_daemon_json_merge() {
+	local filter="$1" file="/etc/docker/daemon.json" tmp
+	shift
+	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	mkdir -p /etc/docker || return 1
+	tmp=$(mktemp /etc/docker/.daemon.json.XXXXXX) || return 1
+	if [ -s "$file" ]; then
+		if ! jq -e 'type == "object"' "$file" >/dev/null 2>&1; then
+			echo "现有 /etc/docker/daemon.json 不是有效的 JSON 对象，未修改。"
+			rm -f -- "$tmp"
+			return 1
+		fi
+		if ! jq "$@" "$filter" "$file" > "$tmp"; then
+			echo "合并 /etc/docker/daemon.json 失败，原文件未修改。"
+			rm -f -- "$tmp"
+			return 1
+		fi
+	else
+		if ! jq -n "$@" "$filter" > "$tmp"; then
+			echo "生成 /etc/docker/daemon.json 失败，原文件未修改。"
+			rm -f -- "$tmp"
+			return 1
+		fi
+	fi
+	chmod 644 "$tmp" && mv -f -- "$tmp" "$file"
+}
+
 install_add_docker_cn() {
+	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors \
+			'["https://hub.333186.xyz","https://docker.m.daocloud.io","https://docker.1ms.run","https://docker.registry.cyou"]' || return 1
+		enable docker
+		restart docker
+		return
+	fi
 	mkdir -p /etc/docker
 	cat > /etc/docker/daemon.json << EOF
 {
@@ -847,6 +897,28 @@ docker_mirror_menu() {
 	read -e -p "请选择: " selected || return 1
 	[ "$selected" = "0" ] && return 90
 	selected=${selected:-"1 2 3 4"}
+	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		local -a selected_mirrors=()
+		local idx mirror mirrors_json before after
+		command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+		for idx in $selected; do
+			if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt ${#mirrors[@]} ]; then
+				echo -e "${gl_huang}跳过无效编号: $idx${gl_bai}" >&2
+				continue
+			fi
+			mirror="${mirrors[$((idx-1))]}"
+			[ -n "$mirror" ] && selected_mirrors+=("$mirror")
+		done
+		[ "${#selected_mirrors[@]}" -gt 0 ] || { echo "未选择有效镜像源，未修改。"; return 1; }
+		mirrors_json=$(printf '%s\n' "${selected_mirrors[@]}" | jq -R . | jq -s -c .) || return 1
+		before=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
+		docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors "$mirrors_json" || return 1
+		after=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
+		cat /etc/docker/daemon.json
+		[ -n "$before" ] && [ "$before" = "$after" ] && { echo "镜像源未变化，无需重启 Docker。"; return 0; }
+		restart docker
+		return
+	fi
 	{
 		echo '{'
 		echo '  "registry-mirrors": ['
@@ -1403,6 +1475,21 @@ install_crontab() {
 
 docker_ipv6_on() {
 	root_use
+	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+		local CONFIG_FILE="/etc/docker/daemon.json" before after
+		before=$(sha256sum "$CONFIG_FILE" 2>/dev/null | awk '{print $1}')
+		docker_daemon_json_merge '. + {ipv6: $enabled, "fixed-cidr-v6": $cidr}' \
+			--argjson enabled true --arg cidr "2001:db8:1::/64" || return 1
+		after=$(sha256sum "$CONFIG_FILE" 2>/dev/null | awk '{print $1}')
+		cat "$CONFIG_FILE"
+		if [ -n "$before" ] && [ "$before" = "$after" ]; then
+			echo -e "${gl_huang}当前已开启ipv6访问${gl_bai}"
+		else
+			restart docker
+		fi
+		return
+	fi
 	install jq
 
 	local CONFIG_FILE="/etc/docker/daemon.json"
@@ -1439,6 +1526,25 @@ docker_ipv6_on() {
 
 docker_ipv6_off() {
 	root_use
+	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+		local CONFIG_FILE="/etc/docker/daemon.json" before after
+		if [ ! -s "$CONFIG_FILE" ]; then
+			echo -e "${gl_hong}配置文件不存在${gl_bai}"
+			return
+		fi
+		before=$(sha256sum "$CONFIG_FILE" | awk '{print $1}')
+		docker_daemon_json_merge 'del(.["fixed-cidr-v6"]) | .ipv6 = false' || return 1
+		after=$(sha256sum "$CONFIG_FILE" | awk '{print $1}')
+		cat "$CONFIG_FILE"
+		if [ "$before" = "$after" ]; then
+			echo -e "${gl_huang}当前已关闭ipv6访问${gl_bai}"
+		else
+			restart docker
+			echo -e "${gl_huang}已成功关闭ipv6访问${gl_bai}"
+		fi
+		return
+	fi
 	install jq
 
 	local CONFIG_FILE="/etc/docker/daemon.json"
@@ -11743,7 +11849,22 @@ docker_ssh_migration() {
 			for p in "${PORTS[@]}"; do [ -n "$p" ] && run_args+=( -p "$p" ); done
 			for e in "${ENVS[@]}"; do [ -n "$e" ] && run_args+=( -e "$e" ); done
 			for v in "${VOLS[@]}"; do [ -n "$v" ] && run_args+=( -v "$v" ); done
+			if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+				local -a _entrypoint=() _cmd=()
+				local restart_policy _i _arg
+				restart_policy=$(jq -r '.[0].HostConfig.RestartPolicy.Name // ""' "$json")
+				case "$restart_policy" in ""|no) ;; *) run_args+=(--restart "$restart_policy") ;; esac
+				mapfile -t _entrypoint < <(jq -r '.[0].Config.Entrypoint[]?' "$json")
+				if [ "${#_entrypoint[@]}" -gt 0 ]; then
+					run_args+=(--entrypoint "${_entrypoint[0]}")
+					for ((_i=1; _i<${#_entrypoint[@]}; _i++)); do run_args+=("${_entrypoint[_i]}"); done
+				fi
+			fi
 			run_args+=("$IMAGE")
+			if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+				mapfile -t _cmd < <(jq -r '.[0].Config.Cmd[]?' "$json")
+				for _arg in "${_cmd[@]}"; do [ -n "$_arg" ] && run_args+=("$_arg"); done
+			fi
 			docker "${run_args[@]}"
 		done
 
@@ -18719,10 +18840,19 @@ ssl_nginx_manager() {
 	mkdir -p "$DAIMON_SCRIPT_DIR" || return 1
 	{
 	printf '#!/bin/bash\n'
-	declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
-		rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
-		rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
-		rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore crontab_sync_cron_entry || return 1
+	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
+			rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
+			rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
+			rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore \
+			crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
+			crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_cron_entry || return 1
+	else
+		declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
+			rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
+			rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
+			rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore crontab_sync_cron_entry || return 1
+	fi
 	cat <<'DAIMON_CERT_NGINX_SCRIPT' || return 1
 #!/bin/bash
 set -e
