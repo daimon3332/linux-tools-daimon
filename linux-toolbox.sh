@@ -9054,8 +9054,743 @@ daimon_network_clear_custom_optimize() {
 	send_stats "清除自定义网络优化"
 }
 
+DAIMON_TCP_TUNING_CONF="/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf"
+DAIMON_TCP_BBR_CONF="${DAIMON_BBR_FQ_CONF:-/etc/sysctl.d/99-daimon-bbr-fq.conf}"
+DAIMON_TCP_STATE_DIR="${DAIMON_ROOT_DIR:-/root/linux-daimon}/tcp-tuning"
+DAIMON_TCP_SNAPSHOT="$DAIMON_TCP_STATE_DIR/runtime-snapshot.conf"
+DAIMON_TCP_PROFILE="$DAIMON_TCP_STATE_DIR/profile.json"
+DAIMON_TCP_MEASURE_RESULT="$DAIMON_TCP_STATE_DIR/last-measure.conf"
+DAIMON_TCP_MANAGED_KEYS=(
+	net.core.default_qdisc
+	net.ipv4.tcp_congestion_control
+	net.core.rmem_max
+	net.core.wmem_max
+	net.core.rmem_default
+	net.core.wmem_default
+	net.ipv4.tcp_rmem
+	net.ipv4.tcp_wmem
+	net.ipv4.tcp_mem
+	net.ipv4.tcp_limit_output_bytes
+	net.ipv4.tcp_window_scaling
+	net.ipv4.tcp_moderate_rcvbuf
+	net.ipv4.tcp_adv_win_scale
+	net.core.netdev_max_backlog
+	net.ipv4.tcp_max_syn_backlog
+	net.ipv4.tcp_slow_start_after_idle
+	net.ipv4.tcp_mtu_probing
+	net.ipv4.tcp_fastopen
+	net.ipv4.tcp_fin_timeout
+	net.ipv4.tcp_tw_reuse
+	net.core.somaxconn
+	net.ipv4.ip_local_port_range
+	fs.file-max
+	vm.swappiness
+)
+DAIMON_TCP_FW_METHOD=""
+DAIMON_TCP_IPERF_PID=""
+DAIMON_TCP_RTT_SAMPLES=""
+
+daimon_tcp_key_path() {
+	printf '/proc/sys/%s\n' "${1//./\/}"
+}
+
+daimon_tcp_key_supported() {
+	[ -e "$(daimon_tcp_key_path "$1")" ]
+}
+
+daimon_tcp_read_key() {
+	tr -s '[:space:]' ' ' < "$(daimon_tcp_key_path "$1")" 2>/dev/null | sed 's/^ //; s/ $//'
+}
+
+daimon_tcp_write_key() {
+	local path
+	path=$(daimon_tcp_key_path "$1")
+	[ -e "$path" ] || return 1
+	printf '%s' "$2" > "$path" 2>/dev/null
+}
+
+daimon_tcp_ram_mb() {
+	awk '/^MemTotal:/{printf "%d", $2/1024}' /proc/meminfo
+}
+
+daimon_tcp_detect_role() {
+	if pgrep -x sing-box >/dev/null 2>&1 || pgrep -x xray >/dev/null 2>&1 ||
+		pgrep -x v2ray >/dev/null 2>&1 || pgrep -x hysteria >/dev/null 2>&1 ||
+		pgrep -x mihomo >/dev/null 2>&1 || pgrep -x clash >/dev/null 2>&1; then
+		echo proxy
+	elif pgrep -x nginx >/dev/null 2>&1 || pgrep -x apache2 >/dev/null 2>&1 ||
+		pgrep -x caddy >/dev/null 2>&1; then
+		echo web
+	else
+		echo mixed
+	fi
+}
+
+daimon_tcp_median() {
+	sort -n | awk '{v[NR]=$1} END {if (NR==0) exit 1; if (NR%2) printf "%.1f\n", v[(NR+1)/2]; else printf "%.1f\n", (v[NR/2]+v[NR/2+1])/2}'
+}
+
+daimon_tcp_calc_profile() {
+	awk -v bw="$1" -v rtt="$2" -v ram="$(daimon_tcp_ram_mb)" -v role="$3" 'BEGIN{
+		if (bw <= 0 || rtt <= 0) exit 1
+		bdp = bw * 1000000 / 8 * (rtt / 1000)
+		target = bdp * 2 + 2097152
+		cap = ram * 32768
+		if (cap > 268435456) cap = 268435456
+		buf_max = target > cap ? cap : target
+		if (buf_max < 4194304) buf_max = 4194304
+		if (role == "mixed") buf_default = 2097152
+		else buf_default = 1048576
+		if (buf_default > buf_max) buf_default = buf_max
+		pages = ram * 1024 / 4
+		low = int(pages / 16); pres = int(pages / 8); maximum = int(pages / 4)
+		if (low < 4096) low = 4096
+		if (pres < 8192) pres = 8192
+		if (maximum < 16384) maximum = 16384
+		printf "bdp=%d\nbuf_max=%d\nbuf_default=%d\ntcp_mem=%d %d %d\n", bdp, buf_max, buf_default, low, pres, maximum
+	}'
+}
+
+daimon_tcp_build_conf() {
+	local out="$1" profile bdp buf_max buf_default tcp_mem line key value unsupported=0 checked="${1}.checked"
+	profile=$(daimon_tcp_calc_profile "$2" "$3" "$4") || { echo "带宽或 RTT 无效，未生成配置。" >&2; return 1; }
+	bdp=$(printf '%s\n' "$profile" | sed -n 's/^bdp=//p')
+	buf_max=$(printf '%s\n' "$profile" | sed -n 's/^buf_max=//p')
+	buf_default=$(printf '%s\n' "$profile" | sed -n 's/^buf_default=//p')
+	tcp_mem=$(printf '%s\n' "$profile" | sed -n 's/^tcp_mem=//p')
+	cat > "$out" <<EOF
+# linux-tools-daimon dynamic TCP tuning
+# measured_bandwidth=${2}Mbps measured_rtt=${3}ms ram=$(daimon_tcp_ram_mb)MB role=${4} bdp_bytes=${bdp}
+# 由 daimon 动态调优写入，手工修改会在下次调优时被覆盖
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+net.core.rmem_max = $buf_max
+net.core.wmem_max = $buf_max
+net.core.rmem_default = $buf_default
+net.core.wmem_default = $buf_default
+net.ipv4.tcp_rmem = 4096 $buf_default $buf_max
+net.ipv4.tcp_wmem = 4096 16384 $buf_max
+net.ipv4.tcp_mem = $tcp_mem
+net.ipv4.tcp_limit_output_bytes = $buf_max
+net.ipv4.tcp_window_scaling = 1
+net.ipv4.tcp_moderate_rcvbuf = 1
+net.ipv4.tcp_adv_win_scale = 1
+net.core.netdev_max_backlog = 16384
+net.ipv4.tcp_max_syn_backlog = 8192
+net.ipv4.tcp_slow_start_after_idle = 0
+net.ipv4.tcp_mtu_probing = 1
+net.ipv4.tcp_fastopen = 3
+net.ipv4.tcp_fin_timeout = 15
+net.ipv4.tcp_tw_reuse = 1
+net.core.somaxconn = 8192
+net.ipv4.ip_local_port_range = 1024 65535
+fs.file-max = 2097152
+vm.swappiness = 10
+EOF
+	: > "$checked"
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in ''|\#*) printf '%s\n' "$line" >> "$checked"; continue ;; esac
+		case "$line" in *=*) ;; *) printf '%s\n' "$line" >> "$checked"; continue ;; esac
+		key=$(printf '%s' "${line%%=*}" | tr -d '[:space:]')
+		value=$(printf '%s' "${line#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+		if daimon_tcp_write_key "$key" "$value"; then
+			printf '%s = %s\n' "$key" "$value" >> "$checked"
+		else
+			printf '# 当前内核不支持，已跳过: %s = %s\n' "$key" "$value" >> "$checked"
+			unsupported=$((unsupported + 1))
+		fi
+	done < "$out"
+	mv -f "$checked" "$out" || return 1
+	[ "$unsupported" -eq 0 ] || echo -e "${gl_huang}已跳过 $unsupported 个当前内核不支持的参数。${gl_bai}"
+	return 0
+}
+
+daimon_tcp_snapshot() {
+	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	[ -s "$DAIMON_TCP_SNAPSHOT" ] && return 0
+	local key
+	: > "$DAIMON_TCP_SNAPSHOT" || return 1
+	for key in "${DAIMON_TCP_MANAGED_KEYS[@]}"; do
+		daimon_tcp_key_supported "$key" || continue
+		printf '%s = %s\n' "$key" "$(daimon_tcp_read_key "$key")" >> "$DAIMON_TCP_SNAPSHOT" || return 1
+	done
+	cp -a /etc/sysctl.conf "$DAIMON_TCP_STATE_DIR/sysctl.conf.before" 2>/dev/null || true
+	[ ! -e "$DAIMON_TCP_TUNING_CONF" ] ||
+		cp -a "$DAIMON_TCP_TUNING_CONF" "$DAIMON_TCP_STATE_DIR/tuning.conf.before" 2>/dev/null || true
+}
+
+daimon_tcp_show_key_sources() {
+	local key="$1" file found=0
+	for file in /etc/sysctl.conf /etc/sysctl.d/*.conf /run/sysctl.d/*.conf \
+		/usr/local/lib/sysctl.d/*.conf /usr/lib/sysctl.d/*.conf /lib/sysctl.d/*.conf; do
+		[ -f "$file" ] || continue
+		grep -qE "^[[:space:]]*${key}[[:space:]]*=" "$file" 2>/dev/null || continue
+		echo "  同时定义该参数的文件: $file"
+		found=1
+	done
+	[ "$found" -eq 1 ] || echo "  没有其他配置文件定义该参数（可能来自内核默认值或其他运行态覆盖）"
+}
+
+daimon_tcp_verify_applied() {
+	local file="$1" line key value actual failed=0
+	[ -f "$file" ] || return 1
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in ''|\#*) continue ;; esac
+		case "$line" in *=*) ;; *) continue ;; esac
+		key=$(printf '%s' "${line%%=*}" | tr -d '[:space:]')
+		value=$(printf '%s' "${line#*=}" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+		daimon_tcp_key_supported "$key" || continue
+		actual=$(daimon_tcp_read_key "$key")
+		[ "$actual" = "$value" ] && continue
+		echo -e "${gl_hong}参数被其他来源覆盖: $key 期望 $value 实际 ${actual:-无}${gl_bai}"
+		daimon_tcp_show_key_sources "$key"
+		daimon_tcp_write_key "$key" "$value" && echo "  已重新写入当前运行态: $key = $value"
+		failed=$((failed + 1))
+	done < "$file"
+	return "$failed"
+}
+
+daimon_tcp_persist_values() {
+	local conf="$1"
+	DAIMON_NETWORK_PRIORITY_CONF="$DAIMON_TCP_TUNING_CONF" daimon_network_persist "$DAIMON_TCP_BBR_CONF" "$conf"
+}
+
+daimon_tcp_apply_profile() {
+	root_use
+	local bw="$1" rtt="$2" method="$3" retr="${4:-}" role tmp
+	[ -n "$bw" ] && [ -n "$rtt" ] || { echo "缺少实测带宽或 RTT，未修改配置。"; return 1; }
+	daimon_network_bbr_supported || { echo -e "${gl_hong}当前内核不支持 BBR，未修改任何配置。${gl_bai}"; return 2; }
+	role=$(daimon_tcp_detect_role)
+	daimon_tcp_snapshot || { echo "无法保存调优前快照，未修改配置。"; return 1; }
+	tmp=$(mktemp) || return 1
+	if ! daimon_tcp_build_conf "$tmp" "$bw" "$rtt" "$role"; then
+		rm -f "$tmp"
+		return 1
+	fi
+	if [ -e "$DAIMON_TCP_TUNING_CONF" ] && ! head -n 1 "$DAIMON_TCP_TUNING_CONF" 2>/dev/null | grep -q 'BEGIN daimon network overrides'; then
+		cp -a "$DAIMON_TCP_TUNING_CONF" "$DAIMON_TCP_STATE_DIR/tuning.conf.foreign-before" 2>/dev/null || true
+		rm -f "$DAIMON_TCP_TUNING_CONF"
+	fi
+	printf 'tcp_bbr\n' > /etc/modules-load.d/daimon-tcp-bbr.conf 2>/dev/null || true
+	if ! daimon_tcp_persist_values "$tmp" || ! sysctl --system >/dev/null 2>&1; then
+		rm -f "$tmp"
+		daimon_tcp_revert_runtime
+		echo -e "${gl_hong}写入或重载失败，已恢复调优前参数。${gl_bai}"
+		return 1
+	fi
+	rm -f "$tmp"
+	echo -e "${gl_lv}TCP 动态调优已应用：$(sysctl -n net.ipv4.tcp_congestion_control) + $(sysctl -n net.core.default_qdisc)${gl_bai}"
+	printf '  实测带宽: %s Mbps   实测 RTT: %s ms   角色: %s\n' "$bw" "$rtt" "$role"
+	printf '  缓冲区上限: %s 字节（%s MB）\n' "$(sysctl -n net.core.rmem_max)" "$(( $(sysctl -n net.core.rmem_max) / 1048576 ))"
+	printf '  缓冲区默认: %s 字节\n' "$(sysctl -n net.core.rmem_default)"
+	printf '  tcp_mem: %s\n' "$(sysctl -n net.ipv4.tcp_mem)"
+	printf '  配置文件: %s\n' "$DAIMON_TCP_TUNING_CONF"
+	daimon_tcp_verify_applied "$DAIMON_TCP_TUNING_CONF" || echo -e "${gl_huang}存在被其他配置覆盖的参数，已在上方列出。${gl_bai}"
+	daimon_tcp_save_profile "$method" "$bw" "$rtt" "$role" "" "" "$retr"
+	send_stats "TCP动态调优"
+}
+
+daimon_tcp_save_profile() {
+	local method="$1" bw="$2" rtt="$3" role="$4" before="$5" after="$6" retr="$7"
+	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	cat > "$DAIMON_TCP_PROFILE" <<EOF
+{
+  "method": "$method",
+  "bandwidth_mbps": ${bw:-0},
+  "rtt_ms": ${rtt:-0},
+  "ram_mb": $(daimon_tcp_ram_mb),
+  "role": "$role",
+  "before_mbps": ${before:-0},
+  "after_mbps": ${after:-0},
+  "retrans": ${retr:-0},
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+EOF
+}
+
+daimon_tcp_revert_runtime() {
+	[ -s "$DAIMON_TCP_SNAPSHOT" ] || return 0
+	local key value failed=0
+	while IFS='=' read -r key value; do
+		key=$(printf '%s' "$key" | tr -d '[:space:]')
+		value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+		[ -n "$key" ] && [ -n "$value" ] || continue
+		daimon_tcp_key_supported "$key" || continue
+		[ "$(daimon_tcp_read_key "$key")" = "$value" ] && continue
+		daimon_tcp_write_key "$key" "$value" || failed=1
+	done < "$DAIMON_TCP_SNAPSHOT"
+	return "$failed"
+}
+
+daimon_tcp_restore() {
+	root_use
+	if [ ! -s "$DAIMON_TCP_SNAPSHOT" ]; then
+		echo "没有找到调优前快照，本机可能没有执行过动态调优，未做任何修改。"
+		echo "如只是想去掉历史遗留的 daimon 网络覆盖，可直接删除 /etc/sysctl.d/99-daimon-network-optimize.conf 后执行 sysctl --system。"
+		return 0
+	fi
+	daimon_tcp_persist_values "$DAIMON_TCP_BBR_CONF" >/dev/null 2>&1 || true
+	rm -f "$DAIMON_TCP_TUNING_CONF"
+	sysctl --system >/dev/null 2>&1 || true
+	daimon_tcp_revert_runtime || true
+	local key value failed=0
+	while IFS='=' read -r key value; do
+		key=$(printf '%s' "$key" | tr -d '[:space:]')
+		value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+		[ -n "$key" ] && [ -n "$value" ] || continue
+		daimon_tcp_key_supported "$key" || continue
+		[ "$(daimon_tcp_read_key "$key")" = "$value" ] || failed=1
+	done < "$DAIMON_TCP_SNAPSHOT"
+	if [ "$failed" -eq 0 ]; then
+		rm -f "$DAIMON_TCP_SNAPSHOT"
+		echo -e "${gl_lv}已恢复到调优前的参数。${gl_bai}"
+	else
+		echo -e "${gl_huang}部分参数未恢复到快照值，快照保留在 $DAIMON_TCP_SNAPSHOT，可重启后再次恢复。${gl_bai}"
+	fi
+	printf '  当前拥塞算法: %s   队列算法: %s\n' \
+		"$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" \
+		"$(sysctl -n net.core.default_qdisc 2>/dev/null)"
+	printf '  当前缓冲区上限: %s\n' "$(sysctl -n net.core.rmem_max 2>/dev/null)"
+}
+
+daimon_tcp_fw_open() {
+	local port="$1"
+	DAIMON_TCP_FW_METHOD="none"
+	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi '^Status: active'; then
+		if ufw status 2>/dev/null | grep -qE "(^|[[:space:]])${port}/tcp([[:space:]]|$)"; then
+			DAIMON_TCP_FW_METHOD="ufw-exists"
+			return 0
+		fi
+		if ufw allow "$port/tcp" >/dev/null 2>&1; then
+			DAIMON_TCP_FW_METHOD="ufw-added"
+			return 0
+		fi
+	fi
+	if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+		if firewall-cmd --query-port="${port}/tcp" >/dev/null 2>&1; then
+			DAIMON_TCP_FW_METHOD="firewalld-exists"
+			return 0
+		fi
+		if firewall-cmd --add-port="${port}/tcp" >/dev/null 2>&1; then
+			DAIMON_TCP_FW_METHOD="firewalld-added"
+			return 0
+		fi
+	fi
+	if command -v iptables >/dev/null 2>&1; then
+		if iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
+			DAIMON_TCP_FW_METHOD="iptables-exists"
+			return 0
+		fi
+		if iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
+			command -v ip6tables >/dev/null 2>&1 &&
+				ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
+			DAIMON_TCP_FW_METHOD="iptables-added"
+			return 0
+		fi
+	fi
+}
+
+daimon_tcp_fw_close() {
+	local port="$1"
+	case "$DAIMON_TCP_FW_METHOD" in
+		ufw-added) ufw delete allow "$port/tcp" >/dev/null 2>&1 || true ;;
+		firewalld-added) firewall-cmd --remove-port="${port}/tcp" >/dev/null 2>&1 || true ;;
+		iptables-added)
+			iptables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
+			command -v ip6tables >/dev/null 2>&1 &&
+				ip6tables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
+			;;
+	esac
+	DAIMON_TCP_FW_METHOD=""
+}
+
+daimon_tcp_ping_rtt() {
+	local host="$1" out
+	case "$host" in *:*) out=$(ping -6 -c 3 -W 2 -i 0.3 "$host" 2>/dev/null) ;; *) out=$(ping -c 3 -W 2 -i 0.3 "$host" 2>/dev/null) ;; esac
+	printf '%s\n' "$out" | sed -n 's|.*= [0-9.]*/\([0-9.]*\)/.*|\1|p' | head -n 1
+}
+
+daimon_tcp_sample_socket_rtt() {
+	local port="$1" sample
+	sample=$(ss -tin state established "( sport = :$port )" 2>/dev/null |
+		grep -o 'rtt:[0-9.]*' | cut -d: -f2 | head -n 3 | daimon_tcp_median 2>/dev/null)
+	[ -n "$sample" ] && DAIMON_TCP_RTT_SAMPLES="$DAIMON_TCP_RTT_SAMPLES $sample"
+	return 0
+}
+
+daimon_tcp_cn_rtt() {
+	local host rtt values=""
+	for host in 223.5.5.5 119.29.29.29 180.76.76.76; do
+		rtt=$(daimon_tcp_ping_rtt "$host")
+		[ -n "$rtt" ] && values="$values $rtt"
+	done
+	values=${values# }
+	[ -n "$values" ] || return 1
+	printf '%s\n' $values | daimon_tcp_median
+}
+
+daimon_tcp_iperf3_samples() {
+	awk '
+		/^Accepted connection from/ {
+			if (have) printf "%.1f %d\n", rate, retr
+			have = 0; rate = 0; retr = 0
+			next
+		}
+		/^\[/ && $NF == "sender" {
+			unit = $(NF-2); val = $(NF-3) + 0
+			if (unit ~ /^Kbits/) val = val / 1000
+			else if (unit ~ /^Gbits/) val = val * 1000
+			else if (unit ~ /^bits/) val = val / 1000000
+			rate = val; retr = $(NF-1) + 0; have = 1
+		}
+		END { if (have) printf "%.1f %d\n", rate, retr }
+	' "$1" 2>/dev/null
+}
+
+daimon_tcp_start_iperf_server() {
+	local port="$1" log="$2" pid
+	DAIMON_TCP_IPERF_PID=""
+	: > "$log"
+	iperf3 -s -p "$port" --forceflush > "$log" 2>&1 &
+	pid=$!
+	sleep 1
+	if kill -0 "$pid" 2>/dev/null && [ -s "$log" ]; then
+		DAIMON_TCP_IPERF_PID="$pid"
+		return 0
+	fi
+	kill "$pid" 2>/dev/null || true
+	if command -v stdbuf >/dev/null 2>&1; then
+		: > "$log"
+		stdbuf -oL -eL iperf3 -s -p "$port" > "$log" 2>&1 &
+		pid=$!
+		sleep 1
+		if kill -0 "$pid" 2>/dev/null && [ -s "$log" ]; then
+			DAIMON_TCP_IPERF_PID="$pid"
+			return 0
+		fi
+		kill "$pid" 2>/dev/null || true
+	fi
+	return 1
+}
+
+daimon_tcp_stop_iperf_server() {
+	local port="$1" pid="$2"
+	[ -n "$pid" ] && kill "$pid" 2>/dev/null || true
+	pkill -f "iperf3 -s -p ${port}( |$)" 2>/dev/null || true
+	[ -n "$pid" ] && wait "$pid" 2>/dev/null || true
+	return 0
+}
+daimon_tcp_public_ips() {
+	local cand out=""
+	ip_address >/dev/null 2>&1 || true
+	for cand in $ipv4_address $ipv6_address; do
+		case "$cand" in ''|*[!0-9a-fA-F:.]*) continue ;; esac
+		case " $out " in *" $cand "*) continue ;; esac
+		out="$out $cand"
+	done
+	case "$ipv4_address" in
+		''|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+			cand=$(curl -4 -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/ip 2>/dev/null)
+			case "$cand" in
+				''|*[!0-9.]*) ;;
+				*) case " $out " in *" $cand "*) ;; *) out="$cand $out" ;; esac ;;
+			esac
+			;;
+	esac
+	printf '%s\n' ${out# }
+}
+
+daimon_tcp_iperf3_peer() {
+	grep -m 1 '^Accepted connection from' "$1" 2>/dev/null |
+		sed -e 's/^Accepted connection from[[:space:]]*//' -e 's/,.*$//' -e 's/[][]//g' -e 's/[[:space:]]*$//'
+}
+
+daimon_tcp_measure_iperf3() {
+	root_use
+	local port="${DAIMON_TCP_IPERF3_PORT:-50280}" log server_pid ips cand fam
+	local target=3 hard_max=5 runs=0 last=0 deadline samples spread ans
+	local bw retr rtt peer
+	rm -f "$DAIMON_TCP_MEASURE_RESULT"
+	DAIMON_TCP_RTT_SAMPLES=""
+	command -v iperf3 >/dev/null 2>&1 || install iperf3 || { echo "iperf3 安装失败。"; return 1; }
+	command -v ss >/dev/null 2>&1 || install iproute2 >/dev/null 2>&1 || true
+	while ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"; do
+		port=$((port + 1))
+		[ "$port" -gt 65000 ] && { echo "找不到可用端口。"; return 1; }
+	done
+	ips=$(daimon_tcp_public_ips)
+	[ -n "$ips" ] || { echo "无法获取公网地址，未修改配置。"; return 1; }
+	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	log="$DAIMON_TCP_STATE_DIR/iperf3-$(date +%Y%m%d-%H%M%S).log"
+	daimon_tcp_fw_open "$port"
+	if ! daimon_tcp_start_iperf_server "$port" "$log"; then
+		daimon_tcp_fw_close "$port"
+		echo "iperf3 服务端启动失败，日志: $log"
+		return 1
+	fi
+	server_pid="$DAIMON_TCP_IPERF_PID"
+	echo -e "${gl_kjlan}iperf3 服务端已监听端口 $port（防火墙: ${DAIMON_TCP_FW_METHOD}）。${gl_bai}"
+	echo -e "${gl_huang}请在本地电脑运行下面的命令，共 $target 次；-R 表示服务端发送给本地，即单线程下载：${gl_bai}"
+	for cand in $ips; do
+		case "$cand" in *:*) fam="-6" ;; *) fam="-4" ;; esac
+		printf '  iperf3 -c %s -p %s %s -R -t 8 -O 2 -i 1\n' "$cand" "$port" "$fam"
+	done
+	echo -e "${gl_hui}提示: 连不上时请确认云厂商安全组已放行 TCP $port。${gl_bai}"
+	deadline=$((SECONDS + ${DAIMON_TCP_IPERF3_WAIT:-600}))
+	while :; do
+		runs=$(daimon_tcp_iperf3_samples "$log" | wc -l)
+		daimon_tcp_sample_socket_rtt "$port"
+		if [ "$runs" -gt "$last" ]; then
+			printf '  第 %s 次完成: %s\n' "$runs" "$(daimon_tcp_iperf3_samples "$log" | sed -n "${runs}p" | awk '{printf "%s Mbps，重传 %s", $1, $2}')"
+			last=$runs
+		fi
+		[ "$runs" -ge "$target" ] && break
+		if ! kill -0 "$server_pid" 2>/dev/null; then
+			echo "iperf3 服务端意外退出，日志: $log"
+			break
+		fi
+		[ "$SECONDS" -ge "$deadline" ] && break
+		sleep 2
+	done
+	if [ "$runs" -lt "$target" ]; then
+		daimon_tcp_stop_iperf_server "$port" "$server_pid"
+		daimon_tcp_fw_close "$port"
+		echo "只收到 $runs 次有效测试（需要 $target 次），未修改配置。日志: $log"
+		return 1
+	fi
+	spread=$(daimon_tcp_iperf3_samples "$log" | head -n "$target" |
+		awk 'NR==1{max=min=$1} {if ($1>max) max=$1; if ($1<min) min=$1} END{ if (min>0) printf "%.2f", max/min; else print "0" }')
+	if awk -v s="$spread" 'BEGIN{exit !(s > 1.2)}'; then
+		echo -e "${gl_huang}前 $target 次结果波动 $spread 倍（超过 1.2 倍），建议再补测 2 次取中位数。${gl_bai}"
+		read -e -i "y" -p "继续补测 2 次？[Y/n]: " ans || ans=y
+		case "$ans" in
+			[Nn]) ;;
+			*)
+				echo "请再运行同样的命令 2 次。"
+				deadline=$((SECONDS + ${DAIMON_TCP_IPERF3_WAIT:-600}))
+				while :; do
+					runs=$(daimon_tcp_iperf3_samples "$log" | wc -l)
+					daimon_tcp_sample_socket_rtt "$port"
+					if [ "$runs" -gt "$last" ]; then
+						printf '  第 %s 次完成: %s\n' "$runs" "$(daimon_tcp_iperf3_samples "$log" | sed -n "${runs}p" | awk '{printf "%s Mbps，重传 %s", $1, $2}')"
+						last=$runs
+					fi
+					[ "$runs" -ge "$hard_max" ] && break
+					kill -0 "$server_pid" 2>/dev/null || break
+					[ "$SECONDS" -ge "$deadline" ] && break
+					sleep 2
+				done
+				;;
+		esac
+	fi
+	daimon_tcp_stop_iperf_server "$port" "$server_pid"
+	daimon_tcp_fw_close "$port"
+	samples=$(daimon_tcp_iperf3_samples "$log" | head -n "$hard_max")
+	echo "iperf3 样本（Mbps / 重传）:"
+	printf '%s\n' "$samples" | awk '{printf "  %s / %s\n", $1, $2}'
+	bw=$(printf '%s\n' "$samples" | awk '{print $1}' | daimon_tcp_median)
+	retr=$(printf '%s\n' "$samples" | awk '{print $2}' | daimon_tcp_median)
+	peer=$(daimon_tcp_iperf3_peer "$log")
+	rtt=$(printf '%s\n' $DAIMON_TCP_RTT_SAMPLES 2>/dev/null | daimon_tcp_median 2>/dev/null || true)
+	if [ -n "$rtt" ]; then
+		printf 'RTT(TCP 采样): %s ms\n' "$rtt"
+	else
+		[ -n "$peer" ] && rtt=$(daimon_tcp_ping_rtt "$peer")
+		[ -n "$rtt" ] && printf 'RTT(ICMP): %s ms\n' "$rtt"
+	fi
+	if [ -z "$rtt" ]; then
+		echo -e "${gl_huang}未测到到本地客户端的 RTT（对端 ${peer:-未知}）。${gl_bai}"
+		read -e -i "150" -p "请输入本地到本机的往返延迟 RTT(ms): " rtt || rtt=150
+		rtt=${rtt:-150}
+	fi
+	printf '单线程下载中位数: %s Mbps（重传 %s，RTT %s ms）\n' "$bw" "$retr" "$rtt"
+	cat > "$DAIMON_TCP_MEASURE_RESULT" <<EOF
+BW=$bw
+RTT=$rtt
+RETR=$retr
+METHOD=iperf3
+EOF
+}
+
+daimon_tcp_tcpquality_rows() {
+	sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\x1b\][^\x07]*\x07//g' "$1" 2>/dev/null |
+		tr -d '\r' |
+		awk '
+			/Mbps/ {
+				label = ""; retr = ""; down = ""; up = ""
+				n = split($0, tok, /[ \t]+/)
+				for (i = 1; i <= n; i++) {
+					t = tok[i]
+					if (t ~ /Mbps$/) {
+						num = t; sub(/Mbps$/, "", num)
+						if (num ~ /^-?[0-9]+([.][0-9]+)?$/) {
+							if (down == "") down = num
+							else if (up == "") up = num
+						}
+					} else if (t ~ /%$/ && retr == "") {
+						num = t; sub(/%$/, "", num)
+						if (num ~ /^[0-9]+([.][0-9]+)?$/) retr = num
+					} else if (label == "" && t ~ /(电信|联通|移动|AppleCDN|IPv6)/) {
+						label = t
+					}
+				}
+				if (label != "" && down != "") printf "%s %s %s %s\n", label, down, (up == "" ? "-" : up), (retr == "" ? "-" : retr)
+			}'
+}
+
+daimon_tcp_measure_tcpquality() {
+	root_use
+	command -v curl >/dev/null 2>&1 || install curl || { echo "curl 安装失败，无法运行 TCPquality。"; return 1; }
+	command -v script >/dev/null 2>&1 || { echo "缺少 script 命令（util-linux），无法运行 TCPquality。"; return 1; }
+	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	rm -f "$DAIMON_TCP_MEASURE_RESULT"
+	local log="$DAIMON_TCP_STATE_DIR/tcpquality-$(date +%Y%m%d-%H%M%S).log"
+	local rows top bw retr rtt manual
+	echo -e "${gl_kjlan}正在运行 TCPquality 国内三网单线程测速（通常 3-8 分钟）...${gl_bai}"
+	printf 'n\nn\nn\ny\nn\n' | TERM=xterm timeout --kill-after=10s 900s \
+		script -qec "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null \
+		> "$log" 2>&1 || true
+	rows=$(daimon_tcp_tcpquality_rows "$log" | awk '$1 ~ /(电信|联通|移动)/' || true)
+	if [ -z "$rows" ]; then
+		echo -e "${gl_huang}未能自动解析 TCPquality 结果，原始输出末尾如下：${gl_bai}"
+		sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' "$log" 2>/dev/null | grep -v '^[[:space:]]*$' | tail -n 25
+		read -e -p "请手工输入单线程下载实测值(Mbps，留空放弃): " manual || return 1
+		[ -n "$manual" ] || { echo "已放弃测速，未修改配置。"; return 1; }
+		bw=$manual
+		read -e -i "150" -p "请输入到国内的往返延迟 RTT(ms): " rtt || rtt=150
+		rtt=${rtt:-150}
+		retr=0
+		echo "使用手工输入: ${bw} Mbps / ${rtt} ms"
+	else
+		echo "TCPquality 国内单线程结果（标签 / 下载 / 上传 / 重传%）:"
+		printf '%s\n' "$rows" | sed 's/^/  /'
+		top=$(printf '%s\n' "$rows" | awk '{d=$2+0; if (d>0) print d, ($4=="-" ? 0 : $4)}' | sort -k1,1nr | head -n 3)
+		[ -n "$top" ] || { echo "TCPquality 未返回有效下载速率，未修改配置。"; return 1; }
+		bw=$(printf '%s\n' "$top" | awk '{print $1}' | daimon_tcp_median)
+		retr=$(printf '%s\n' "$top" | awk '{print $2}' | daimon_tcp_median)
+		rtt=$(daimon_tcp_cn_rtt) || rtt=""
+		if [ -z "$rtt" ]; then
+			echo -e "${gl_huang}未能测得国内 RTT，使用默认值 150 ms。${gl_bai}"
+			rtt=150
+		fi
+		printf '取下载最快三个结果的中位数: %s Mbps（重传 %s%%，RTT %s ms）\n' "$bw" "$retr" "$rtt"
+	fi
+	cat > "$DAIMON_TCP_MEASURE_RESULT" <<EOF
+BW=$bw
+RTT=$rtt
+RETR=$retr
+METHOD=tcpquality
+EOF
+}
+
+daimon_tcp_measure() {
+	case "$1" in
+		iperf3) daimon_tcp_measure_iperf3 ;;
+		*) daimon_tcp_measure_tcpquality ;;
+	esac
+}
+
+daimon_tcp_tune_run() {
+	root_use
+	local method="$1" before_bw before_rtt before_retr after_bw after_retr role delta answer
+	role=$(daimon_tcp_detect_role)
+	case "$method" in
+		iperf3) echo -e "${gl_kjlan}测速方式: iperf3 单线程下载（到本地电脑，最准确）${gl_bai}" ;;
+		*) echo -e "${gl_kjlan}测速方式: TCPquality 国内三网单线程下载${gl_bai}" ;;
+	esac
+	daimon_tcp_measure "$method" || { echo "测速失败，未修改任何配置。"; return 1; }
+	before_bw=$(sed -n 's/^BW=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	before_rtt=$(sed -n 's/^RTT=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	before_retr=$(sed -n 's/^RETR=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	[ -n "$before_bw" ] && [ -n "$before_rtt" ] || { echo "未能解析测速结果，未修改任何配置。"; return 1; }
+	echo
+	daimon_tcp_apply_profile "$before_bw" "$before_rtt" "$method" "$before_retr" || return 1
+	echo
+	echo -e "${gl_kjlan}开始复测验证（$method）${gl_bai}"
+	if ! daimon_tcp_measure "$method"; then
+		echo -e "${gl_huang}调优已生效，但复测未完成；可稍后重新进入本菜单复测。${gl_bai}"
+		return 0
+	fi
+	after_bw=$(sed -n 's/^BW=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	after_retr=$(sed -n 's/^RETR=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	delta=$(awk -v b="$before_bw" -v a="$after_bw" 'BEGIN{if (b>0 && a>0) printf "%+.0f%%", (a-b)/b*100; else print "未知"}')
+	echo "------------------------------------------------"
+	printf '优化前: %s Mbps（重传 %s）\n' "$before_bw" "${before_retr:-?}"
+	printf '优化后: %s Mbps（重传 %s）\n' "${after_bw:-?}" "${after_retr:-?}"
+	printf '变化:   %s\n' "$delta"
+	echo "------------------------------------------------"
+	daimon_tcp_save_profile "$method" "$before_bw" "$before_rtt" "$role" "$before_bw" "$after_bw" "$after_retr"
+	if awk -v b="$before_bw" -v a="$after_bw" 'BEGIN{exit !(b > 0 && a > 0 && a < b * 0.8)}'; then
+		echo -e "${gl_hong}复测明显低于优化前，可能是链路波动或参数不适合本机。${gl_bai}"
+		read -e -i "y" -p "是否恢复调优前参数？[Y/n]: " answer || answer=y
+		case "$answer" in
+			[Nn]) echo "保留当前动态调优参数。" ;;
+			*) daimon_tcp_restore ;;
+		esac
+	fi
+}
+
+daimon_tcp_tune_auto_apply() {
+	local method="${1:-tcpquality}" bw rtt retr
+	daimon_tcp_measure "$method" || return 1
+	bw=$(sed -n 's/^BW=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	rtt=$(sed -n 's/^RTT=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	retr=$(sed -n 's/^RETR=//p' "$DAIMON_TCP_MEASURE_RESULT" | tail -n 1)
+	[ -n "$bw" ] && [ -n "$rtt" ] || { echo "未能解析测速结果，未修改配置。"; return 1; }
+	daimon_tcp_apply_profile "$bw" "$rtt" "$method" "$retr"
+}
+
+daimon_tcp_tune_menu() {
+	root_use
+	local choice method
+	while true; do
+		clear
+		echo "系统网络自适应优化"
+		echo "------------------------------------------------"
+		echo -e "内核版本:   ${gl_huang}$(uname -r)${gl_bai}"
+		echo -e "内存/角色:  $(daimon_tcp_ram_mb) MB / $(daimon_tcp_detect_role)"
+		echo -e "拥塞算法:   ${gl_huang}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 未知)${gl_bai}"
+		echo -e "队列算法:   ${gl_huang}$(sysctl -n net.core.default_qdisc 2>/dev/null || echo 未知)${gl_bai}"
+		echo -e "缓冲区上限: $(sysctl -n net.core.rmem_max 2>/dev/null || echo 未知)   默认: $(sysctl -n net.core.rmem_default 2>/dev/null || echo 未知)"
+		echo -e "tcp_mem:    $(sysctl -n net.ipv4.tcp_mem 2>/dev/null || echo 未知)"
+		if daimon_network_bbr_supported; then
+			echo -e "BBR 内核支持: ${gl_lv}支持${gl_bai}"
+		else
+			echo -e "BBR 内核支持: ${gl_hong}不支持，请先在主菜单 13 的 BBR 管理安装兼容内核${gl_bai}"
+		fi
+		[ -s "$DAIMON_TCP_SNAPSHOT" ] && echo -e "调优前快照: ${gl_lv}已保存${gl_bai}（可恢复到调优前）"
+		[ -s "$DAIMON_TCP_PROFILE" ] && echo "上次调优记录: $DAIMON_TCP_PROFILE"
+		if [ "$(sysctl -n vm.panic_on_oom 2>/dev/null)" = "1" ] &&
+			[ "$(sysctl -n kernel.panic 2>/dev/null)" != "0" ]; then
+			echo -e "${gl_hong}提示: vm.panic_on_oom=1 且 kernel.panic 非 0，内存耗尽会直接重启整机。${gl_bai}"
+		fi
+		echo "------------------------------------------------"
+		echo "1. 动态调优（先测速，再按本机实测计算并应用参数）"
+		echo "2. 恢复调优前参数"
+		echo "0. 返回上一级菜单"
+		echo "------------------------------------------------"
+		read -e -p "请输入你的选择: " choice || return 1
+		case "$choice" in
+			1)
+				echo ""
+				echo "1. iperf3 单线程下载（到你的本地电脑，最准确，需要本地客户端）"
+				echo "2. TCPquality 国内三网单线程下载（无需本地开端口）"
+				read -e -p "请选择测速方式: " method || return 1
+				case "$method" in
+					1) daimon_tcp_tune_run iperf3 ;;
+					2) daimon_tcp_tune_run tcpquality ;;
+					*) echo "无效选择" ;;
+				esac
+				;;
+			2) daimon_tcp_restore ;;
+			0) return ;;
+			*) echo "无效的输入!" ;;
+		esac
+		break_end
+	done
+}
 one_click_network_auto_optimize() {
-	daimon_network_apply_custom_optimize
+	daimon_tcp_tune_auto_apply tcpquality
 }
 
 one_click_auto_dns_optimize() {
@@ -9541,53 +10276,8 @@ EOF
 }
 
 system_network_auto_optimize() {
-	root_use
-	local status open_bbr
-	while true; do
-		clear
-		echo "系统网络自适应优化"
-		echo "------------------------------------------------"
-		echo -e "当前内核版本: ${gl_huang}$(uname -r)${gl_bai}"
-		echo -e "当前拥塞算法: ${gl_huang}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 未知)${gl_bai}"
-		echo -e "当前队列算法: ${gl_huang}$(sysctl -n net.core.default_qdisc 2>/dev/null || echo 未知)${gl_bai}"
-		if daimon_network_bbr_supported; then
-			echo -e "BBR 内核支持: ${gl_lv}支持，无需安装新内核${gl_bai}"
-		else
-			echo -e "BBR 内核支持: ${gl_hong}不支持，需要通过 BBR 管理安装兼容内核${gl_bai}"
-		fi
-		if [ -f "$DAIMON_NETWORK_OPTIMIZE_CONF" ]; then
-			echo -e "自定义优化配置: ${gl_lv}已安装${gl_bai} ($DAIMON_NETWORK_OPTIMIZE_CONF)"
-		else
-			echo -e "自定义优化配置: ${gl_hui}未安装${gl_bai}"
-		fi
-		echo "------------------------------------------------"
-		echo "说明：优先使用当前内核；支持 BBR 时无需换内核，不支持时可进入 BBR 管理选择内核。"
-		echo "参数配置: $DAIMON_NETWORK_OPTIMIZE_CONF"
-		echo "------------------------------------------------"
-		echo "1. 应用自定义网络优化"
-		echo "2. 查看当前网络优化状态"
-		echo "3. 清除自定义网络优化"
-		echo "0. 返回上一级菜单"
-		echo "------------------------------------------------"
-		read -e -p "请输入你的选择: " choice || return 1
-		case "$choice" in
-			1)
-				daimon_network_apply_custom_optimize
-				status=$?
-				if [ "$status" -eq 2 ]; then
-					read -e -p "是否进入 BBR 管理选择兼容内核？[y/N]: " open_bbr || return 1
-					case "$open_bbr" in [Yy]) linux_bbr ;; esac
-				fi
-				;;
-			2) daimon_network_show_custom_status ;;
-			3) daimon_network_clear_custom_optimize ;;
-			0) return ;;
-			*) echo "无效的输入!" ;;
-		esac
-		break_end
-	done
+	daimon_tcp_tune_menu
 }
-
 system_ipv6_status() {
 	echo "------------------------------------------------"
 	echo "IPv6 当前状态："

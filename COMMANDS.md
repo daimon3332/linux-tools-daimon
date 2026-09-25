@@ -234,9 +234,9 @@ bash /root/linux-daimon/daimon/install-docker-auto.sh 2   # 国外和香港：Do
 ### 4.8 系统网络自适应优化
 
 ```bash
-sysctl -e -p /etc/sysctl.d/99-network-optimize.conf
+one_click_network_auto_optimize   # 等价于 daimon_tcp_tune_auto_apply tcpquality
 ```
-解释：执行内置自定义网络优化，不下载第三方脚本，不换内核，只写入并应用 sysctl 参数。
+解释：一键配置第 8 项使用 TCPquality（无需本地客户端）测速，按实测带宽和 RTT 计算并应用参数；带复测和回滚的完整流程在主菜单 `5 → 15`。不下载第三方脚本、不换内核，当前内核不支持 BBR 时不写入配置。
 
 ### 4.9 安装第三方工具
 
@@ -590,61 +590,51 @@ journalctl --vacuum-size=500M
 
 ### 5.15 系统网络自适应优化
 
-默认展示：
+默认展示当前内核、内存/角色、拥塞算法、队列算法、缓冲区上限、tcp_mem、BBR 支持情况和上次调优记录。菜单只保留两个入口：
+
+```text
+1. 动态调优（先测速，再按本机实测计算并应用参数）
+   1) iperf3 单线程下载（到本地电脑，最准确，需要本地客户端）
+   2) TCPquality 国内三网单线程下载（无需本地开端口）
+2. 恢复调优前参数
+```
+
+iperf3 测速方式：
 
 ```bash
-sysctl -n net.ipv4.tcp_congestion_control
-sysctl -n net.core.default_qdisc
-[ -f /etc/sysctl.d/99-daimon-network-optimize.conf ]
-tc qdisc show
+iperf3 -s -p 50280 --forceflush          # 服务端，脚本自动临时放行防火墙端口
+iperf3 -c <公网IP> -p 50280 -4 -R -t 8 -O 2 -i 1   # 本地客户端，单线程下载，共 3 次
 ```
-解释：显示当前拥塞算法、队列算法、是否已安装自定义优化配置。
 
-应用自定义网络优化：
+解释：服务端必须 `--forceflush`（或 `stdbuf -oL`），否则输出重定向到文件时被块缓冲，日志里读不到结果。脚本按连接数统计完成次数，3 次结果波动超过 1.2 倍时提示补测到 5 次，取中位数。RTT 优先取测试连接的 TCP 采样（`ss -tin`），其次 ICMP ping，都没有时才要求手工输入。
+
+TCPquality 测速方式：
 
 ```bash
-cat > /etc/sysctl.d/99-daimon-bbr-fq.conf <<EOF
-net.core.default_qdisc=fq
-net.ipv4.tcp_congestion_control=bbr
-EOF
-cat > /etc/sysctl.d/99-daimon-network-optimize.conf <<EOF
-net.core.rmem_max=134217728
-net.core.wmem_max=134217728
-net.core.netdev_max_backlog=300000
-net.ipv4.tcp_rmem=4096 131072 134217728
-net.ipv4.tcp_wmem=4096 131072 134217728
-fs.file-max=2097152
-net.ipv4.tcp_tw_reuse=1
-net.ipv4.tcp_fastopen=3
-net.ipv4.tcp_window_scaling=1
-net.ipv4.tcp_max_syn_backlog=262144
-net.core.somaxconn=65535
-net.ipv4.ip_local_port_range=1024 65535
-vm.swappiness=10
-net.ipv4.tcp_slow_start_after_idle=0
-net.ipv4.tcp_limit_output_bytes=4194304
-net.ipv4.tcp_mtu_probing=1
-EOF
-sysctl -p /etc/sysctl.d/99-daimon-bbr-fq.conf
-sysctl -p /etc/sysctl.d/99-daimon-network-optimize.conf
+printf 'n\nn\nn\ny\nn\n' | TERM=xterm script -qec \
+  "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null
 ```
-解释：实际入口为 `daimon_network_apply_custom_optimize`，BBR/FQ 写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`。Python 3 持久化助手同时生成 `zz-daimon-network.conf` 和 `/etc/sysctl.conf` 末尾的 daimon 标记块，覆盖开机及重载时的旧值，保留其他工具的原始配置；发现更晚的冲突则拒绝应用。应用前检查默认路由队列为 `fq` 或 `mq+fq`，不覆盖其他队列；写入失败回滚持久化文件及运行态。已删除内核中无实际作用的 `tcp_low_latency`。
 
-查看优化状态：
+解释：输出经 ANSI 清理后按行解析国内三网的单线程下载/上传/重传，取下载最快三个结果的中位数作为实测带宽，RTT 取 `223.5.5.5`、`119.29.29.29`、`180.76.76.76` 的 ping 中位数；解析失败时打印原始输出并要求手工输入带宽和 RTT。
+
+应用参数：
 
 ```bash
-sysctl net.core.default_qdisc net.ipv4.tcp_congestion_control
-modinfo tcp_bbr 2>/dev/null | grep -E '^(filename|version|description):'
+# BDP = 实测带宽 × RTT；缓冲区上限 = 2×BDP+2MiB，4MiB–256MiB 且不超过内存/32
+# 调优文件：/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf（并按同一份值写 sysctl.conf 标记块）
+sysctl --system
 ```
-解释：查看当前网络内核参数、BBR 模块信息和优化配置状态。
 
-清除自定义网络优化：
+解释：实际入口为 `daimon_tcp_tune_run`，参数由 `daimon_tcp_calc_profile` 按实测值计算，写入 `/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf`，并通过 `daimon_network_persist` 同步写入 `/etc/sysctl.conf` 末尾的 daimon 标记块。procps 的 `sysctl --system` 最后处理 `/etc/sysctl.conf`，只写 `/etc/sysctl.d` 会被旧配置覆盖，这是旧版“提示成功但重载后失效”的根因。应用后逐项核对运行态，被覆盖时列出冲突文件；不支持的内核参数会注释掉，避免开机 systemd-sysctl 报错。
+
+复测与回滚：
 
 ```bash
-daimon_network_clear_custom_optimize
+cat /root/linux-daimon/tcp-tuning/profile.json          # 本次实测与前后对比
+sed -n '1,40p' /root/linux-daimon/tcp-tuning/runtime-snapshot.conf   # 调优前快照
 ```
-解释：通过菜单 `5 → 15 → 3` 调用此内部函数。先将 sysctl.conf 标记块和 `zz-daimon-network.conf` 改为仅保留 BBR/FQ，再删除网络优化文件并重载；不能只删除旧参数文件，否则覆盖块仍生效。脚本也会清理旧版本遗留的 qdisc 服务文件；没有其他来源定义的运行态参数可能需要重启后恢复默认值。
 
+解释：应用成功后自动再测一轮对比，复测低于优化前 80% 时提示是否恢复。测速端口只在防火墙原本未放行时新增规则，测速结束（含失败路径）删除；原本存在的规则不会被删除。菜单第 2 项按快照恢复运行态并删除调优文件。当前内核不支持 BBR 时不写入任何配置。
 ### 5.16 禁用 IPv6
 
 ```bash

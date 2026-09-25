@@ -109,7 +109,7 @@ Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python
 | 5 | 优化 DNS 地址 | 根据 `ipinfo.io` 的 `country` 字段自动选择 DNS；`CN` 使用国内 DNS，其他地区包括香港使用国外 DNS |
 | 6 | 开启 BBR 加速（BBR + FQ） | 当前内核支持 BBR 时设置并验证 BBR + FQ；不自动安装或更换内核 |
 | 7 | 安装 Docker | 根据 `ipinfo.io` 的 `country` 字段自动选择国内镜像或 Docker 官方源 |
-| 8 | 应用自定义网络优化 | 使用内置参数优化网络；当前内核不支持 BBR 时停止操作，不写入无效配置 |
+| 8 | 动态 TCP 优化 | 运行 TCPquality 单线程测速，按实测带宽和 RTT 计算并应用参数；当前内核不支持 BBR 时停止操作，不写入无效配置 |
 | 9 | 安装第三方工具 | 安装全部 15 项工具；需要选择工具时使用主菜单的第三方工具管理 |
 | 10 | 修改时区和本地语言 | 设置时区为 `Asia/Shanghai`，本地语言为 `en_US.UTF-8` |
 
@@ -133,7 +133,7 @@ Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python
 | 12 | 查看ssh的ip | 查看当前 SSH 连接 IP 和所有 SSH 连接地址 |
 | 13 | 网卡管理工具 | 查看、启用、禁用网卡和查看网卡详细信息 |
 | 14 | journalctl日志管理 | 配置日志自动清理、查看占用、查看服务日志、按时间/大小清理 |
-| 15 | 系统网络自适应优化 | 检测当前内核的 BBR 能力，严格应用并验证 BBR/FQ 和自适应 sysctl 参数；不支持时可转到 BBR 管理安装内核 |
+| 15 | 系统网络自适应优化 | 先测速再调优：iperf3 本地单线程下载或 TCPquality 国内三网测速，按实测带宽与 RTT 计算缓冲区，应用后复测对比，可一键恢复 |
 | 16 | 禁用IPv6 | 写入 sysctl 配置禁用 IPv6 |
 | 17 | 开启IPv6 | 写入 sysctl 配置开启 IPv6 |
 | 18 | 设置本地语言 | 支持 `en_US.UTF-8`、中文简体和其他常用 UTF-8 locale |
@@ -146,29 +146,39 @@ Swap 只调整带本脚本 inode 归属标记的 `/swapfile`；未标记的已�
 
 #### 系统网络自适应优化参数
 
-现代发行版内核通常已经包含标准 BBR，此时直接加载模块并启用，无需安装新内核。BBR/FQ 配置写入 `/etc/sysctl.d/99-daimon-bbr-fq.conf`，其他网络参数写入 `/etc/sysctl.d/99-daimon-network-optimize.conf`。应用时同步生成 `/etc/sysctl.d/zz-daimon-network.conf` 和 `/etc/sysctl.conf` 末尾的 daimon 标记块，分别保证 systemd 开机加载与 `sysctl --system` / `sysctl -p` 重载的优先级；保留原有配置内容，重复应用不重复追加。需要 Python 3；更靠后的冲突、标记损坏或写入失败会停止并回滚。清除优化时移除网络覆盖并保留 BBR/FQ。当前内核不支持 BBR 时不会写入配置或显示成功，可选择进入主菜单 13 安装兼容内核。
+主菜单 `5 → 15` 只提供两个入口：`1. 动态调优` 和 `2. 恢复调优前参数`。动态调优内置两种测速方式：
 
-应用前还要求默认路由网卡的实际队列为 `fq` 或 `mq` 加全部 `fq` 叶队列；缺少 `tc`、没有默认路由或队列不符时停止，不自动覆盖已有队列。失败会恢复并核对配置文件和运行态参数；回滚不完整时保留快照并明确报错。参数不保证所有线路都变快，2026-09-07 的两机对比未显示 tcpfit 稳定全面胜出，因此保留现有方案，详见 [审计记录](AUDIT.md)。
+- `iperf3`：脚本监听临时端口并打印本地客户端命令，本地单线程下载测 3 次（波动超过 1.2 倍时提示补测到 5 次）取中位数；RTT 优先取测试连接的 TCP 采样值，其次 ICMP，都没有时才要求手工输入。iperf3 服务端使用 `--forceflush` 输出，避免重定向到文件时缓冲导致读不到结果。
+- `TCPquality`：运行 `ibsgss/TcpQuality` 国内三网单线程测速，取下载最快三个结果的中位数，RTT 取国内公共 DNS 的 ping 中位数；解析失败时打印原始输出并要求手工输入带宽和 RTT。
+
+参数按实测值计算，不再固定：`BDP = 实测带宽 × RTT`，缓冲区上限 `2×BDP+2MiB`，同时受 `内存/32` 和 256MiB 上限约束，下限 4MiB；缓冲区默认值按角色（代理 1MiB、其他 2MiB）；`tcp_mem` 按物理内存的 1/16、1/8、1/4 计算。调优文件为 `/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf`，并同步写入 `/etc/sysctl.conf` 末尾的 daimon 标记块：procps 的 `sysctl --system` 最后才处理 `/etc/sysctl.conf`，只写 `/etc/sysctl.d` 会被旧配置覆盖，这正是“提示成功但重载/重启后失效”的原因。应用后逐项核对运行态，被其他文件覆盖时列出文件名并重新写入运行态。
+
+应用成功后自动再测一轮对比，复测低于优化前 80% 时提示是否恢复。测速临时端口只在防火墙原本未放行时新增规则，测速结束（包括失败路径）删除，原本存在的规则不会被删除。调优前保存一次运行态快照，菜单第 2 项据此恢复。当前内核不支持 BBR 时不写入任何配置，可选择主菜单 13 安装兼容内核。iperf3 与 TCPquality 结果都不保证所有线路都变快，实际效果见 [审计记录](AUDIT.md)。
 
 | 参数 | 参数的含义 | 调优的参数值 | 调优之后的效果 |
 |---|---|---|---|
 | `net.core.default_qdisc` | 默认网络队列调度算法 | `fq` | 配合 BBR 做公平队列调度，降低排队延迟 |
 | `net.ipv4.tcp_congestion_control` | TCP 拥塞控制算法 | `bbr` | 使用 BBR 提升高延迟、高带宽链路吞吐 |
-| `net.core.rmem_max` | Socket 最大接收缓冲区 | `134217728` | 提高大带宽链路接收能力 |
-| `net.core.wmem_max` | Socket 最大发送缓冲区 | `134217728` | 提高大带宽链路发送能力 |
-| `net.core.netdev_max_backlog` | 网卡收包队列长度 | `300000` | 缓解高并发或突发流量下的丢包 |
-| `net.ipv4.tcp_rmem` | TCP 接收缓冲区最小值、默认值、最大值 | `4096 131072 134217728` | 让 TCP 接收窗口可随链路质量扩大 |
-| `net.ipv4.tcp_wmem` | TCP 发送缓冲区最小值、默认值、最大值 | `4096 131072 134217728` | 让 TCP 发送窗口可随链路质量扩大 |
+| `net.core.rmem_max` | Socket 最大接收缓冲区 | `2×BDP+2MiB`，4MiB–256MiB 且不超过内存/32 | 按本机带宽时延积给窗口留余量 |
+| `net.core.wmem_max` | Socket 最大发送缓冲区 | 同上 | 上传方向同样不受缓冲区限制 |
+| `net.core.rmem_default` / `wmem_default` | Socket 默认缓冲区 | 代理 `1048576`，其他 `2097152` | 默认值决定爬坡速度和每连接内存占用 |
+| `net.core.netdev_max_backlog` | 网卡收包队列长度 | `16384` | 缓解高并发或突发流量下的丢包 |
+| `net.ipv4.tcp_rmem` | TCP 接收缓冲区最小值、默认值、最大值 | `4096 <默认值> <上限>` | 让 TCP 接收窗口可随链路质量扩大 |
+| `net.ipv4.tcp_wmem` | TCP 发送缓冲区最小值、默认值、最大值 | `4096 16384 <上限>` | 让 TCP 发送窗口可随链路质量扩大 |
+| `net.ipv4.tcp_mem` | TCP 全局内存上限（页） | 内存的 1/16、1/8、1/4 | 避免小内存机器 OOM，同时给出硬顶 |
+| `net.ipv4.tcp_limit_output_bytes` | TCP 单连接排队输出上限 | 同缓冲区上限 | 不因旧值 4MiB 截断高延迟链路吞吐 |
+| `net.ipv4.tcp_adv_win_scale` | 接收窗口预留比例 | `1` | 为协议和应用预留 socket 空间 |
+| `net.ipv4.tcp_moderate_rcvbuf` | 自动调整接收缓冲区 | `1` | 放大 `rmem_max` 的前提 |
 | `fs.file-max` | 系统最大文件句柄数 | `2097152` | 提升大量连接和文件打开场景的容量 |
 | `net.ipv4.tcp_tw_reuse` | TIME_WAIT 连接复用 | `1` | 减少短连接过多时的端口占用 |
 | `net.ipv4.tcp_fastopen` | TCP Fast Open | `3` | 客户端和服务端均启用 TFO，减少握手延迟 |
 | `net.ipv4.tcp_window_scaling` | TCP 窗口缩放 | `1` | 支持更大的 TCP 窗口，提高长肥链路吞吐 |
-| `net.ipv4.tcp_max_syn_backlog` | SYN 半连接队列长度 | `262144` | 提升高并发建连承载能力 |
-| `net.core.somaxconn` | Socket listen 队列上限 | `65535` | 提升服务端连接排队能力 |
+| `net.ipv4.tcp_max_syn_backlog` | SYN 半连接队列长度 | `8192` | 提升高并发建连承载能力 |
+| `net.core.somaxconn` | Socket listen 队列上限 | `8192` | 提升服务端连接排队能力 |
 | `net.ipv4.ip_local_port_range` | 本地临时端口范围 | `1024 65535` | 扩大主动连接可用端口范围 |
 | `vm.swappiness` | Swap 使用倾向 | `10` | 降低系统主动使用 Swap 的概率 |
 | `net.ipv4.tcp_slow_start_after_idle` | 空闲后重新慢启动 | `0` | 避免连接空闲后吞吐重新爬升过慢 |
-| `net.ipv4.tcp_limit_output_bytes` | TCP 单连接排队输出上限 | `4194304` | 限制过量排队，兼顾吞吐和延迟 |
+| `net.ipv4.tcp_fin_timeout` | FIN_WAIT_2 超时 | `15` | 加快短连接资源回收 |
 | `net.ipv4.tcp_mtu_probing` | TCP MTU 探测 | `1` | 遇到 PMTU 黑洞时自动探测，减少传输异常 |
 
 ### 第三方工具

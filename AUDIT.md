@@ -406,3 +406,56 @@ git diff --check
 ### 清理
 
 核对绝对路径、所有容器挂载、系统挂载、cron 和进程引用后，删除腾讯云旧 agent 目录 `/root/vaultwarden/migration-20260908`、`/root/syncclipboard/migration-20260908`、`/root/linux-daimon/audit-20260907`，合计约 211 MiB。源服务器原数据、生产 volumes 和云端历史 ZIP 保留。两机本轮专用容器/卷、HTTP/Nginx 测试进程及 SSH 隧道已清理，隔离任务目录也已移除。少量脱敏结果与基线保留在本地被忽略的 `.tmp/migration-code-test-20260908/`。
+
+## 动态 TCP 调优实测（2026-09-25）
+
+### 本轮改动
+
+主菜单 `5 → 15` 改为“先测速再调优”，只保留两个入口：`1. 动态调优`（iperf3 或 TCPquality）与 `2. 恢复调优前参数`；一键配置第 8 项改用 TCPquality 自动测速后应用。参数不再固定：`BDP = 实测带宽 × RTT`，缓冲区上限 `2×BDP+2MiB`（4MiB–256MiB、且不超过内存/32），缓冲区默认值按角色（代理 1MiB、其他 2MiB），`tcp_mem` 按内存 1/16、1/8、1/4。调优文件 `/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf` 与 `/etc/sysctl.conf` 的 daimon 标记块同步写入同一份值。
+
+### 实测发现的缺陷（均已修复）
+
+| 缺陷 | 现象与证据 | 修复 |
+|---|---|---|
+| iperf3 输出块缓冲 | `iperf3 -s -p 50285 > log` 运行 2 秒后日志 0 字节，工具永远读不到“第 N 次完成”，只能等到超时 | 服务端改用 `--forceflush`（实测同条件 146 字节立即落盘），不支持时回退 `stdbuf -oL -eL` |
+| 命令替换死等 | 在 `server_pid=$(daimon_tcp_start_iperf_server ...)` 中启动长驻 iperf3，子 shell `do_wait`、父进程 `pipe_read` 互相等待，测速阶段永久挂起 | 改为函数写全局 `DAIMON_TCP_IPERF_PID` 并返回状态，不再让服务端进程继承命令替换管道 |
+| 测速说明被吞 | `before=$(daimon_tcp_measure iperf3)` 把“请在本地运行 iperf3 …”一起捕获，用户界面只剩“测速方式”一行，无法执行 | 测速结果改为写 `/root/linux-daimon/tcp-tuning/last-measure.conf`，说明直接输出到终端 |
+| `/etc/sysctl.conf` 覆盖调优 | 日本写入 `/etc/sysctl.d/zzzz-order-test.conf` 的 `rmem_max=33554432` 不生效，实际仍为 `/etc/sysctl.conf` 中 daimon 块的 134217728；无该块的春川、古来则正常生效，证明 procps `sysctl --system` 最后才处理 `/etc/sysctl.conf` | 调优值同时写入 `/etc/sysctl.conf` 末尾标记块；应用后逐项核对运行态，被覆盖时列出冲突文件 |
+| 防火墙规则误删风险 | 原实现无条件 `ufw delete allow <port>/tcp`，会删掉用户原有规则 | 打开时先判断是否已放行（`ufw-exists`/`iptables-exists` 等），只回收本次新增的规则，失败路径同样回收 |
+| 变量大小写不一致 | 动态调优早期版本 Python 输出 `BUF_MAX=`，Bash 读取 `$buf_max` 得到空值，写到 sysctl 文件里就是空值 | 计算改用 awk 输出小写键名，写入前逐项校验 |
+
+另修复：`DAIMON_BBR_FQ_CONF` 未定义时的 unbound 问题（改用 `DAIMON_TCP_BBR_CONF`）；RTT 无法从 ICMP 获取时（日本实测 ping 客户端被丢）优先使用测试连接的 `ss -tin` TCP RTT 采样，其次 ICMP，最后才要求手工输入。
+
+### 功能测试
+
+在春川（Ubuntu 22.04，12 GiB，ufw 启用）执行 `.tmp/tcp-tune-20260925/fn-test.sh`，覆盖 profile 计算、iperf3 日志解析（含多流 `[SUM]`）、TCPquality TUI 解析、防火墙规则保留/回收、参数应用与运行态一致、重复应用幂等、恢复快照、iperf3 服务端启动与日志实时可读：
+
+```text
+passed=15 failed=1
+```
+
+唯一失败项是测试脚本假设“测试开始时运行态=首次调优前状态”，而该机此前已调优并保留快照，工具按设计恢复到**首次调优前**（128 MiB）状态；日本复跑结果相同，属断言口径问题，非功能缺陷。
+
+菜单路径用管道驱动真实脚本 `5 → 15 → 1 → 1` 验证：正确显示 iperf3 客户端命令、临时放行端口、无客户端连接时按 `DAIMON_TCP_IPERF3_WAIT=5` 超时并提示“只收到 0 次有效测试（需要 3 次），未修改配置”，随后返回上级菜单。
+
+本地回归：`tests/regression.sh` 79 passed、`tests/installation-regression.sh` 19 passed、`tests/debian-compat-regression.sh` 3 passed、`tests/menu-audit.mjs` 757 patterns / 94 case blocks / 9 embedded scripts、`bash -n` 通过。
+
+### 四机 iperf3 实测（本地 Windows 客户端，单线程下载 `-R -t 8 -O 2`）
+
+| 服务器 | 内存/角色 | 优化前中位数 | 优化后中位数 | 变化 | 应用参数 |
+|---|---|---|---|---|---|
+| 日本 216.23.81.87 | 5.9 GiB / proxy | 99.8 Mbps（99.8/105.0/96.3） | 86.8 Mbps（81.3/90.9/112.0/73.9/86.8） | -13% | bw 99.8、RTT 150 ms（ICMP 被丢，当时回退默认值）、上限 5.84 MiB |
+| 西班牙 143.47.45.115 | 24 GiB / mixed | 53.0 Mbps（202.0/25.9/159.0/3.1/53.0） | 119.0 Mbps（0.9/106.0/147.0/139.0/119.0） | +125% | bw 53.0、RTT 349 ms（TCP 采样）、上限 6.72 MiB |
+| 古来 149.118.147.240 | 24 GiB / proxy | 1.3 Mbps（0.6/0.8/2.3/1.3/2.4） | 1.1 Mbps（1.1/1.1/0.6/2.2/1.5） | -15% | bw 1.3、RTT 133 ms、上限 4 MiB（下限） |
+| 春川 134.185.110.164 | 12 GiB / proxy | 219 Mbps（219/120/280/229/140） | 216 Mbps（213/120/227/216/244） | -1% | bw 219、RTT 111 ms、上限 8.17 MiB |
+
+- 三次波动超过 1.2 倍时自动要求补测到 5 次的逻辑在四机均被触发（西班牙前 3 次 202/25.9/159 波动 7.8 倍、后 3 次波动 163 倍），补测确实把中位数从极端样本拉回。
+- 春川应用后重传由 1743–32401 降到 2–6719，日本 12750/6872/21369 降到 3797–19007；西班牙应用后 5 次重传为 3/606/2/10/1660，明显低于优化前。
+- 古来本次窗口链路本身只有 0.6–2.4 Mbps，无法体现调优收益；日本 -13%、春川 -1% 与同机不同时段波动同量级，未越出脚本 20% 的自动回滚阈值，故保留动态参数。
+- 测速结束后四机均确认：iperf3 进程已停止、临时放行的测试端口规则已删除（原本存在的规则不动）、SSH 未中断、IPv4/IPv6 访问正常。
+
+### 限制
+
+- 跨境链路在测试时段波动极大（西班牙单次 0.9–202 Mbps、日本 73.9–112 Mbps），同机不同时段中位数差异可达数倍，单次对比不可作为结论；本轮结论是“不劣化”，而非“必然提速”。
+- iperf3 测得的是“服务器 ↔ 本地客户端”的真实路径，TCPquality 测得的是国内三网公共端点，两者覆盖的路径不同，用户按用途选择；TCPquality 需要下载 Debian rootfs 并在 chroot 内运行，耗时通常在 5–15 分钟，解析失败时会退回手工输入。
+- 未验证 BBRv3 内核替换路径；本轮全部使用发行版自带 BBR。
