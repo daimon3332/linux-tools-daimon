@@ -9381,55 +9381,50 @@ daimon_tcp_restore() {
 	printf '  当前缓冲区上限: %s\n' "$(sysctl -n net.core.rmem_max 2>/dev/null)"
 }
 
+daimon_tcp_fw_persist() {
+	if command -v netfilter-persistent >/dev/null 2>&1; then
+		netfilter-persistent save >/dev/null 2>&1 && return 0
+	fi
+	if command -v iptables-save >/dev/null 2>&1 && [ -d /etc/iptables ]; then
+		iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
+		command -v ip6tables-save >/dev/null 2>&1 && ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true
+	fi
+	return 0
+}
+
 daimon_tcp_fw_open() {
 	local port="$1"
 	DAIMON_TCP_FW_METHOD="none"
 	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi '^Status: active'; then
 		if ufw status 2>/dev/null | grep -qE "(^|[[:space:]])${port}/tcp([[:space:]]|$)"; then
-			DAIMON_TCP_FW_METHOD="ufw-exists"
-			return 0
+			DAIMON_TCP_FW_METHOD="ufw-已放行"
+		elif ufw allow "$port/tcp" >/dev/null 2>&1; then
+			DAIMON_TCP_FW_METHOD="ufw-已新增"
 		fi
-		if ufw allow "$port/tcp" >/dev/null 2>&1; then
-			DAIMON_TCP_FW_METHOD="ufw-added"
-			return 0
-		fi
+		return 0
 	fi
 	if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
 		if firewall-cmd --query-port="${port}/tcp" >/dev/null 2>&1; then
-			DAIMON_TCP_FW_METHOD="firewalld-exists"
-			return 0
+			DAIMON_TCP_FW_METHOD="firewalld-已放行"
+		elif firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1; then
+			firewall-cmd --reload >/dev/null 2>&1 || true
+			DAIMON_TCP_FW_METHOD="firewalld-已新增"
 		fi
-		if firewall-cmd --add-port="${port}/tcp" >/dev/null 2>&1; then
-			DAIMON_TCP_FW_METHOD="firewalld-added"
-			return 0
-		fi
+		return 0
 	fi
 	if command -v iptables >/dev/null 2>&1; then
 		if iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
-			DAIMON_TCP_FW_METHOD="iptables-exists"
-			return 0
-		fi
-		if iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
-			command -v ip6tables >/dev/null 2>&1 &&
+			DAIMON_TCP_FW_METHOD="iptables-已放行"
+		elif iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
+			if command -v ip6tables >/dev/null 2>&1 &&
+				! ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
 				ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
-			DAIMON_TCP_FW_METHOD="iptables-added"
-			return 0
+			fi
+			daimon_tcp_fw_persist
+			DAIMON_TCP_FW_METHOD="iptables-已新增"
 		fi
+		return 0
 	fi
-}
-
-daimon_tcp_fw_close() {
-	local port="$1"
-	case "$DAIMON_TCP_FW_METHOD" in
-		ufw-added) ufw delete allow "$port/tcp" >/dev/null 2>&1 || true ;;
-		firewalld-added) firewall-cmd --remove-port="${port}/tcp" >/dev/null 2>&1 || true ;;
-		iptables-added)
-			iptables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
-			command -v ip6tables >/dev/null 2>&1 &&
-				ip6tables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
-			;;
-	esac
-	DAIMON_TCP_FW_METHOD=""
 }
 
 daimon_tcp_ping_rtt() {
@@ -9634,12 +9629,11 @@ daimon_tcp_measure_iperf3() {
 	log="$DAIMON_TCP_STATE_DIR/iperf3-$(date +%Y%m%d-%H%M%S).log"
 	daimon_tcp_fw_open "$port"
 	if ! daimon_tcp_start_iperf_server "$port" "$log"; then
-		daimon_tcp_fw_close "$port"
 		echo "iperf3 服务端启动失败，日志: $log"
 		return 1
 	fi
 	server_pid="$DAIMON_TCP_IPERF_PID"
-	echo -e "${gl_kjlan}iperf3 服务端已监听端口 $port（防火墙: ${DAIMON_TCP_FW_METHOD}）。${gl_bai}"
+	echo -e "${gl_kjlan}iperf3 服务端已监听端口 $port（防火墙: ${DAIMON_TCP_FW_METHOD}，测速端口已放行并保留）。${gl_bai}"
 	for f in $fam_list; do
 		if [ "$f" = 6 ]; then
 			target="$ip6"; fam_opt="-6"
@@ -9664,7 +9658,6 @@ daimon_tcp_measure_iperf3() {
 		done
 		if [ "$finished" -ne 1 ]; then
 			daimon_tcp_stop_iperf_server "$port" "$server_pid"
-			daimon_tcp_fw_close "$port"
 			echo "IPv$f 没有检测到完成的测试，未修改配置。日志: $log"
 			return 1
 		fi
@@ -9673,7 +9666,6 @@ daimon_tcp_measure_iperf3() {
 		case "$peer" in *:*) peer_family=6 ;; esac
 		if [ "$peer_family" != "$f" ]; then
 			daimon_tcp_stop_iperf_server "$port" "$server_pid"
-			daimon_tcp_fw_close "$port"
 			echo -e "${gl_hong}请求 IPv$f 测速，但连接来自 IPv$peer_family 地址 $peer，未修改配置。${gl_bai}"
 			return 1
 		fi
@@ -9681,7 +9673,6 @@ daimon_tcp_measure_iperf3() {
 		count=$(printf '%s\n' "$samples" | grep -c . || true)
 		if [ "${count:-0}" -lt 5 ]; then
 			daimon_tcp_stop_iperf_server "$port" "$server_pid"
-			daimon_tcp_fw_close "$port"
 			echo -e "${gl_hong}IPv$f 预热 ${omit}s 之后只取到 ${count:-0} 个每秒采样，样本不足，未修改配置。日志: $log${gl_bai}"
 			if [ "$family" = both ]; then
 				echo -e "${gl_huang}IPv$f 链路当前不可用（本机、对端或中间路由问题），未写入任何参数；可改用“只优化 IPv4”或“只优化 IPv6”。${gl_bai}"
@@ -9712,7 +9703,6 @@ daimon_tcp_measure_iperf3() {
 		[ "$f" = 4 ] && detail4="$bw ${rtt:-150} $retr" || detail6="$bw ${rtt:-150} $retr"
 	done
 	daimon_tcp_stop_iperf_server "$port" "$server_pid"
-	daimon_tcp_fw_close "$port"
 	cat > "$DAIMON_TCP_MEASURE_RESULT" <<EOF
 FAMILY=$family
 BW=$bw_use
