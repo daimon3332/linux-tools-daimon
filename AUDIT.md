@@ -392,3 +392,12 @@ git diff --check
 ### 清理
 
 核对绝对路径、所有容器挂载、系统挂载、cron 和进程引用后，删除腾讯云旧 agent 目录 `/root/vaultwarden/migration-20260908`、`/root/syncclipboard/migration-20260908`、`/root/linux-daimon/audit-20260907`，合计约 211 MiB。源服务器原数据、生产 volumes 和云端历史 ZIP 保留。两机本轮专用容器/卷、HTTP/Nginx 测试进程及 SSH 隧道已清理，隔离任务目录也已移除。少量脱敏结果与基线保留在本地被忽略的 `.tmp/migration-code-test-20260908/`。
+# 2026-09-25 Debian 12/13 基础工具菜单
+
+用户要求按现有 19 个一级菜单的实际依赖选择基础工具，而非照搬系统软件通用清单。新增一级菜单 `20`，原 1–19 编号不变。默认仅预选 `ca-certificates curl wget git jq python3`，可删减或增选；`gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 均为可选。`xz-utils` 未发现主脚本直接调用，未加入菜单。
+
+依赖划分依据：启动命令和通用下载需要 curl、证书和 wget；源码工具使用 git；Docker/配置流程使用 jq；网络持久化、备份和部分配置流程需要 python3。unzip 仅在 WordPress/Bun 等分支使用；procps 和 iproute2 虽被系统信息和网络操作引用，但用户不要求默认预装。截图中的 `tasksel`、`apt-listchanges`、`openssh-server` 均不默认安装；一键执行 `apt --fix-broken` 或系统升级会有超出基础依赖安装的副作用，故新菜单不触发。
+
+Debian 13 `trixie` 与 Debian 12 `bookworm` 包名相同，新功能安装发行版默认 `python3`，不强行指定解释器小版本。现有编程工具的 Python 3.12 安装路径可能在 Debian 上尝试 Ubuntu deadsnakes PPA，这是独立兼容性风险，本次菜单不会调用；其他 19 项中的第三方脚本、服务与网络功能不能仅凭菜单语法视为在 Debian 13 实机已通过。首次启动脚本仍需 curl；无 curl 时应先通过 APT 安装 `ca-certificates curl`，再启动菜单。
+
+依据：[Debian 13 发布说明](https://www.debian.org/releases/trixie/release-notes/whats-new.en.html)、[Debian 13 APT 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)、[Docker 官方 Debian 12/13 支持范围](https://docs.docker.com/engine/install/debian/)。西班牙 ARM64 的干净 `debian:13-slim` 镜像确认 curl、wget、ca-certificates、git、jq、python3、tar、unzip、procps、iproute2 等可能全部缺失；这一镜像结果不等于所有 VPS 镜像的预装状态。

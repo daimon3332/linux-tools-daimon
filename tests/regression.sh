@@ -855,7 +855,7 @@ test_main_menu() {
     for name in linux_info linux_update linux_clean one_click_config_manager linux_Settings \
         linux_tools linux_docker ssh_config_manager ufw_manager ssl_nginx_manager fail2ban_manager \
         linux_bbr warp_manager rclone_manager bitwarden_manager crontab_sync_manager \
-        common_one_click_scripts kejilion_update; do
+        common_one_click_scripts server_retire_menu debian_basics_menu kejilion_update; do
         eval "$name() { echo '$name' >> \"\$trace\"; }"
     done
     while read -r number expected; do
@@ -881,6 +881,8 @@ test_main_menu() {
 16 bitwarden_manager
 17 crontab_sync_manager
 18 common_one_click_scripts
+19 server_retire_menu
+20 debian_basics_menu
 00 kejilion_update
 0
 EOF

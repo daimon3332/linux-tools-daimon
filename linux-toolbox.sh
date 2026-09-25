@@ -24121,6 +24121,89 @@ kejilion_update() {
 
 
 
+debian_basics_supported() {
+	[ -r /etc/os-release ] || return 1
+	local ID VERSION_ID
+	. /etc/os-release
+	case "$ID:$VERSION_ID" in
+		debian:12|debian:12.*|debian:13|debian:13.*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+debian_basics_install() {
+	debian_basics_supported || { echo "仅支持 Debian 12 和 Debian 13。"; return 1; }
+	[ "$EUID" -eq 0 ] || { echo "请以 root 身份安装基础工具。"; return 1; }
+	command -v apt-get >/dev/null && command -v dpkg-query >/dev/null || {
+		echo "缺少 apt-get 或 dpkg-query，无法安装。"
+		return 1
+	}
+	local package
+	local -a selected=() missing=()
+	for package in "$@"; do
+		case "$package" in
+			ca-certificates|curl|wget|git|jq|python3|gnupg|tar|unzip|openssl|sudo|socat|openssh-client|procps|iproute2|lsof) ;;
+			*) echo "无效的 Debian 软件包: $package"; return 1 ;;
+		esac
+		[[ " ${selected[*]} " == *" $package "* ]] || selected+=("$package")
+	done
+	[ "${#selected[@]}" -gt 0 ] || { echo "没有选择软件包。"; return 0; }
+	for package in "${selected[@]}"; do
+		[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" = "install ok installed" ] || missing+=("$package")
+	done
+	if [ "${#missing[@]}" -eq 0 ]; then
+		echo "所选基础工具均已安装，无需更改。"
+		return 0
+	fi
+	echo "将安装缺失的软件包: ${missing[*]}"
+	DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt-get update -y || return 1
+	DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none \
+		apt-get install -y --no-install-recommends --no-remove \
+		-o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" "${missing[@]}" || return 1
+	for package in "${selected[@]}"; do
+		[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" = "install ok installed" ] || {
+			echo "安装后验证失败: $package"
+			return 1
+		}
+	done
+	hash -r
+	echo "Debian 基础工具安装完成: ${selected[*]}"
+}
+
+debian_basics_menu() {
+	debian_basics_supported || { echo "仅支持 Debian 12 和 Debian 13。"; break_end; return 1; }
+	local -a packages=(ca-certificates curl wget git jq python3 gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof)
+	local -a descriptions=(HTTPS证书 下载工具 备用下载 代码仓库 JSON解析 Python运行 GPG验签 打包工具 ZIP解压 加密工具 sudo提权 TCP转发 SSH客户端 系统进程 网络命令 端口占用)
+	local i number input selected=() package
+	clear
+	echo "Debian 12/13 基础工具"
+	echo "仅安装所选的缺失软件包；不升级系统、修复依赖或更改服务。"
+	for ((i=0; i<${#packages[@]}; i++)); do
+		package="${packages[i]}"
+		if [ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" = "install ok installed" ]; then
+			printf '%2d. %-18s %-12s 已安装\n' "$((i+1))" "$package" "${descriptions[i]}"
+		else
+			printf '%2d. %-18s %-12s 未安装\n' "$((i+1))" "$package" "${descriptions[i]}"
+		fi
+	done
+	read -e -i '1 2 3 4 5 6' -p "选择编号（默认六项，可删减；0 返回）: " input || return 1
+	[ -n "${input//[[:space:]]/}" ] && [ "$input" != 0 ] || return 0
+	for number in $input; do
+		if ! [[ "$number" =~ ^[0-9]{1,2}$ ]] || [ "$((10#$number))" -lt 1 ] || [ "$((10#$number))" -gt ${#packages[@]} ]; then
+			echo "无效编号: $number；未执行安装。"
+			break_end
+			return 1
+		fi
+		number=$((10#$number))
+		package="${packages[number-1]}"
+		[[ " ${selected[*]} " == *" $package "* ]] || selected+=("$package")
+	done
+	debian_basics_install "${selected[@]}"
+	local status=$?
+	break_end
+	return "$status"
+}
+
 kejilion_sh() {
 crontab_sync_upgrade_installed || echo 'ERROR: 已安装备份任务升级未完成，请检查 cronsync'
 crontab_sync_reconcile_legacy || true
@@ -24161,6 +24244,8 @@ echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}18.  ${gl_bai}常用的一键脚本"
 echo -e "${gl_kjlan}19.  ${gl_bai}服务器退役"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
+echo -e "${gl_kjlan}20.  ${gl_bai}Debian 12/13 基础工具"
+echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}00.  ${gl_bai}脚本更新"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}0.   ${gl_bai}退出脚本"
@@ -24187,6 +24272,7 @@ case $choice in
   17) crontab_sync_manager; pause_after=false ;;
   18) common_one_click_scripts; pause_after=false ;;
   19) server_retire_menu; pause_after=false ;;
+  20) debian_basics_menu; pause_after=false ;;
   00) kejilion_update; pause_after=false ;;
   0) clear ; exit ;;
   *) echo "无效的输入!" ;;
