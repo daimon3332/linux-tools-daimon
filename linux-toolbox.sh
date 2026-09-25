@@ -697,6 +697,14 @@ restart() {
 	local RC
 	systemctl restart "$@"
 	RC=$?
+	if [ "$RC" -ne 0 ]; then
+		systemctl reset-failed "$@" >/dev/null 2>&1 || true
+		systemctl restart "$@"
+		RC=$?
+	fi
+	if [ "$RC" -eq 0 ] && ! systemctl is-active --quiet "$@"; then
+		RC=1
+	fi
 	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务已重启。"
 	else
@@ -710,6 +718,14 @@ start() {
 	local RC
 	systemctl start "$@"
 	RC=$?
+	if [ "$RC" -ne 0 ]; then
+		systemctl reset-failed "$@" >/dev/null 2>&1 || true
+		systemctl start "$@"
+		RC=$?
+	fi
+	if [ "$RC" -eq 0 ] && ! systemctl is-active --quiet "$@"; then
+		RC=1
+	fi
 	if [ "$RC" -eq 0 ]; then
 		echo "$1 服务已启动。"
 	else
@@ -803,20 +819,38 @@ check_port() {
 }
 
 
-install_add_docker_cn() {
-	mkdir -p /etc/docker
-	cat > /etc/docker/daemon.json << EOF
-{
-  "registry-mirrors": [
-    "https://hub.333186.xyz",
-    "https://docker.m.daocloud.io",
-    "https://docker.1ms.run",
-    "https://docker.registry.cyou"
-  ]
+docker_daemon_json_merge() {
+	local filter="$1" file="/etc/docker/daemon.json" tmp
+	shift
+	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	mkdir -p /etc/docker || return 1
+	tmp=$(mktemp /etc/docker/.daemon.json.XXXXXX) || return 1
+	if [ -s "$file" ]; then
+		if ! jq -e 'type == "object"' "$file" >/dev/null 2>&1; then
+			echo "现有 /etc/docker/daemon.json 不是有效的 JSON 对象，未修改。"
+			rm -f -- "$tmp"
+			return 1
+		fi
+		if ! jq "$@" "$filter" "$file" > "$tmp"; then
+			echo "合并 /etc/docker/daemon.json 失败，原文件未修改。"
+			rm -f -- "$tmp"
+			return 1
+		fi
+	else
+		if ! jq -n "$@" "$filter" > "$tmp"; then
+			echo "生成 /etc/docker/daemon.json 失败，原文件未修改。"
+			rm -f -- "$tmp"
+			return 1
+		fi
+	fi
+	chmod 644 "$tmp" && mv -f -- "$tmp" "$file"
 }
-EOF
+
+install_add_docker_cn() {
+	docker_daemon_json_merge --argjson mirrors \
+		'["https://hub.333186.xyz","https://docker.m.daocloud.io","https://docker.1ms.run","https://docker.registry.cyou"]' \
+		'.registry-mirrors = $mirrors' || return 1
 	enable docker
-	start docker
 	restart docker
 }
 
@@ -847,26 +881,24 @@ docker_mirror_menu() {
 	read -e -p "请选择: " selected || return 1
 	[ "$selected" = "0" ] && return 90
 	selected=${selected:-"1 2 3 4"}
-	{
-		echo '{'
-		echo '  "registry-mirrors": ['
-		local first=1
-		for idx in $selected; do
-			if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt ${#mirrors[@]} ]; then
-				echo -e "${gl_huang}跳过无效编号: $idx${gl_bai}" >&2
-				continue
-			fi
-			local mirror="${mirrors[$((idx-1))]}"
-			[ -z "$mirror" ] && continue
-			if [ "$first" -eq 0 ]; then echo ','; fi
-			printf '    "%s"' "$mirror"
-			first=0
-		done
-		echo
-		echo '  ]'
-		echo '}'
-	} > /etc/docker/daemon.json
+	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	local -a selected_mirrors=()
+	local idx mirror mirrors_json before after
+	for idx in $selected; do
+		if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt ${#mirrors[@]} ]; then
+			echo -e "${gl_huang}跳过无效编号: $idx${gl_bai}" >&2
+			continue
+		fi
+		mirror="${mirrors[$((idx-1))]}"
+		[ -n "$mirror" ] && selected_mirrors+=("$mirror")
+	done
+	[ "${#selected_mirrors[@]}" -gt 0 ] || { echo "未选择有效镜像源，未修改。"; return 1; }
+	mirrors_json=$(printf '%s\n' "${selected_mirrors[@]}" | jq -R . | jq -s -c .) || return 1
+	before=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
+	docker_daemon_json_merge --argjson mirrors "$mirrors_json" '.registry-mirrors = $mirrors' || return 1
+	after=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
 	cat /etc/docker/daemon.json
+	[ -n "$before" ] && [ "$before" = "$after" ] && { echo "镜像源未变化，无需重启 Docker。"; return 0; }
 	restart docker
 }
 
@@ -1157,37 +1189,43 @@ while true; do
 		2)
 			send_stats "启动指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
-			docker start $dockername
+			[ -n "$dockername" ] && docker start $dockername || echo "未输入容器名，已取消。"
 			;;
 		3)
 			send_stats "停止指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
-			docker stop $dockername
+			[ -n "$dockername" ] && docker stop $dockername || echo "未输入容器名，已取消。"
 			;;
 		4)
 			send_stats "删除指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
-			docker rm -f $dockername
+			[ -n "$dockername" ] && docker rm -f $dockername || echo "未输入容器名，已取消。"
 			;;
 		5)
 			send_stats "重启指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
-			docker restart $dockername
+			[ -n "$dockername" ] && docker restart $dockername || echo "未输入容器名，已取消。"
 			;;
 		6)
 			send_stats "启动所有容器"
-			docker start $(docker ps -a -q)
+			local ids
+			ids=$(docker ps -a -q)
+			[ -n "$ids" ] && docker start $ids || echo "没有可启动的容器。"
 			;;
 		7)
 			send_stats "停止所有容器"
-			docker stop $(docker ps -q)
+			local ids
+			ids=$(docker ps -q)
+			[ -n "$ids" ] && docker stop $ids || echo "没有正在运行的容器。"
 			;;
 		8)
 			send_stats "删除所有容器"
 			read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有容器吗？(Y/N): ")" choice || return 1
 			case "$choice" in
 			  [Yy])
-			    docker rm -f $(docker ps -a -q)
+			    local ids
+			    ids=$(docker ps -a -q)
+			    [ -n "$ids" ] && docker rm -f $ids || echo "没有可删除的容器。"
 			    ;;
 			  [Nn])
 			    ;;
@@ -1198,18 +1236,20 @@ while true; do
 			;;
 		9)
 			send_stats "重启所有容器"
-			docker restart $(docker ps -q)
+			local ids
+			ids=$(docker ps -q)
+			[ -n "$ids" ] && docker restart $ids || echo "没有正在运行的容器。"
 			;;
 		11)
 			send_stats "进入容器"
 			read -e -p "请输入容器名: " dockername || return 1
-			docker exec -it $dockername /bin/sh
+			[ -n "$dockername" ] && docker exec -it $dockername /bin/sh || echo "未输入容器名，已取消。"
 			break_end
 			;;
 		12)
 			send_stats "查看容器日志"
 			read -e -p "请输入容器名: " dockername || return 1
-			docker logs $dockername
+			[ -n "$dockername" ] && docker logs $dockername || echo "未输入容器名，已取消。"
 			break_end
 			;;
 		13)
@@ -1239,6 +1279,7 @@ while true; do
 		15)
 			send_stats "允许容器端口访问"
 			read -e -p "请输入容器名: " docker_name || return 1
+			[ -n "$docker_name" ] || { echo "未输入容器名，已取消。"; continue; }
 			ip_address
 			clear_container_rules "$docker_name" "$ipv4_address"
 			local docker_port=$(docker port $docker_name | awk -F'[:]' '/->/ {print $NF}' | uniq)
@@ -1249,6 +1290,7 @@ while true; do
 		16)
 			send_stats "阻止容器端口访问"
 			read -e -p "请输入容器名: " docker_name || return 1
+			[ -n "$docker_name" ] || { echo "未输入容器名，已取消。"; continue; }
 			ip_address
 			block_container_port "$docker_name" "$ipv4_address"
 			local docker_port=$(docker port $docker_name | awk -F'[:]' '/->/ {print $NF}' | uniq)
@@ -1286,6 +1328,7 @@ while true; do
 		1)
 			send_stats "拉取镜像"
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames || return 1
+			[ -n "$imagenames" ] || { echo "未输入镜像名，已取消。"; continue; }
 			for name in $imagenames; do
 				echo -e "${gl_kjlan}正在获取镜像: $name${gl_bai}"
 				docker pull $name
@@ -1294,6 +1337,7 @@ while true; do
 		2)
 			send_stats "更新镜像"
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames || return 1
+			[ -n "$imagenames" ] || { echo "未输入镜像名，已取消。"; continue; }
 			for name in $imagenames; do
 				echo -e "${gl_kjlan}正在更新镜像: $name${gl_bai}"
 				docker pull $name
@@ -1302,6 +1346,7 @@ while true; do
 		3)
 			send_stats "删除镜像"
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames || return 1
+			[ -n "$imagenames" ] || { echo "未输入镜像名，已取消。"; continue; }
 			for name in $imagenames; do
 				docker rmi -f $name
 			done
@@ -1311,7 +1356,9 @@ while true; do
 			read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有镜像吗？(Y/N): ")" choice || return 1
 			case "$choice" in
 			  [Yy])
-				docker rmi -f $(docker images -q)
+				local ids
+				ids=$(docker images -q)
+				[ -n "$ids" ] && docker rmi -f $ids || echo "没有可删除的镜像。"
 				;;
 			  [Nn])
 				;;
@@ -1403,66 +1450,36 @@ install_crontab() {
 
 docker_ipv6_on() {
 	root_use
-	install jq
-
-	local CONFIG_FILE="/etc/docker/daemon.json"
-	local REQUIRED_IPV6_CONFIG='{"ipv6": true, "fixed-cidr-v6": "2001:db8:1::/64"}'
-
-	# 检查配置文件是否存在，如果不存在则创建文件并写入默认设置
-	if [ ! -f "$CONFIG_FILE" ]; then
-		echo "$REQUIRED_IPV6_CONFIG" | jq . > "$CONFIG_FILE"
-		restart docker
+	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	local CONFIG_FILE="/etc/docker/daemon.json" before after
+	before=$(sha256sum "$CONFIG_FILE" 2>/dev/null | awk '{print $1}')
+	docker_daemon_json_merge --argjson enabled true --arg cidr "2001:db8:1::/64" \
+		'. + {ipv6: $enabled, "fixed-cidr-v6": $cidr}' || return 1
+	after=$(sha256sum "$CONFIG_FILE" 2>/dev/null | awk '{print $1}')
+	cat "$CONFIG_FILE"
+	if [ -n "$before" ] && [ "$before" = "$after" ]; then
+		echo -e "${gl_huang}当前已开启ipv6访问${gl_bai}"
 	else
-		# 使用jq处理配置文件的更新
-		local ORIGINAL_CONFIG=$(<"$CONFIG_FILE")
-
-		# 检查当前配置是否已经有 ipv6 设置
-		local CURRENT_IPV6=$(echo "$ORIGINAL_CONFIG" | jq '.ipv6 // false')
-
-		# 更新配置，开启 IPv6
-		if [[ "$CURRENT_IPV6" == "false" ]]; then
-			UPDATED_CONFIG=$(echo "$ORIGINAL_CONFIG" | jq '. + {ipv6: true, "fixed-cidr-v6": "2001:db8:1::/64"}')
-		else
-			UPDATED_CONFIG=$(echo "$ORIGINAL_CONFIG" | jq '. + {"fixed-cidr-v6": "2001:db8:1::/64"}')
-		fi
-
-		# 对比原始配置与新配置
-		if [[ "$ORIGINAL_CONFIG" == "$UPDATED_CONFIG" ]]; then
-			echo -e "${gl_huang}当前已开启ipv6访问${gl_bai}"
-		else
-			echo "$UPDATED_CONFIG" | jq . > "$CONFIG_FILE"
-			restart docker
-		fi
+		restart docker
 	fi
 }
 
 
 docker_ipv6_off() {
 	root_use
-	install jq
-
-	local CONFIG_FILE="/etc/docker/daemon.json"
-
-	# 检查配置文件是否存在
-	if [ ! -f "$CONFIG_FILE" ]; then
+	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	local CONFIG_FILE="/etc/docker/daemon.json" before after
+	if [ ! -s "$CONFIG_FILE" ]; then
 		echo -e "${gl_hong}配置文件不存在${gl_bai}"
 		return
 	fi
-
-	# 读取当前配置
-	local ORIGINAL_CONFIG=$(<"$CONFIG_FILE")
-
-	# 使用jq处理配置文件的更新
-	local UPDATED_CONFIG=$(echo "$ORIGINAL_CONFIG" | jq 'del(.["fixed-cidr-v6"]) | .ipv6 = false')
-
-	# 检查当前的 ipv6 状态
-	local CURRENT_IPV6=$(echo "$ORIGINAL_CONFIG" | jq -r '.ipv6 // false')
-
-	# 对比原始配置与新配置
-	if [[ "$CURRENT_IPV6" == "false" ]]; then
+	before=$(sha256sum "$CONFIG_FILE" | awk '{print $1}')
+	docker_daemon_json_merge 'del(.["fixed-cidr-v6"]) | .ipv6 = false' || return 1
+	after=$(sha256sum "$CONFIG_FILE" | awk '{print $1}')
+	cat "$CONFIG_FILE"
+	if [ "$before" = "$after" ]; then
 		echo -e "${gl_huang}当前已关闭ipv6访问${gl_bai}"
 	else
-		echo "$UPDATED_CONFIG" | jq . > "$CONFIG_FILE"
 		restart docker
 		echo -e "${gl_huang}已成功关闭ipv6访问${gl_bai}"
 	fi
@@ -11602,7 +11619,12 @@ docker_ssh_migration() {
 
 				# 端口
 				local PORT_ARGS=""
-				mapfile -t PORTS < <(jq -r '.[0].HostConfig.PortBindings | to_entries[] | "\(.value[0].HostPort):\(.key | split("/")[0])"' "$inspect_file" 2>/dev/null)
+				mapfile -t PORTS < <(jq -r '
+					.[0].HostConfig.PortBindings // {} | to_entries[]? |
+					.key as $container | .value[] |
+					if (.HostIp // "") == "" then "\(.HostPort):\($container)"
+					else "\(.HostIp):\(.HostPort):\($container)" end
+				' "$inspect_file" 2>/dev/null)
 				for p in "${PORTS[@]}"; do PORT_ARGS+="-p $p "; done
 
 				# 环境变量
@@ -11617,9 +11639,21 @@ docker_ssh_migration() {
 				# 镜像
 				local IMAGE
 				IMAGE=$(jq -r '.[0].Config.Image' "$inspect_file")
+				local RESTART_ARGS="" ENTRY_ARGS="" CMD_ARGS=""
+				local restart_policy
+				restart_policy=$(jq -r '.[0].HostConfig.RestartPolicy.Name // ""' "$inspect_file")
+				case "$restart_policy" in ""|no) ;; *) RESTART_ARGS="--restart $(printf '%q' "$restart_policy") " ;; esac
+				local -a ENTRYPOINT=() CMD=()
+				mapfile -t ENTRYPOINT < <(jq -r '.[0].Config.Entrypoint[]?' "$inspect_file")
+				if [ "${#ENTRYPOINT[@]}" -gt 0 ]; then
+					ENTRY_ARGS="--entrypoint $(printf '%q' "${ENTRYPOINT[0]}") "
+					for ((i=1; i<${#ENTRYPOINT[@]}; i++)); do CMD_ARGS+="$(printf '%q' "${ENTRYPOINT[i]}") "; done
+				fi
+				mapfile -t CMD < <(jq -r '.[0].Config.Cmd[]?' "$inspect_file")
+				for c in "${CMD[@]}"; do CMD_ARGS+="$(printf '%q' "$c") "; done
 
 				echo -e "\n# 还原容器: $c" >> "$RESTORE_SCRIPT"
-				echo "docker run -d --name $c $PORT_ARGS $VOL_ARGS $ENV_VARS $IMAGE" >> "$RESTORE_SCRIPT"
+				echo "docker run -d --name $(printf '%q' "$c") $RESTART_ARGS$PORT_ARGS$VOL_ARGS$ENV_VARS$ENTRY_ARGS$(printf '%q' "$IMAGE") $CMD_ARGS" >> "$RESTORE_SCRIPT"
 			fi
 		done
 
@@ -11700,36 +11734,61 @@ docker_ssh_migration() {
 			IMAGE=$(jq -r '.[0].Config.Image' "$json")
 			[[ -z "$IMAGE" || "$IMAGE" == "null" ]] && { echo -e "${gl_hong}未找到镜像信息，跳过: $container${gl_bai}"; continue; }
 
-			# 端口映射
-			PORT_ARGS=""
-			mapfile -t PORTS < <(jq -r '.[0].HostConfig.PortBindings | to_entries[]? | "\(.value[0].HostPort):\(.key | split("/")[0])"' "$json")
-			for p in "${PORTS[@]}"; do
-				[[ -n "$p" ]] && PORT_ARGS="$PORT_ARGS -p $p"
-			done
+			local -a run_args=(run -d --name "$container")
+			local -a PORTS=() ENVS=() ENTRYPOINT=() CMD=() LABELS=()
+			local VOL_SRC VOL_DST VOL_MODE VOL_FILE network_mode restart_policy hostname user workdir
+
+			# 端口映射（保留协议和绑定地址）
+			mapfile -t PORTS < <(jq -r '
+				.[0].HostConfig.PortBindings // {} | to_entries[]? |
+				.key as $container | .value[] |
+				if (.HostIp // "") == "" then "\(.HostPort):\($container)"
+				else "\(.HostIp):\(.HostPort):\($container)" end
+			' "$json")
+			for p in "${PORTS[@]}"; do [ -n "$p" ] && run_args+=(-p "$p"); done
 
 			# 环境变量
-			ENV_ARGS=""
-			mapfile -t ENVS < <(jq -r '.[0].Config.Env[]' "$json")
-			for e in "${ENVS[@]}"; do
-				ENV_ARGS="$ENV_ARGS -e \"$e\""
-			done
+			mapfile -t ENVS < <(jq -r '.[0].Config.Env[]?' "$json")
+			for e in "${ENVS[@]}"; do [ -n "$e" ] && run_args+=(-e "$e"); done
 
-			# 卷映射 + 卷数据恢复
-			VOL_ARGS=""
-			mapfile -t VOLS < <(jq -r '.[0].Mounts[] | "\(.Source):\(.Destination)"' "$json")
-			for v in "${VOLS[@]}"; do
-				VOL_SRC=$(echo "$v" | cut -d':' -f1)
-				VOL_DST=$(echo "$v" | cut -d':' -f2)
+			# 卷映射（保留只读标记） + 卷数据恢复
+			while IFS=$'\t' read -r VOL_SRC VOL_DST VOL_MODE; do
+				[ -n "$VOL_SRC" ] || continue
 				mkdir -p "$VOL_SRC"
-				VOL_ARGS="$VOL_ARGS -v $VOL_SRC:$VOL_DST"
-
-				VOL_FILE="$BACKUP_DIR/${container}_$(basename $VOL_SRC).tar.gz"
+				if [ "$VOL_MODE" = ro ]; then
+					run_args+=(-v "$VOL_SRC:$VOL_DST:ro")
+				else
+					run_args+=(-v "$VOL_SRC:$VOL_DST")
+				fi
+				VOL_FILE="$BACKUP_DIR/${container}_$(basename "$VOL_SRC").tar.gz"
 				if [[ -f "$VOL_FILE" ]]; then
 					echo "恢复卷数据: $VOL_SRC"
 					tar -tzf "$VOL_FILE" >/dev/null 2>&1 || { echo "归档校验失败: $VOL_FILE"; continue; }
 					tar --extract --gzip --file "$VOL_FILE" --directory / --no-same-owner
 				fi
-			done
+			done < <(jq -r '.[0].Mounts[]? | [.Source,.Destination,(if .RW == false then "ro" else "rw" end)] | @tsv' "$json")
+
+			# 保留容器运行参数、网络、重启策略和启动命令
+			network_mode=$(jq -r '.[0].HostConfig.NetworkMode // ""' "$json")
+			case "$network_mode" in ""|default|bridge) ;; *) run_args+=(--network "$network_mode") ;; esac
+			restart_policy=$(jq -r '.[0].HostConfig.RestartPolicy.Name // ""' "$json")
+			case "$restart_policy" in ""|no) ;; *) run_args+=(--restart "$restart_policy") ;; esac
+			hostname=$(jq -r '.[0].Config.Hostname // ""' "$json")
+			[ -n "$hostname" ] && run_args+=(--hostname "$hostname")
+			user=$(jq -r '.[0].Config.User // ""' "$json")
+			[ -n "$user" ] && run_args+=(--user "$user")
+			workdir=$(jq -r '.[0].Config.WorkingDir // ""' "$json")
+			[ -n "$workdir" ] && run_args+=(-w "$workdir")
+			[ "$(jq -r '.[0].HostConfig.Privileged // false' "$json")" = true ] && run_args+=(--privileged)
+			[ "$(jq -r '.[0].HostConfig.ReadonlyRootfs // false' "$json")" = true ] && run_args+=(--read-only)
+			mapfile -t LABELS < <(jq -r '.[0].Config.Labels // {} | to_entries[]? | "\(.key)=\(.value)"' "$json")
+			for label in "${LABELS[@]}"; do [ -n "$label" ] && run_args+=(--label "$label"); done
+			mapfile -t ENTRYPOINT < <(jq -r '.[0].Config.Entrypoint[]?' "$json")
+			if [ "${#ENTRYPOINT[@]}" -gt 0 ]; then
+				run_args+=(--entrypoint "${ENTRYPOINT[0]}")
+				for ((i=1; i<${#ENTRYPOINT[@]}; i++)); do run_args+=( "${ENTRYPOINT[i]}" ); done
+			fi
+			mapfile -t CMD < <(jq -r '.[0].Config.Cmd[]?' "$json")
 
 			# 删除已存在但未运行的容器
 			if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
@@ -11738,12 +11797,11 @@ docker_ssh_migration() {
 			fi
 
 			# 启动容器
-			echo "执行还原命令: docker run -d --name \"$container\" $PORT_ARGS $VOL_ARGS $ENV_ARGS \"$IMAGE\""
-			local -a run_args=(run -d --name "$container")
-			for p in "${PORTS[@]}"; do [ -n "$p" ] && run_args+=( -p "$p" ); done
-			for e in "${ENVS[@]}"; do [ -n "$e" ] && run_args+=( -e "$e" ); done
-			for v in "${VOLS[@]}"; do [ -n "$v" ] && run_args+=( -v "$v" ); done
+			printf '执行还原命令: docker'
+			printf ' %q' "${run_args[@]}" "$IMAGE" "${CMD[@]}"
+			printf '\n'
 			run_args+=("$IMAGE")
+			for c in "${CMD[@]}"; do [ -n "$c" ] && run_args+=("$c"); done
 			docker "${run_args[@]}"
 		done
 
@@ -18722,7 +18780,9 @@ ssl_nginx_manager() {
 	declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
 		rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
 		rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
-		rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore crontab_sync_cron_entry || return 1
+		rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore \
+		crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
+		crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_cron_entry || return 1
 	cat <<'DAIMON_CERT_NGINX_SCRIPT' || return 1
 #!/bin/bash
 set -e
