@@ -747,7 +747,9 @@ test_update_refreshes_cert_helper() {
     local DAIMON_LOCAL_SCRIPT="$base/linux-toolbox.sh"
     local DAIMON_OLD_LOCAL_SCRIPT="$base/daimon.sh"
     local DAIMON_CERT_HELPER_MARKER="$base/.update-cert-helper"
-    mkdir -p "$base"
+    local DAIMON_SCRIPT_DIR="$base/daimon" DAIMON_ROOT_DIR="$base"
+    mkdir -p "$DAIMON_SCRIPT_DIR"
+    : > "$DAIMON_SCRIPT_DIR/cert_nginx.sh"
     : > "$trace"
     root_use() { :; }
     clear() { :; }
@@ -769,10 +771,31 @@ test_update_refreshes_cert_helper() {
     }
     read() { printf '%s\n' "$*" >> "$trace"; return 0; }
     exec() { printf 'exec\n' >> "$trace"; return 0; }
+    crontab() { return 1; }
     kejilion_update || return 1
     [ -f "$DAIMON_CERT_HELPER_MARKER" ] &&
         grep -Fq 'exec' "$trace" &&
         ! grep -Fq '更新 Nginx + 域名续期脚本' "$trace"
+}
+test_update_skips_uninstalled_cert_helper() {
+    load_function kejilion_update || return 1
+    local base="$WORK/update-no-helper" count=0 trace="$WORK/update-no-helper.trace"
+    local DAIMON_LOCAL_SCRIPT="$base/linux-toolbox.sh"
+    local DAIMON_OLD_LOCAL_SCRIPT="$base/daimon.sh"
+    local DAIMON_CERT_HELPER_MARKER="$base/.update-cert-helper"
+    local DAIMON_SCRIPT_DIR="$base/daimon" DAIMON_ROOT_DIR="$base"
+    mkdir -p "$DAIMON_SCRIPT_DIR"
+    : > "$trace"
+    root_use() { :; }; clear() { :; }; break_end() { :; }
+    mktemp() { count=$((count+1)); printf '%s\n' "$base/tmp.$count"; }
+    daimon_download_update_file() { printf '#!/bin/bash\nexit 0\n' > "$1"; }
+    daimon_install_script_file() { :; }
+    cp() { :; }; chmod() { :; }; ln() { :; }; rm() { :; }; sed() { :; }
+    crontab() { return 1; }
+    read() { printf '%s\n' "$*" >> "$trace"; return 0; }
+    exec() { printf 'exec\n' >> "$trace"; return 0; }
+    kejilion_update || return 1
+    [ ! -e "$DAIMON_CERT_HELPER_MARKER" ] && grep -Fq exec "$trace"
 }
 test_crontab_menu_has_no_custom_creation() {
     load_function crontab_sync_manager || return 1
@@ -968,6 +991,7 @@ check 'third-party documentation numbering matches the menu' test_tool_documenta
 check 'Bitwarden config validation never prints credentials' test_bitwarden_config_privacy
 check 'main menu stops safely on EOF' test_main_eof
 check 'script update always refreshes the Nginx cert helper' test_update_refreshes_cert_helper
+check 'script update does not install an absent cert helper' test_update_skips_uninstalled_cert_helper
 check 'crontab menu has no separate custom-script creation' test_crontab_menu_has_no_custom_creation
 check 'root backup name prompt persists the server identity' test_root_backup_name_prompt
 check 'UFW cannot enable with unknown SSH ports' test_ufw_unknown_ports

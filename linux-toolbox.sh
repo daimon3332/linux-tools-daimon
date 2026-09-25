@@ -24102,11 +24102,14 @@ kejilion_update() {
 	keep_canshu=$(grep -h '^canshu=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 	keep_stats=$(grep -h '^ENABLE_STATS=' /usr/local/bin/d "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" 2>/dev/null | tail -n 1 || true)
 
-	if ! : > "$DAIMON_CERT_HELPER_MARKER"; then
-		rm -f "$tmp_file" "$rollback_file"
-		echo -e "${gl_hong}更新失败：无法安排 Nginx + 域名续期脚本更新${gl_bai}"
-		break_end
-		return 1
+	if [ -f "$DAIMON_SCRIPT_DIR/cert_nginx.sh" ] || [ -f "$DAIMON_ROOT_DIR/cert-renew.sh" ] ||
+		crontab -l 2>/dev/null | grep -qF '/root/linux-daimon/cert-renew.sh'; then
+		if ! : > "$DAIMON_CERT_HELPER_MARKER"; then
+			rm -f "$tmp_file" "$rollback_file"
+			echo -e "${gl_hong}更新失败：无法安排 Nginx + 域名续期脚本更新${gl_bai}"
+			break_end
+			return 1
+		fi
 	fi
 
 	[ -n "$rollback_file" ] && [ -f "$DAIMON_LOCAL_SCRIPT" ] && cp -f "$DAIMON_LOCAL_SCRIPT" "$rollback_file" 2>/dev/null || true
