@@ -6,7 +6,7 @@
 
 Debian 12 `bookworm` 与 Debian 13 `trixie` 的默认六项包名一致，Python 使用发行版的 `python3`，不强行指定小版本。现有编程工具的 Python 3.12 路径可能在 Debian 上尝试 Ubuntu PPA，这是独立风险，本次菜单不会调用；其他菜单的第三方脚本、服务和网络功能未因此获得 Debian 13 实机验证。首次运行若没有 curl，仍须先用 APT 安装 `ca-certificates curl`。
 
-代码 `ea8234f` 已推送，西班牙 Ubuntu 22.04 ARM64 主机通过已安装脚本的内置更新器升级；归一化主脚本 SHA256 `d124e259664a2ccc8f4f7a80179f344a7a45ab50bdc743f3cca4bbd8efada97e`。同机隔离测试：5 项 Debian 菜单回归、76 项通用、19 项安装回归全部通过。干净 `debian:12-slim` 和 `debian:13-slim` 容器均真实从菜单安装六项，再次执行未调用 APT；两个容器以 `--rm` 退出且没有残留。菜单语法分派检查覆盖 755 个 pattern、93 个 case、9 段嵌入脚本；不等于执行了全部业务分支。
+代码 `ea8234f` 已推送，西班牙 Ubuntu 22.04 ARM64 主机通过已安装脚本的内置更新器升级；归一化主脚本 SHA256 `d124e259664a2ccc8f4f7a80179f344a7a45ab50bdc743f3cca4bbd8efada97e`。同机隔离测试：5 项 Debian 菜单回归、76 项通用、19 项安装回归全部通过。干净 `debian:12-slim` 和 `debian:13-slim` 容器均真实从菜单安装六项，再次执行未调用 APT；另核对全部 16 个可选包名在两版仓库中都存在。测试容器以 `--rm` 退出且没有残留。菜单语法分派检查覆盖 755 个 pattern、93 个 case、9 段嵌入脚本；不等于执行了全部业务分支。
 
 按菜单边界静态复核：1/4/5/13 的信息和网络功能会调用 procps/iproute2，但本功能尊重用户选择不预装；6/7/11/14/18 的具体安装及第三方脚本各自有额外依赖；8/10/12 还依赖 Docker、防火墙、fail2ban 服务；15/16/17 的云备份依赖 rclone、Python/Docker 或已有远端配置；19 是有确认门禁的退役操作。2/3 直接使用系统 APT 和日志服务。Python 3.12 的 Ubuntu PPA、无 `/var/log/auth.log` 的 fail2ban SSH jail 和第三方外部脚本保留为独立兼容性风险，未在真实 Debian VPS 上逐项启动服务。
 
