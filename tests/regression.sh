@@ -848,6 +848,23 @@ test_batch_continues() {
     [ "$rc" = 77 ] || return 1
     grep -q timezone "$trace"
 }
+test_docker_status_without_binary() {
+    load_function linux_docker && load_function docker_tato || return 1
+    local reads=0 output
+    clear() { :; }
+    send_stats() { :; }
+    command() {
+        [ "${1:-}" = -v ] && [ "${2:-}" = docker ] && return 1
+        builtin command "$@"
+    }
+    read() {
+        reads=$((reads + 1))
+        if [ "$reads" -eq 1 ]; then printf -v "${@: -1}" 2
+        else printf -v "${@: -1}" 0; fi
+    }
+    output=$(linux_docker) || return 1
+    [[ "$output" == *'Docker 未安装，请先选择 1 安装 Docker 环境。'* ]]
+}
 test_main_menu() {
     local number expected trace="$WORK/menu.trace" name
     crontab_sync_reconcile_legacy() { :; }
@@ -958,6 +975,7 @@ check 'UFW cannot enable after allow-rule failure' test_ufw_allow_failure
 check 'mq with fq leaf queues passes verification' test_active_qdisc good
 check 'fq_codel does not pass BBR+FQ verification' test_active_qdisc bad
 check 'batch installs continue to timezone step' test_batch_continues
+check 'Docker status detects missing binary before inspection' test_docker_status_without_binary
 check 'all 20 main-menu branches dispatch correctly' test_main_menu
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

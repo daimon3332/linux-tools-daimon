@@ -12470,6 +12470,11 @@ linux_docker() {
 			  ;;
 		  2)
 			  clear
+			  if ! command -v docker >/dev/null 2>&1; then
+				  echo "Docker 未安装，请先选择 1 安装 Docker 环境。"
+			  elif ! docker info >/dev/null 2>&1; then
+				  echo "Docker 服务不可用，请检查 Docker 状态后重试。"
+			  else
 			  local container_count=$(docker ps -a -q 2>/dev/null | wc -l)
 			  local image_count=$(docker images -q 2>/dev/null | wc -l)
 			  local network_count=$(docker network ls -q 2>/dev/null | wc -l)
@@ -12492,6 +12497,7 @@ linux_docker() {
 			  echo ""
 			  echo -e "Docker网络: ${gl_lv}$network_count${gl_bai}"
 			  docker network ls
+			  fi
 			  echo ""
 
 			  ;;
@@ -12734,6 +12740,10 @@ linux_docker() {
 
 
 docker_tato() {
+	if ! command -v docker >/dev/null 2>&1; then
+		echo "Docker 未安装，可选择 1 安装 Docker 环境。"
+		return 0
+	fi
 
 	local container_count=$(docker ps -a -q 2>/dev/null | wc -l)
 	local image_count=$(docker images -q 2>/dev/null | wc -l)
