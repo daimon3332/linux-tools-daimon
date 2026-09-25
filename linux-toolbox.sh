@@ -9751,7 +9751,7 @@ daimon_tcp_tune_run() {
 	daimon_tcp_save_profile "$method" "$before_bw" "$before_rtt" "$role" "$before_bw" "$after_bw" "$after_retr"
 	if [ "$method" != iperf3 ]; then
 		echo -e "${gl_huang}TCPquality 走公共端点，复测波动通常很大，本次不自动回滚；需要恢复请用菜单第 2 项。${gl_bai}"
-	elif awk -v b="$before_bw" -v a="$after_bw" 'BEGIN{exit !(b > 0 && a > 0 && a < b * 0.8)}'; then
+	elif awk -v b="$before_bw" -v a="$after_bw" 'BEGIN{exit !(b > 0 && a > 0 && a < b * 0.5)}'; then
 		echo -e "${gl_hong}复测明显低于优化前，可能是链路波动或参数不适合本机。${gl_bai}"
 		read -e -i "y" -p "是否恢复调优前参数？[Y/n]: " answer || answer=y
 		case "$answer" in
