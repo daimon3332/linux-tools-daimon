@@ -9679,6 +9679,9 @@ daimon_tcp_measure_iperf3() {
 			daimon_tcp_stop_iperf_server "$port" "$server_pid"
 			daimon_tcp_fw_close "$port"
 			echo -e "${gl_hong}IPv$f 预热 ${omit}s 之后只取到 ${count:-0} 个每秒采样，样本不足，未修改配置。日志: $log${gl_bai}"
+			if [ "$family" = both ]; then
+				echo -e "${gl_huang}IPv$f 链路当前不可用（本机、对端或中间路由问题），未写入任何参数；可改用“只优化 IPv4”或“只优化 IPv6”。${gl_bai}"
+			fi
 			return 1
 		fi
 		bw=$(printf '%s\n' "$samples" | awk '{print $1}' | daimon_tcp_median)
