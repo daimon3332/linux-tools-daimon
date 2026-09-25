@@ -9139,7 +9139,7 @@ daimon_tcp_prune_logs() {
 }
 
 daimon_tcp_calc_profile() {
-	awk -v bw="$1" -v rtt="$2" -v ram="$(daimon_tcp_ram_mb)" -v role="$3" -v bdp_in="$4" 'BEGIN{
+	awk -v bw="$1" -v rtt="$2" -v ram="$(daimon_tcp_ram_mb)" -v role="$3" -v bdp_in="${4:-}" 'BEGIN{
 		if (bdp_in !~ /^[0-9]+$/ || bdp_in + 0 <= 0) {
 			if (bw <= 0 || rtt <= 0) exit 1
 			bdp = bw * 1000000 / 8 * (rtt / 1000)
@@ -9597,7 +9597,7 @@ daimon_tcp_measure_iperf3() {
 	local family="${1:-4}"
 	local port="${DAIMON_TCP_IPERF3_PORT:-50280}" log server_pid ips cand fam
 	local duration="${DAIMON_TCP_IPERF3_TIME:-20}" omit="${DAIMON_TCP_IPERF3_OMIT:-4}"
-	local deadline ip4="" ip6="" fam_list f target fam_opt conns_before conns_now
+	local deadline ip4="" ip6="" fam_list f target fam_opt conns_before conns_now peer_family
 	local samples count bw retr rtt peer mean hi lo finished
 	local retr_total=0 bdp=0 bdp_f=0 bw_use="" rtt_use="" detail4="" detail6=""
 	rm -f "$DAIMON_TCP_MEASURE_RESULT"
@@ -9665,16 +9665,14 @@ daimon_tcp_measure_iperf3() {
 			return 1
 		fi
 		peer=$(daimon_tcp_iperf3_last_peer "$log")
-		case "$f:$peer" in
-			4:*:*) echo -e "${gl_hong}请求 IPv4 测速，但连接来自 IPv6 地址 $peer，未修改配置。${gl_bai}"
-				daimon_tcp_stop_iperf_server "$port" "$server_pid"
-				daimon_tcp_fw_close "$port"
-				return 1 ;;
-			6:*[!:]*) echo -e "${gl_hong}请求 IPv6 测速，但连接来自 IPv4 地址 $peer，未修改配置。${gl_bai}"
-				daimon_tcp_stop_iperf_server "$port" "$server_pid"
-				daimon_tcp_fw_close "$port"
-				return 1 ;;
-		esac
+		peer_family=4
+		case "$peer" in *:*) peer_family=6 ;; esac
+		if [ "$peer_family" != "$f" ]; then
+			daimon_tcp_stop_iperf_server "$port" "$server_pid"
+			daimon_tcp_fw_close "$port"
+			echo -e "${gl_hong}请求 IPv$f 测速，但连接来自 IPv$peer_family 地址 $peer，未修改配置。${gl_bai}"
+			return 1
+		fi
 		samples=$(daimon_tcp_iperf3_intervals "$log" "$omit")
 		count=$(printf '%s\n' "$samples" | grep -c . || true)
 		if [ "${count:-0}" -lt 5 ]; then
