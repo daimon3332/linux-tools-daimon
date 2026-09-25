@@ -849,7 +849,7 @@ docker_daemon_json_merge() {
 install_add_docker_cn() {
 	docker_daemon_json_merge --argjson mirrors \
 		'["https://hub.333186.xyz","https://docker.m.daocloud.io","https://docker.1ms.run","https://docker.registry.cyou"]' \
-		'."registry-mirrors" = $mirrors' || return 1
+		'.registry-mirrors = $mirrors' || return 1
 	enable docker
 	restart docker
 }
@@ -895,7 +895,7 @@ docker_mirror_menu() {
 	[ "${#selected_mirrors[@]}" -gt 0 ] || { echo "未选择有效镜像源，未修改。"; return 1; }
 	mirrors_json=$(printf '%s\n' "${selected_mirrors[@]}" | jq -R . | jq -s -c .) || return 1
 	before=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
-	docker_daemon_json_merge --argjson mirrors "$mirrors_json" '."registry-mirrors" = $mirrors' || return 1
+	docker_daemon_json_merge --argjson mirrors "$mirrors_json" '.registry-mirrors = $mirrors' || return 1
 	after=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
 	cat /etc/docker/daemon.json
 	[ -n "$before" ] && [ "$before" = "$after" ] && { echo "镜像源未变化，无需重启 Docker。"; return 0; }
