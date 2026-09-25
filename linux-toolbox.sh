@@ -1108,6 +1108,22 @@ install_docker() {
 }
 
 
+docker_uninstall_environment() {
+	root_use
+	if command -v docker >/dev/null 2>&1; then
+		docker ps -a -q | xargs -r docker rm -f || return 1
+		docker images -q | xargs -r docker rmi || true
+		docker network prune -f || true
+		docker volume prune -f || true
+	fi
+	remove docker docker-compose docker-ce docker-ce-cli containerd.io || return 1
+	rm -f /etc/docker/daemon.json /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources \
+		/etc/apt/keyrings/docker.asc /etc/apt/keyrings/docker.gpg
+	rm -rf /etc/docker /var/lib/docker /var/lib/containerd
+	if getent group docker >/dev/null 2>&1; then groupdel docker; fi
+	hash -r 2>/dev/null || true
+}
+
 docker_ps() {
 while true; do
 	clear
@@ -1171,10 +1187,10 @@ while true; do
 			read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有容器吗？(Y/N): ")" choice || return 1
 			case "$choice" in
 			  [Yy])
-				docker rm -f $(docker ps -a -q)
-				;;
+			    docker rm -f $(docker ps -a -q)
+			    ;;
 			  [Nn])
-				;;
+			    ;;
 			  *)
 				echo "无效的选择，请输入 Y 或 N。"
 				;;
@@ -12709,10 +12725,7 @@ linux_docker() {
 			  read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定卸载docker环境吗？(Y/N): ")" choice || return 1
 			  case "$choice" in
 				[Yy])
-				  docker ps -a -q | xargs -r docker rm -f && docker images -q | xargs -r docker rmi && docker network prune -f && docker volume prune -f
-				  remove docker docker-compose docker-ce docker-ce-cli containerd.io
-				  rm -f /etc/docker/daemon.json
-				  hash -r
+				  docker_uninstall_environment || return 1
 				  ;;
 				[Nn])
 				  ;;

@@ -797,6 +797,27 @@ test_update_skips_uninstalled_cert_helper() {
     kejilion_update || return 1
     [ ! -e "$DAIMON_CERT_HELPER_MARKER" ] && grep -Fq exec "$trace"
 }
+test_docker_uninstall_cleanup() {
+    load_function docker_uninstall_environment || return 1
+    local trace="$WORK/docker-uninstall.trace"
+    : > "$trace"
+    root_use() { :; }
+    command() {
+        if [ "${1:-}" = -v ] && [ "${2:-}" = docker ]; then return 0; fi
+        builtin command "$@"
+    }
+    docker() { :; }
+    xargs() { return 0; }
+    remove() { printf 'REMOVE %s\n' "$*" >> "$trace"; }
+    rm() { printf 'RM %s\n' "$*" >> "$trace"; }
+    getent() { printf 'docker:x:991:\n'; }
+    groupdel() { printf 'GROUPDEL %s\n' "$*" >> "$trace"; }
+    hash() { :; }
+    docker_uninstall_environment || return 1
+    grep -Fq 'RM -f /etc/docker/daemon.json /etc/apt/sources.list.d/docker.list /etc/apt/sources.list.d/docker.sources /etc/apt/keyrings/docker.asc /etc/apt/keyrings/docker.gpg' "$trace" &&
+        grep -Fq 'RM -rf /etc/docker /var/lib/docker /var/lib/containerd' "$trace" &&
+        grep -Fq 'GROUPDEL docker' "$trace"
+}
 test_crontab_menu_has_no_custom_creation() {
     load_function crontab_sync_manager || return 1
     local output
@@ -992,6 +1013,7 @@ check 'Bitwarden config validation never prints credentials' test_bitwarden_conf
 check 'main menu stops safely on EOF' test_main_eof
 check 'script update always refreshes the Nginx cert helper' test_update_refreshes_cert_helper
 check 'script update does not install an absent cert helper' test_update_skips_uninstalled_cert_helper
+check 'Docker uninstall removes repository, data and group' test_docker_uninstall_cleanup
 check 'crontab menu has no separate custom-script creation' test_crontab_menu_has_no_custom_creation
 check 'root backup name prompt persists the server identity' test_root_backup_name_prompt
 check 'UFW cannot enable with unknown SSH ports' test_ufw_unknown_ports
