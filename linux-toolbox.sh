@@ -9061,6 +9061,7 @@ DAIMON_TCP_SNAPSHOT="$DAIMON_TCP_STATE_DIR/runtime-snapshot.conf"
 DAIMON_TCP_PROFILE="$DAIMON_TCP_STATE_DIR/profile.json"
 DAIMON_TCP_MEASURE_RESULT="$DAIMON_TCP_STATE_DIR/last-measure.conf"
 DAIMON_TCP_BEFORE_RESULT="$DAIMON_TCP_STATE_DIR/before-measure.conf"
+DAIMON_TCP_FAMILY_RECORD="$DAIMON_TCP_STATE_DIR/family-speed.conf"
 DAIMON_TCP_MANAGED_KEYS=(
 	net.core.default_qdisc
 	net.ipv4.tcp_congestion_control
@@ -9133,6 +9134,47 @@ daimon_tcp_median() {
 
 daimon_tcp_percentile() {
 	sort -n | awk -v p="${1:-75}" '{v[NR]=$1} END {if (NR==0) exit 1; i=int((NR*p+99)/100); if (i<1) i=1; if (i>NR) i=NR; printf "%.1f\n", v[i]}'
+}
+
+daimon_tcp_record_family() {
+	local family="$1" bw="$2" rtt="$3" retr="$4" tmp
+	[ -n "$bw" ] || return 0
+	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	tmp=$(mktemp) || return 1
+	if [ -f "$DAIMON_TCP_FAMILY_RECORD" ]; then
+		grep -v "^${family}=" "$DAIMON_TCP_FAMILY_RECORD" > "$tmp" 2>/dev/null || : > "$tmp"
+	else
+		: > "$tmp"
+	fi
+	printf '%s=%s %s %s %s\n' "$family" "$bw" "${rtt:-0}" "${retr:-0}" "$(date +%s)" >> "$tmp"
+	mv -f "$tmp" "$DAIMON_TCP_FAMILY_RECORD" 2>/dev/null || rm -f "$tmp"
+}
+
+daimon_tcp_family_speed_block() {
+	[ -s "$DAIMON_TCP_FAMILY_RECORD" ] || return 0
+	local f line when v4="" v6="" rtt retr
+	echo "线路速度记录（最近一次实测）:"
+	for f in 4 6; do
+		line=$(sed -n "s/^$f=//p" "$DAIMON_TCP_FAMILY_RECORD" | tail -n 1)
+		[ -n "$line" ] || continue
+		set -- $line
+		when=$(date -d "@${4:-0}" '+%m-%d %H:%M' 2>/dev/null || echo "-")
+		[ "$f" = 4 ] && v4="$1" || v6="$1"
+		printf '  IPv%s: %s Mbps（RTT %s ms，重传 %s，%s）\n' "$f" "$1" "${2:-?}" "${3:-?}" "$when"
+	done
+	if [ -n "$v4" ] && [ -n "$v6" ]; then
+		if awk -v a="$v4" -v b="$v6" 'BEGIN{exit !(a > b * 1.10)}'; then
+			echo -e "  → ${gl_lv}IPv4 更快${gl_bai}（$v4 vs $v6 Mbps），节点优先用 IPv4"
+		elif awk -v a="$v6" -v b="$v4" 'BEGIN{exit !(a > b * 1.10)}'; then
+			echo -e "  → ${gl_lv}IPv6 更快${gl_bai}（$v6 vs $v4 Mbps），节点优先用 IPv6"
+		else
+			echo "  → IPv4 与 IPv6 接近（$v4 vs $v6 Mbps），按客户端支持情况选择"
+		fi
+	elif [ -n "$v4" ]; then
+		echo "  → 还没有 IPv6 记录，可用 1 → iperf3 → 2（只测 IPv6）或 3（两个都测）"
+	else
+		echo "  → 还没有 IPv4 记录，可用 1 → iperf3 → 1（只测 IPv4）或 3（两个都测）"
+	fi
 }
 
 daimon_tcp_prune_logs() {
@@ -9701,6 +9743,7 @@ daimon_tcp_measure_iperf3() {
 			fi
 		fi
 		[ "$f" = 4 ] && detail4="$bw ${rtt:-150} $retr" || detail6="$bw ${rtt:-150} $retr"
+		daimon_tcp_record_family "$f" "$bw" "${rtt:-0}" "$retr"
 	done
 	daimon_tcp_stop_iperf_server "$port" "$server_pid"
 	cat > "$DAIMON_TCP_MEASURE_RESULT" <<EOF
@@ -9914,6 +9957,7 @@ daimon_tcp_tune_menu() {
 			echo -e "BBR 内核支持: ${gl_hong}不支持，请先在主菜单 13 的 BBR 管理安装兼容内核${gl_bai}"
 		fi
 		[ -s "$DAIMON_TCP_SNAPSHOT" ] && echo -e "调优前快照: ${gl_lv}已保存${gl_bai}（可恢复到调优前）"
+		daimon_tcp_family_speed_block
 		[ -s "$DAIMON_TCP_PROFILE" ] && echo "上次调优记录: $DAIMON_TCP_PROFILE"
 		if [ "$(sysctl -n vm.panic_on_oom 2>/dev/null)" = "1" ] &&
 			[ "$(sysctl -n kernel.panic 2>/dev/null)" != "0" ]; then

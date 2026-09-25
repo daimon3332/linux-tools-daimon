@@ -517,3 +517,7 @@ TCPquality 实际解析结果（春川，rootfs 模式一次）：北京联通 6
 - 日本 IPv6 到同一家宽：多数时段 0–10 Mbps，偶尔 238 Mbps（默认 MSS 一次性测到 238 Mbps、MSS 1200 测到 87.9 Mbps），同属高丢包路径；IPv4 同机 126–131 Mbps 正常。
 - 诊断过程中尝试过 `tcp_mtu_probing=2` + `tcp_base_mss=1200`、IPv6 路由 MTU 1240、接口 MTU 1280/1240，均无法稳定改善，说明不是单纯 MTU 黑洞而是线路丢包；这些临时改动已全部还原（`tcp_mtu_probing=1`、`tcp_base_mss=1024`、路由与接口 MTU 恢复 1500，临时端口规则与 iperf3 进程已清理）。
 - 工具在这种链路下的行为符合“不劣化”原则：取不到有效采样就拒绝写入参数；能测到但复测下降就回滚并保留 BBR + FQ。
+
+### 菜单显示 IPv4/IPv6 速度对比（2026-09-25）
+
+动态调优菜单顶部新增“线路速度记录”：每次 iperf3 测速都会把该协议的 75% 分位带宽、RTT、重传和时间写入 `/root/linux-daimon/tcp-tuning/family-speed.conf`，菜单渲染时直接给出结论——相差 10% 以上显示 `IPv4 更快` 或 `IPv6 更快`，否则显示“两者接近”；只测过一个协议时提示补测另一个（`1 → iperf3 → 2` 只测 IPv6，`3` 两个都测）。功能测试新增 `T9/T9b`（记录写入、覆盖后判定翻转），春川 21 passed / 0 failed、洛杉矶 19 passed / 0 failed。
