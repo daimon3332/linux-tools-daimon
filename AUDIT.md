@@ -1,3 +1,17 @@
+# 2026-09-25 Debian 12/13 基础工具菜单
+
+按现有 19 个一级菜单的实际依赖选择基础工具，而非照搬通用服务器软件清单。新增一级菜单 `20`，原 1–19 编号不变。默认仅预选 `ca-certificates curl wget git jq python3`，执行前可删减或增选；`gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 均为可选。`xz-utils` 未发现主脚本直接调用，未加入菜单。
+
+依赖划分：启动命令和通用下载需要 curl、证书与 wget；源码工具使用 git；Docker/配置流程使用 jq；网络持久化、备份及部分配置流程直接需要 python3。unzip 仅在 WordPress/Bun 等分支使用；procps 和 iproute2 虽被系统信息、网络操作引用，但不默认预装。截图中的 `tasksel`、`apt-listchanges`、`openssh-server` 不默认安装；新菜单不执行 `apt --fix-broken`、系统升级或清理。
+
+Debian 12 `bookworm` 与 Debian 13 `trixie` 的默认六项包名一致，Python 使用发行版的 `python3`，不强行指定小版本。现有编程工具的 Python 3.12 路径可能在 Debian 上尝试 Ubuntu PPA，这是独立风险，本次菜单不会调用；其他菜单的第三方脚本、服务和网络功能未因此获得 Debian 13 实机验证。首次运行若没有 curl，仍须先用 APT 安装 `ca-certificates curl`。
+
+代码 `ea8234f` 已推送，西班牙 Ubuntu 22.04 ARM64 主机通过已安装脚本的内置更新器升级；归一化主脚本 SHA256 `d124e259664a2ccc8f4f7a80179f344a7a45ab50bdc743f3cca4bbd8efada97e`。同机隔离测试：5 项 Debian 菜单回归、76 项通用、19 项安装回归全部通过。干净 `debian:12-slim` 和 `debian:13-slim` 容器均真实从菜单安装六项，再次执行未调用 APT；两个容器以 `--rm` 退出且没有残留。菜单语法分派检查覆盖 755 个 pattern、93 个 case、9 段嵌入脚本；不等于执行了全部业务分支。
+
+按菜单边界静态复核：1/4/5/13 的信息和网络功能会调用 procps/iproute2，但本功能尊重用户选择不预装；6/7/11/14/18 的具体安装及第三方脚本各自有额外依赖；8/10/12 还依赖 Docker、防火墙、fail2ban 服务；15/16/17 的云备份依赖 rclone、Python/Docker 或已有远端配置；19 是有确认门禁的退役操作。2/3 直接使用系统 APT 和日志服务。Python 3.12 的 Ubuntu PPA、无 `/var/log/auth.log` 的 fail2ban SSH jail 和第三方外部脚本保留为独立兼容性风险，未在真实 Debian VPS 上逐项启动服务。
+
+依据：[Debian 13 发布说明](https://www.debian.org/releases/trixie/release-notes/whats-new.en.html)、[Debian 13 APT 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)、[Docker 官方 Debian 12/13 支持范围](https://docs.docker.com/engine/install/debian/)。干净 `debian:13-slim` 镜像起初缺少 curl、wget、ca-certificates、git、jq、python3 等，不代表所有 VPS 镜像都缺少。西班牙宿主机仍为 Ubuntu，最终检查时区保持 `Etc/UTC`、Docker 活跃、没有运行或残留测试容器；本次没有触碰其 SSH、DNS、Swap、业务数据或定时任务。
+
 # 2026-09-23 一键配置停顿与错误传播修复
 
 用户提供 iperf3 安装结束后停在“按任意键继续”的截图，并指定西班牙服务器验证。基线 `89f5977` 在该机 Ubuntu 22.04 ARM64 的真实 PTY 中复现：批量安装通过 `DAIMON_DEFER_SHELL_RESTART=1` 延后 Shell 重启，但批量函数结束后只返回外层菜单的 `break_end`，没有最终 `exec bash`。原回归只检查能执行到时区步骤，未检查真正进入新 Shell。
@@ -392,12 +406,3 @@ git diff --check
 ### 清理
 
 核对绝对路径、所有容器挂载、系统挂载、cron 和进程引用后，删除腾讯云旧 agent 目录 `/root/vaultwarden/migration-20260908`、`/root/syncclipboard/migration-20260908`、`/root/linux-daimon/audit-20260907`，合计约 211 MiB。源服务器原数据、生产 volumes 和云端历史 ZIP 保留。两机本轮专用容器/卷、HTTP/Nginx 测试进程及 SSH 隧道已清理，隔离任务目录也已移除。少量脱敏结果与基线保留在本地被忽略的 `.tmp/migration-code-test-20260908/`。
-# 2026-09-25 Debian 12/13 基础工具菜单
-
-用户要求按现有 19 个一级菜单的实际依赖选择基础工具，而非照搬系统软件通用清单。新增一级菜单 `20`，原 1–19 编号不变。默认仅预选 `ca-certificates curl wget git jq python3`，可删减或增选；`gnupg tar unzip openssl sudo socat openssh-client procps iproute2 lsof` 均为可选。`xz-utils` 未发现主脚本直接调用，未加入菜单。
-
-依赖划分依据：启动命令和通用下载需要 curl、证书和 wget；源码工具使用 git；Docker/配置流程使用 jq；网络持久化、备份和部分配置流程需要 python3。unzip 仅在 WordPress/Bun 等分支使用；procps 和 iproute2 虽被系统信息和网络操作引用，但用户不要求默认预装。截图中的 `tasksel`、`apt-listchanges`、`openssh-server` 均不默认安装；一键执行 `apt --fix-broken` 或系统升级会有超出基础依赖安装的副作用，故新菜单不触发。
-
-Debian 13 `trixie` 与 Debian 12 `bookworm` 包名相同，新功能安装发行版默认 `python3`，不强行指定解释器小版本。现有编程工具的 Python 3.12 安装路径可能在 Debian 上尝试 Ubuntu deadsnakes PPA，这是独立兼容性风险，本次菜单不会调用；其他 19 项中的第三方脚本、服务与网络功能不能仅凭菜单语法视为在 Debian 13 实机已通过。首次启动脚本仍需 curl；无 curl 时应先通过 APT 安装 `ca-certificates curl`，再启动菜单。
-
-依据：[Debian 13 发布说明](https://www.debian.org/releases/trixie/release-notes/whats-new.en.html)、[Debian 13 APT 手册](https://manpages.debian.org/trixie/apt/apt-get.8.en.html)、[Docker 官方 Debian 12/13 支持范围](https://docs.docker.com/engine/install/debian/)。西班牙 ARM64 的干净 `debian:13-slim` 镜像确认 curl、wget、ca-certificates、git、jq、python3、tar、unzip、procps、iproute2 等可能全部缺失；这一镜像结果不等于所有 VPS 镜像的预装状态。
