@@ -9131,6 +9131,10 @@ daimon_tcp_median() {
 	sort -n | awk '{v[NR]=$1} END {if (NR==0) exit 1; if (NR%2) printf "%.1f\n", v[(NR+1)/2]; else printf "%.1f\n", (v[NR/2]+v[NR/2+1])/2}'
 }
 
+daimon_tcp_percentile() {
+	sort -n | awk -v p="${1:-75}" '{v[NR]=$1} END {if (NR==0) exit 1; i=int((NR*p+99)/100); if (i<1) i=1; if (i>NR) i=NR; printf "%.1f\n", v[i]}'
+}
+
 daimon_tcp_prune_logs() {
 	local file
 	for file in $(ls -1t "$DAIMON_TCP_STATE_DIR"/iperf3-*.log "$DAIMON_TCP_STATE_DIR"/tcpquality-*.log 2>/dev/null | tail -n +11); do
@@ -9598,7 +9602,7 @@ daimon_tcp_measure_iperf3() {
 	local port="${DAIMON_TCP_IPERF3_PORT:-50280}" log server_pid ips cand fam
 	local duration="${DAIMON_TCP_IPERF3_TIME:-20}" omit="${DAIMON_TCP_IPERF3_OMIT:-4}"
 	local deadline ip4="" ip6="" fam_list f target fam_opt conns_before conns_now peer_family
-	local samples count bw retr rtt peer mean hi lo finished
+	local samples count bw retr rtt peer mean hi lo med finished
 	local retr_total=0 bdp=0 bdp_f=0 bw_use="" rtt_use="" detail4="" detail6=""
 	rm -f "$DAIMON_TCP_MEASURE_RESULT"
 	DAIMON_TCP_RTT_SAMPLES=""
@@ -9684,15 +9688,16 @@ daimon_tcp_measure_iperf3() {
 			fi
 			return 1
 		fi
-		bw=$(printf '%s\n' "$samples" | awk '{print $1}' | daimon_tcp_median)
+		bw=$(printf '%s\n' "$samples" | awk '{print $1}' | daimon_tcp_percentile 75)
 		mean=$(printf '%s\n' "$samples" | awk '{s += $1} END {printf "%.1f", s / NR}')
+		med=$(printf '%s\n' "$samples" | awk '{print $1}' | daimon_tcp_median)
 		lo=$(printf '%s\n' "$samples" | awk 'NR == 1 || $1 < lo {lo = $1} END {printf "%.1f", lo}')
 		hi=$(printf '%s\n' "$samples" | awk 'NR == 1 || $1 > hi {hi = $1} END {printf "%.1f", hi}')
 		retr=$(printf '%s\n' "$samples" | awk '{s += $2} END {printf "%d", s}')
 		rtt=$(printf '%s\n' $DAIMON_TCP_RTT_SAMPLES 2>/dev/null | daimon_tcp_median 2>/dev/null || true)
 		[ -n "$rtt" ] || rtt=$(daimon_tcp_ping_rtt "$peer")
-		printf 'IPv%s 单线程下载: 中位数 %s Mbps（均值 %s，最低 %s，最高 %s，%s 个每秒采样，重传合计 %s，RTT %s ms）\n' \
-			"$f" "$bw" "$mean" "$lo" "$hi" "$count" "$retr" "${rtt:-未知}"
+		printf 'IPv%s 单线程下载: 取 75%% 分位 %s Mbps（中位数 %s，均值 %s，最低 %s，最高 %s，%s 个每秒采样，重传合计 %s，RTT %s ms）\n' \
+			"$f" "$bw" "$med" "$mean" "$lo" "$hi" "$count" "$retr" "${rtt:-未知}"
 		DAIMON_TCP_RTT_SAMPLES=""
 		retr_total=$((retr_total + retr))
 		if [ -z "$bw_use" ]; then
