@@ -17,6 +17,7 @@ DAIMON_TCP_LAB_WMEM=4194304
 mkdir "$DAIMON_TCP_LAB_DIR"
 daimon_tcp_ram_mb() { echo 512; }
 
+# 现有上限低于 BDP 目标：上调阶梯
 list=$(daimon_tcp_lab_candidate_list 200 150)
 [ "$list" = '9597152 16777216' ]
 if daimon_tcp_lab_candidate_list 1 50 >/dev/null; then
@@ -36,6 +37,7 @@ if daimon_tcp_lab_candidate_list 190 164 >/dev/null; then
     exit 1
 fi
 
+# 对半值与 BDP 目标接近：只保留目标候选
 DAIMON_TCP_LAB_TCP_WMEM='4096 16384 20971520'
 DAIMON_TCP_LAB_WMEM=20971520
 list=$(daimon_tcp_lab_candidate_list 190 164)
@@ -58,6 +60,25 @@ daimon_tcp_lab_apply_ceiling 4194304
 [ "$(cat "$WORK/key-net.ipv4.tcp_wmem")" = '4096 2097152 4194304' ]
 daimon_tcp_lab_apply_ceiling 1048576
 [ "$(cat "$WORK/key-net.ipv4.tcp_wmem")" = '4096 1048576 1048576' ]
+
+# 下调获胜后的持久化与重载校验
+daimon_network_persist() { cp -f "$1" "$DAIMON_TCP_TUNING_CONF"; }
+daimon_network_verify_sysctl_file() { [ -s "$1" ]; }
+sysctl() {
+    local line key value
+    while IFS= read -r line; do
+        case "$line" in *' = '*)
+            key="${line%% = *}"; value="${line##* = }"
+            daimon_tcp_write_key "$key" "$value"
+            ;;
+        esac
+    done < "$DAIMON_TCP_TUNING_CONF"
+}
+DAIMON_TCP_TUNING_CONF="$WORK/99-daimon-tcp.conf"
+daimon_tcp_lab_persist 67108864
+[ "$(daimon_tcp_read_key net.core.wmem_max)" = 67108864 ]
+[ "$(daimon_tcp_read_key net.ipv4.tcp_wmem)" = '4096 2097152 67108864' ]
+grep -q '^net.ipv4.tcp_wmem = 4096 2097152 67108864$' "$DAIMON_TCP_TUNING_CONF"
 
 daimon_tcp_lab_stage_json ready 3 6 '2400:c620:22:295::12'
 json_path="$DAIMON_TCP_LAB_DIR/stage.json"
