@@ -11,17 +11,18 @@ from pathlib import Path
 
 def load_records(path):
     records = defaultdict(lambda: defaultdict(list))
-    for line in Path(path).read_text(encoding="utf-8").splitlines():
+    for order, line in enumerate(Path(path).read_text(encoding="utf-8").splitlines()):
         profile, family, rate, retrans, transferred, rtt = line.split("\t")
         measurement = {
             "rate": float(rate),
             "retrans": int(retrans),
             "bytes": int(transferred),
             "rtt": float(rtt),
+            "order": order,
         }
         if not math.isfinite(measurement["rate"]) or measurement["rate"] <= 0:
             raise ValueError("invalid receiver rate")
-        if measurement["bytes"] <= 0:
+        if measurement["bytes"] <= 0 or measurement["retrans"] < 0:
             raise ValueError("invalid receiver bytes")
         records[profile][family].append(measurement)
     return records
@@ -37,39 +38,55 @@ def baseline(records, families):
     drift = 0.0
     for family in families:
         measurements = records["A"][family]
-        if len(measurements) != 2:
-            raise ValueError(f"IPv{family} baseline needs two independent runs")
+        if len(measurements) < 2:
+            raise ValueError(f"IPv{family} baseline needs at least two independent runs")
         rates = [run["rate"] for run in measurements]
         center = statistics.median(rates)
-        family_drift = abs(rates[0] - rates[1]) / center
+        family_drift = max(abs(a - b) / statistics.median((a, b))
+                           for a, b in zip(rates, rates[1:]))
         drift = max(drift, family_drift)
         base[family] = center
         loss[family] = statistics.median(estimated_loss(run) for run in measurements)
     return base, loss, drift
 
 
+def reference(records, family, run, base, base_loss, min_gain):
+    if "order" not in run:
+        return base[family], base_loss[family], min_gain
+    before = [a for a in records["A"][family] if a["order"] < run["order"]]
+    after = [a for a in records["A"][family] if a["order"] > run["order"]]
+    if not before or not after:
+        raise ValueError("candidate needs adjacent A/B/A reference runs")
+    pair = (before[-1], after[0])
+    center = statistics.median(a["rate"] for a in pair)
+    drift = abs(pair[0]["rate"] - pair[1]["rate"]) / center
+    if drift > 0.20:
+        return center, 0.0, math.inf
+    return center, statistics.median(estimated_loss(a) for a in pair), max(0.05, drift + 0.03)
+
+
 def score_candidate(records, profile, families, base, base_loss, min_gain, confirmed):
-    ratios = []
-    improved = False
+    selected = {}
     for family in families:
-        runs = records[profile][family]
-        if len(runs) != (2 if confirmed else 1):
+        runs = records.get(profile, {}).get(family, [])
+        if len(runs) < (3 if confirmed else 1):
             return None
-        rates = [run["rate"] for run in runs]
-        if any(rate < base[family] * 0.95 for rate in rates):
+        selected[family] = runs[-2:] if confirmed else runs[:1]
+    round_scores = []
+    for index in range(2 if confirmed else 1):
+        ratios, improved = [], False
+        for family in families:
+            run = selected[family][index]
+            center, loss, threshold = reference(records, family, run, base, base_loss, min_gain)
+            ratio = run["rate"] / center
+            if ratio < 1.0 or estimated_loss(run) > max(0.03, loss + 0.03):
+                return None
+            improved |= ratio >= 1 + threshold
+            ratios.append(ratio)
+        if not improved:
             return None
-        ratio = statistics.median(rates) / base[family]
-        if ratio >= 1 + min_gain:
-            improved = True
-        ratios.append(ratio)
-        # 丢包阈值相对基线：基线本身就高丢包时，明显更低的丢包不应被判失败；
-        # 但候选比基线再多 3 个百分点丢失仍然淘汰。
-        loss_limit = max(0.03, base_loss[family] + 0.03)
-        if any(estimated_loss(run) > loss_limit for run in runs):
-            return None
-    if not improved:
-        return None
-    return math.prod(ratios) ** (1 / len(ratios))
+        round_scores.append(math.prod(ratios) ** (1 / len(ratios)))
+    return min(round_scores)
 
 
 def choose(records, families, profiles, ceilings):

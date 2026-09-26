@@ -8565,16 +8565,23 @@ try:
             raise ValueError('Configuration is not a regular file: ' + str(path))
         originals[path] = (path.read_bytes(), path.stat()) if path.exists() else (None, None)
     old = originals[main][0] or b''
+    preserved = (originals[late][0] or b'') if os.environ.get('DAIMON_NETWORK_MERGE_EXISTING') == '1' else b''
     if old.count(begin) != old.count(end) or old.count(begin) > 1:
         raise ValueError('Malformed daimon block in sysctl.conf')
     if begin in old:
         start, stop = old.index(begin), old.index(end)
         if stop < start:
             raise ValueError('Malformed daimon block order')
+        if os.environ.get('DAIMON_NETWORK_MERGE_EXISTING') == '1':
+            preserved += old[start + len(begin):stop]
         old = old[:start] + old[stop + len(end):]
     if originals[late][0] is not None and not originals[late][0].startswith(begin):
         raise ValueError('Refusing to overwrite an unmanaged file: ' + str(late))
     values = {}
+    for line in preserved.decode().splitlines():
+        if '=' in line and not line.lstrip().startswith(('#', ';')):
+            key, value = line.split('=', 1)
+            values[key.strip()] = ' '.join(value.split())
     for filename in sys.argv[3:]:
         if not filename or not Path(filename).exists():
             continue
@@ -9146,13 +9153,13 @@ daimon_tcp_record_family() {
 	else
 		: > "$tmp"
 	fi
-	printf '%s=%s %s %s %s\n' "$family" "$bw" "${rtt:-0}" "${retr:-0}" "$(date +%s)" >> "$tmp"
+	printf '%s=%s %s %s %s %s %s %s\n' "$family" "$bw" "${rtt:-0}" "${retr:-0}" "$(date +%s)" "${5:--}" "${6:--}" "${7:--}" >> "$tmp"
 	mv -f "$tmp" "$DAIMON_TCP_FAMILY_RECORD" 2>/dev/null || rm -f "$tmp"
 }
 
 daimon_tcp_family_speed_block() {
 	[ -s "$DAIMON_TCP_FAMILY_RECORD" ] || return 0
-	local f line when v4="" v6="" rtt retr
+	local f line when v4="" v6="" session4="" session6="" profile4="" profile6="" client4="" client6="" stamp4=0 stamp6=0 now
 	echo "线路速度记录（最近一次实测）:"
 	for f in 4 6; do
 		line=$(sed -n "s/^$f=//p" "$DAIMON_TCP_FAMILY_RECORD" | tail -n 1)
@@ -9160,9 +9167,25 @@ daimon_tcp_family_speed_block() {
 		set -- $line
 		when=$(date -d "@${4:-0}" '+%m-%d %H:%M' 2>/dev/null || echo "-")
 		[ "$f" = 4 ] && v4="$1" || v6="$1"
+		if [ "$f" = 4 ]; then
+			session4="${5:--}"; profile4="${6:--}"; client4="${7:--}"
+			stamp4="${4:-0}"
+		else
+			session6="${5:--}"; profile6="${6:--}"; client6="${7:--}"
+			stamp6="${4:-0}"
+		fi
 		printf '  IPv%s: %s Mbps（RTT %s ms，重传 %s，%s）\n' "$f" "$1" "${2:-?}" "${3:-?}" "$when"
 	done
 	if [ -n "$v4" ] && [ -n "$v6" ]; then
+		now=$(date +%s)
+		if [ "$((now - stamp4))" -gt 86400 ] || [ "$((now - stamp6))" -gt 86400 ]; then
+			echo "  → 历史记录已超过一天，建议重新同时测速，不据此推荐节点协议。"
+			return 0
+		fi
+		if [ "$session4" = - ] || [ "$session4" != "$session6" ] || [ "$profile4" != "$profile6" ] || [ "$client4" != "$client6" ]; then
+			echo "  → 两条历史记录不是同一会话/配置，不据此推荐协议；使用 3 → 3 同时补测。"
+			return 0
+		fi
 		if awk -v a="$v4" -v b="$v6" 'BEGIN{exit !(a > b * 1.10)}'; then
 			echo -e "  → ${gl_lv}IPv4 更快${gl_bai}（$v4 vs $v6 Mbps），节点优先用 IPv4"
 		elif awk -v a="$v6" -v b="$v4" 'BEGIN{exit !(a > b * 1.10)}'; then
@@ -9389,16 +9412,24 @@ daimon_tcp_restore() {
 		return 0
 	fi
 	local tmp key value failed=0
-	tmp=$(mktemp) || return 1
-	printf 'net.core.default_qdisc = fq\nnet.ipv4.tcp_congestion_control = bbr\n' > "$tmp"
+	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	local lock_fd
+	exec {lock_fd}>"$DAIMON_TCP_STATE_DIR/session.lock" || return 1
+	if ! flock -n "$lock_fd"; then
+		echo "已有测速或恢复操作进行中，未修改参数。"
+		exec {lock_fd}>&-
+		return 1
+	fi
+	tmp=$(mktemp) || { exec {lock_fd}>&-; return 1; }
+	cp -f "$DAIMON_TCP_SNAPSHOT" "$tmp" || { rm -f "$tmp"; exec {lock_fd}>&-; return 1; }
+	printf '\nnet.core.default_qdisc = fq\nnet.ipv4.tcp_congestion_control = bbr\n' >> "$tmp"
 	if daimon_network_bbr_supported; then
-		DAIMON_NETWORK_PRIORITY_CONF="$DAIMON_TCP_TUNING_CONF" daimon_network_persist "$DAIMON_TCP_BBR_CONF" "$tmp" >/dev/null 2>&1 ||
-			echo -e "${gl_huang}保留 BBR/FQ 的持久化写入失败，运行态仍会保留 BBR/FQ。${gl_bai}"
+		DAIMON_NETWORK_MERGE_EXISTING=1 DAIMON_NETWORK_PRIORITY_CONF="$DAIMON_TCP_TUNING_CONF" daimon_network_persist "$DAIMON_TCP_BBR_CONF" "$tmp" || failed=1
 	else
 		rm -f "$DAIMON_TCP_TUNING_CONF"
 	fi
 	rm -f "$tmp"
-	sysctl --system >/dev/null 2>&1 || true
+	sysctl --system >/dev/null 2>&1 || failed=1
 	while IFS='=' read -r key value; do
 		key=$(printf '%s' "$key" | tr -d '[:space:]')
 		value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
@@ -9409,8 +9440,11 @@ daimon_tcp_restore() {
 		daimon_tcp_key_supported "$key" || continue
 		[ "$(daimon_tcp_read_key "$key")" = "$value" ] && continue
 		daimon_tcp_write_key "$key" "$value" || failed=1
+		[ "$(daimon_tcp_read_key "$key")" = "$value" ] || failed=1
 	done < "$DAIMON_TCP_SNAPSHOT"
-	sysctl -qw net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr 2>/dev/null || true
+	sysctl -qw net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr 2>/dev/null || failed=1
+	[ "$failed" != 0 ] || daimon_network_verify_sysctl_file "$DAIMON_TCP_TUNING_CONF" || failed=1
+	exec {lock_fd}>&-
 	if [ "$failed" -eq 0 ]; then
 		rm -f "$DAIMON_TCP_SNAPSHOT"
 		echo -e "${gl_lv}已恢复到调优前的参数，并保留 BBR + FQ。${gl_bai}"
@@ -9421,52 +9455,77 @@ daimon_tcp_restore() {
 		"$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" \
 		"$(sysctl -n net.core.default_qdisc 2>/dev/null)"
 	printf '  当前缓冲区上限: %s\n' "$(sysctl -n net.core.rmem_max 2>/dev/null)"
+	return "$failed"
 }
 
 daimon_tcp_fw_persist() {
 	if command -v netfilter-persistent >/dev/null 2>&1; then
 		netfilter-persistent save >/dev/null 2>&1 && return 0
 	fi
-	if command -v iptables-save >/dev/null 2>&1 && [ -d /etc/iptables ]; then
-		iptables-save > /etc/iptables/rules.v4 2>/dev/null || true
-		command -v ip6tables-save >/dev/null 2>&1 && ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || true
+	if [ ! -d /etc/iptables ] && command -v apt-get >/dev/null 2>&1; then
+		install iptables-persistent || return 1
+		command -v netfilter-persistent >/dev/null 2>&1 && netfilter-persistent save >/dev/null 2>&1 && return 0
 	fi
-	return 0
-}
-
-daimon_tcp_fw_open() {
-	local port="$1"
-	DAIMON_TCP_FW_METHOD="none"
-	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi '^Status: active'; then
-		if ufw status 2>/dev/null | grep -qE "(^|[[:space:]])${port}/tcp([[:space:]]|$)"; then
-			DAIMON_TCP_FW_METHOD="ufw-已放行"
-		elif ufw allow "$port/tcp" >/dev/null 2>&1; then
-			DAIMON_TCP_FW_METHOD="ufw-已新增"
+	if command -v iptables-save >/dev/null 2>&1 && [ -d /etc/iptables ]; then
+		iptables-save > /etc/iptables/rules.v4 2>/dev/null || return 1
+		if command -v ip6tables-save >/dev/null 2>&1; then
+			ip6tables-save > /etc/iptables/rules.v6 2>/dev/null || return 1
 		fi
 		return 0
 	fi
+	echo "缺少防火墙规则持久化设施，无法保证重启后放行。" >&2
+	return 1
+}
+
+daimon_tcp_fw_open() {
+	local port="$1" family="${2:-both}" tool status
+	DAIMON_TCP_FW_METHOD="none"
+	if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi '^Status: active'; then
+		status=$(ufw status 2>/dev/null)
+		if printf '%s\n' "$status" | grep -qE "^${port}/tcp[[:space:]]+ALLOW" &&
+			{ [ "$family" = 4 ] || printf '%s\n' "$status" | grep -qE "^${port}/tcp.*\(v6\).*ALLOW"; }; then
+			DAIMON_TCP_FW_METHOD="ufw-已放行"
+		elif ufw allow "$port/tcp" >/dev/null 2>&1; then
+			DAIMON_TCP_FW_METHOD="ufw-已新增"
+		else
+			return 1
+		fi
+		status=$(ufw status 2>/dev/null)
+		[ "$family" = 6 ] || printf '%s\n' "$status" | grep -qE "^${port}/tcp[[:space:]]+ALLOW" || return 1
+		[ "$family" = 4 ] || printf '%s\n' "$status" | grep -qE "^${port}/tcp.*\(v6\).*ALLOW" || { echo "UFW 未放行 IPv6，请检查 UFW 的 IPv6 支持。"; return 1; }
+		return 0
+	fi
 	if command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-		if firewall-cmd --query-port="${port}/tcp" >/dev/null 2>&1; then
+		if firewall-cmd --permanent --query-port="${port}/tcp" >/dev/null 2>&1 &&
+			firewall-cmd --query-port="${port}/tcp" >/dev/null 2>&1; then
 			DAIMON_TCP_FW_METHOD="firewalld-已放行"
 		elif firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1; then
-			firewall-cmd --reload >/dev/null 2>&1 || true
+			firewall-cmd --add-port="${port}/tcp" >/dev/null 2>&1 || return 1
 			DAIMON_TCP_FW_METHOD="firewalld-已新增"
+		else
+			return 1
 		fi
 		return 0
 	fi
 	if command -v iptables >/dev/null 2>&1; then
-		if iptables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
-			DAIMON_TCP_FW_METHOD="iptables-已放行"
-		elif iptables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
-			if command -v ip6tables >/dev/null 2>&1 &&
-				! ip6tables -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
-				ip6tables -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true
+		for tool in iptables ip6tables; do
+			[ "$family" != 4 ] || [ "$tool" != ip6tables ] || continue
+			[ "$family" != 6 ] || [ "$tool" != iptables ] || continue
+			command -v "$tool" >/dev/null 2>&1 || { echo "$tool 不可用，无法放行指定协议。"; return 1; }
+			if ! "$tool" -C INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1; then
+				"$tool" -I INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || return 1
 			fi
-			daimon_tcp_fw_persist
-			DAIMON_TCP_FW_METHOD="iptables-已新增"
-		fi
+		done
+		daimon_tcp_fw_persist || return 1
+		DAIMON_TCP_FW_METHOD="iptables-已放行并持久化"
 		return 0
 	fi
+	if command -v nft >/dev/null 2>&1 && [ -n "$(nft list ruleset 2>/dev/null)" ]; then
+		echo "检测到独立 nftables 规则，不能安全推断放行位置，未启动测速。" >&2
+		return 1
+	fi
+	echo "未检测到本机防火墙规则；云安全组需由云平台放行 TCP $port。"
+	return 0
 }
 
 daimon_tcp_ping_rtt() {
@@ -9562,6 +9621,11 @@ daimon_tcp_public_ips() {
 			esac
 			;;
 	esac
+	for cand in $(ip -6 -o addr show scope global 2>/dev/null | awk '{sub(/\/.*/,"",$4); print $4}'); do
+		case "$cand" in 2*|3*) ;; *) continue ;; esac
+		case " $out " in *" $cand "*) continue ;; esac
+		out="$out $cand"
+	done
 	printf '%s\n' ${out# }
 }
 
@@ -9941,11 +10005,17 @@ daimon_tcp_tune_auto_apply() {
 daimon_tcp_lab_load() {
 	local base="https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master"
 	local library="$DAIMON_TCP_STATE_DIR/tcp-tuning-lab.sh"
-	command -v python3 >/dev/null 2>&1 || install python3 || return 1
+	local tool package
+	for tool in python3 iperf3 ss flock; do
+		command -v "$tool" >/dev/null 2>&1 && continue
+		case "$tool" in ss) package=iproute2 ;; flock) package=util-linux ;; *) package="$tool" ;; esac
+		install "$package" || return 1
+		command -v "$tool" >/dev/null 2>&1 || { echo "$tool 安装后仍不可用。"; return 1; }
+	done
 	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
 	chmod 700 "$DAIMON_TCP_STATE_DIR" || return 1
 	daimon_download_to "$base/tcp-tuning-lab.sh?cb=$(date +%s)" "$library" 60 || return 1
-	if ! grep -q '^# DAIMON_TCP_LAB_VERSION=1$' "$library"; then
+	if ! grep -q '^# DAIMON_TCP_LAB_VERSION=2$' "$library"; then
 		echo "TCP 调优组件版本不匹配，未修改配置。"
 		return 1
 	fi
@@ -9960,19 +10030,21 @@ daimon_tcp_lab_menu_family() {
 	echo "2. IPv6"
 	echo "3. IPv4 + IPv6"
 	[ "$choice" = tune ] && echo "4. 分别试调 IPv4 / IPv6 候选，择优保留一套全局参数"
+	echo "0. 返回上一级菜单"
 	read -e -p "请选择协议: " DAIMON_TCP_LAB_CHOICE || return 1
 	case "$DAIMON_TCP_LAB_CHOICE" in
 		1) DAIMON_TCP_LAB_FAMILY=4 ;;
 		2) DAIMON_TCP_LAB_FAMILY=6 ;;
 		3) DAIMON_TCP_LAB_FAMILY=both ;;
 		4) [ "$choice" = tune ] || return 1; DAIMON_TCP_LAB_FAMILY=both ;;
+		0) return 2 ;;
 		*) echo "无效选择"; return 1 ;;
 	esac
 }
 
 daimon_tcp_tune_menu() {
 	root_use
-	local choice method
+	local choice method result
 	while true; do
 		clear
 		echo "系统网络自适应优化"
@@ -9981,7 +10053,7 @@ daimon_tcp_tune_menu() {
 		echo -e "内存/角色:  $(daimon_tcp_ram_mb) MB / $(daimon_tcp_detect_role)"
 		echo -e "拥塞算法:   ${gl_huang}$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo 未知)${gl_bai}"
 		echo -e "队列算法:   ${gl_huang}$(sysctl -n net.core.default_qdisc 2>/dev/null || echo 未知)${gl_bai}"
-		echo -e "缓冲区上限: $(sysctl -n net.core.rmem_max 2>/dev/null || echo 未知)   默认: $(sysctl -n net.core.rmem_default 2>/dev/null || echo 未知)"
+		echo -e "发送缓冲:   core 上限 $(sysctl -n net.core.wmem_max 2>/dev/null || echo 未知) / TCP $(sysctl -n net.ipv4.tcp_wmem 2>/dev/null || echo 未知)"
 		echo -e "tcp_mem:    $(sysctl -n net.ipv4.tcp_mem 2>/dev/null || echo 未知)"
 		if daimon_network_bbr_supported; then
 			echo -e "BBR 内核支持: ${gl_lv}支持${gl_bai}"
@@ -9996,7 +10068,7 @@ daimon_tcp_tune_menu() {
 			echo -e "${gl_hong}提示: vm.panic_on_oom=1 且 kernel.panic 非 0，内存耗尽会直接重启整机。${gl_bai}"
 		fi
 		echo "------------------------------------------------"
-		echo "1. 动态调优（先测速，再按本机实测计算并应用参数）"
+		echo "1. 动态调优（iperf3 多轮对照；TCPquality 仅作线路参考）"
 		echo "2. 恢复调优前参数（保留 BBR + FQ）"
 		echo "3. iperf3 本地测试（只测速，不修改参数）"
 		echo "0. 返回上一级菜单"
@@ -10006,12 +10078,15 @@ daimon_tcp_tune_menu() {
 			1)
 				echo ""
 				echo "1. iperf3 单线程下载（到你的本地电脑，最准确，需要本地客户端）"
-				echo "2. TCPquality 国内三网单线程下载（无需本地开端口）"
+				echo "2. TCPquality 国内三网线路参考（不修改参数）"
+				echo "0. 返回上一级菜单"
 				read -e -p "请选择测速方式: " method || return 1
 				case "$method" in
 					1)
-						daimon_tcp_lab_menu_family tune || break
-						daimon_tcp_lab_load || break
+						result=0; daimon_tcp_lab_menu_family tune || result=$?
+						[ "$result" != 2 ] || continue
+						[ "$result" = 0 ] || continue
+						daimon_tcp_lab_load || { echo "调优依赖或组件加载失败，未启动测速。"; continue; }
 						if [ "$DAIMON_TCP_LAB_CHOICE" = 4 ]; then
 							daimon_tcp_lab_run separate "$DAIMON_TCP_LAB_FAMILY"
 						else
@@ -10022,13 +10097,16 @@ daimon_tcp_tune_menu() {
 						echo "TCPquality 公共端点结果仅供线路参考，不据此写入全局 TCP 参数。"
 						daimon_tcp_measure_tcpquality
 						;;
+					0) continue ;;
 					*) echo "无效选择" ;;
 				esac
 				;;
 			2) daimon_tcp_restore ;;
 			3)
-				daimon_tcp_lab_menu_family test || break
-				daimon_tcp_lab_load || break
+				result=0; daimon_tcp_lab_menu_family test || result=$?
+				[ "$result" != 2 ] || continue
+				[ "$result" = 0 ] || continue
+				daimon_tcp_lab_load || { echo "测速依赖或组件加载失败，未启动测速。"; continue; }
 				daimon_tcp_lab_run test "$DAIMON_TCP_LAB_FAMILY"
 				;;
 			0) return ;;

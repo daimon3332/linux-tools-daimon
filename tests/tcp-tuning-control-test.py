@@ -61,7 +61,9 @@ class ControlServerTest(unittest.TestCase):
                                   data=json.dumps(result).encode(), method="POST")
                 with urlopen(request) as reply:
                     self.assertTrue(json.load(reply)["accepted"])
-                self.assertEqual(json.loads((state / "result-1.json").read_text()), result)
+                stored = json.loads((state / "result-1.json").read_text())
+                self.assertEqual(stored.pop('client'), '127.0.0.1')
+                self.assertEqual(stored, result)
                 with self.assertRaises(HTTPError) as duplicate:
                     urlopen(request)
                 self.assertEqual(duplicate.exception.code, 400)
@@ -70,6 +72,17 @@ class ControlServerTest(unittest.TestCase):
                     urlopen(Request(f"{url}/result?token=secret",
                                     data=json.dumps(result).encode(), method="POST"))
                 self.assertEqual(stale.exception.code, 400)
+                (state / 'stage.json').write_text(json.dumps(
+                    {'state': 'ready', 'id': 2, 'family': 4, 'duration': 10}), encoding='utf-8')
+                result.update(receiver_mbps=10.0, bytes=12500000, seconds=5)
+                with self.assertRaises(HTTPError) as partial:
+                    urlopen(Request(f'{url}/result?token=secret',
+                                    data=json.dumps(result).encode(), method='POST'))
+                self.assertEqual(partial.exception.code, 400)
+                result['seconds'] = 10
+                with urlopen(Request(f'{url}/result?token=secret',
+                                     data=json.dumps(result).encode(), method='POST')) as reply:
+                    self.assertTrue(json.load(reply)['accepted'])
                 abort = Request(f"{url}/abort?token=secret",
                                 data=b'{"reason":"traffic limit"}', method="POST")
                 with urlopen(abort) as reply:

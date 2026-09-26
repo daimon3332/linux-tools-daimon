@@ -7,6 +7,7 @@ import json
 import math
 import os
 import socket
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
@@ -20,6 +21,21 @@ def main():
     parser.add_argument("--state-dir", type=Path, required=True)
     parser.add_argument("--client", type=Path, required=True)
     args = parser.parse_args()
+    write_lock = threading.Lock()
+
+    def publish(target, data):
+        with write_lock:
+            if target.exists():
+                raise ValueError('duplicate submission')
+            temporary = target.with_suffix('.new')
+            descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            try:
+                with os.fdopen(descriptor, 'w', encoding='utf-8') as output:
+                    json.dump(data, output)
+                    output.write('\n')
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
@@ -67,10 +83,7 @@ def main():
                 if path == "/abort":
                     reason = str(result.get("reason", "client aborted"))[:200]
                     target = args.state_dir / "abort.json"
-                    descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-                        json.dump({"reason": reason}, output)
-                        output.write("\n")
+                    publish(target, {"reason": reason})
                     self.respond(b'{"accepted":true}')
                     return
                 stage = json.loads((args.state_dir / "stage.json").read_text())
@@ -83,11 +96,16 @@ def main():
                 retrans = int(result.get("retrans", 0))
                 if not math.isfinite(rate) or rate <= 0 or transferred <= 0 or retrans < 0:
                     raise ValueError("invalid measurement")
+                if stage.get('duration'):
+                    seconds = float(result['seconds'])
+                    if not math.isfinite(seconds) or not stage['duration'] * 0.9 <= seconds <= stage['duration'] * 1.2:
+                        raise ValueError('incomplete measurement')
+                    expected = rate * 1000000 / 8 * seconds
+                    if not 0.9 <= transferred / expected <= 1.1:
+                        raise ValueError('inconsistent rate and bytes')
+                result['client'] = self.client_address[0]
                 target = args.state_dir / f'result-{stage["id"]}.json'
-                descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-                with os.fdopen(descriptor, "w", encoding="utf-8") as output:
-                    json.dump(result, output)
-                    output.write("\n")
+                publish(target, result)
                 self.respond(b'{"accepted":true}')
             except (KeyError, OSError, TypeError, ValueError, json.JSONDecodeError):
                 self.send_error(400)

@@ -117,6 +117,15 @@ priority_symlink() {
     ! daimon_network_persist "$bbr" "$network" || return 1
     [ "$(cat "$WORK/keep")" = keep ] && ! grep -q 'BEGIN daimon' "$DAIMON_SYSCTL_CONF"
 }
+merge_owned_values() {
+    fixture merge
+    daimon_network_persist "$bbr" "$network" || return 1
+    printf 'net.core.wmem_max=8388608\n' > "$WORK/winner"
+    DAIMON_NETWORK_MERGE_EXISTING=1 daimon_network_persist "$WORK/winner" || return 1
+    grep -q '^vm.swappiness = 10$' "$DAIMON_NETWORK_PRIORITY_CONF" &&
+        grep -q '^net.ipv4.tcp_max_syn_backlog = 262144$' "$DAIMON_NETWORK_PRIORITY_CONF" &&
+        grep -q '^net.core.wmem_max = 8388608$' "$DAIMON_NETWORK_PRIORITY_CONF"
+}
 check 'boot and reload overrides preserve user configuration' precedence
 check 'repeated apply does not duplicate blocks' idempotent
 check 'clear removes network overrides while retaining BBR' clear_network
@@ -127,5 +136,6 @@ check 'a later external override is rejected before writing' later_conflict
 check 'second-file replacement failure rolls back the first file' replace_failure
 check 'user sysctl symlink and file mode survive apply' symlink_and_mode
 check 'priority symlink cannot overwrite an unrelated file' priority_symlink
+check 'TCP tuning merge preserves unrelated owned assignments' merge_owned_values
 printf '%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

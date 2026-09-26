@@ -18,13 +18,14 @@ class ScoreTest(unittest.TestCase):
         records = {
             "A": {"4": [run(100), run(102)], "6": [run(80), run(82)]},
             "B4": {"4": [run(130)], "6": [run(83)]},
-            "B6": {"4": [run(99)], "6": [run(110)]},
+            "B6": {"4": [run(102)], "6": [run(110)]},
         }
         chosen = score.choose(records, ["4", "6"], ["B4", "B6"], [8388608, 12582912])
         self.assertEqual(chosen["status"], "candidate")
         self.assertEqual(chosen["profile"], "B6")
-        records["B6"]["4"].append(run(100))
+        records["B6"]["4"].extend([run(102), run(103)])
         records["B6"]["6"].append(run(108))
+        records["B6"]["6"].append(run(111))
         self.assertEqual(score.confirm(records, ["4", "6"], "B6")["status"], "keep")
 
     def test_baseline_drift_aborts(self):
@@ -55,6 +56,35 @@ class ScoreTest(unittest.TestCase):
     def test_confirmation_requires_two_consistent_runs(self):
         records = {"A": {"4": [run(100), run(102)]}, "B": {"4": [run(130), run(90)]}}
         self.assertEqual(score.confirm(records, ["4"], "B")["status"], "restore")
+
+    def test_fast_exploration_cannot_hide_slower_confirmation(self):
+        records = {"A": {"4": [run(100), run(100)]},
+                   "B": {"4": [run(140), run(97)]}}
+        self.assertEqual(score.confirm(records, ["4"], "B")["status"], "restore")
+
+    def test_dual_family_net_regression_rejected(self):
+        records = {"A": {"4": [run(100), run(100)], "6": [run(100), run(100)]},
+                   "B": {"4": [run(105.1)], "6": [run(95)]}}
+        self.assertEqual(score.choose(records, ["4", "6"], ["B"], [8388608])["status"], "no_gain")
+
+    def test_two_new_confirmations_required(self):
+        records = {"A": {"4": [run(100), run(100)]},
+                   "B": {"4": [run(140), run(120)]}}
+        self.assertEqual(score.confirm(records, ["4"], "B")["status"], "restore")
+        records["B"]["4"].append(run(120))
+        self.assertEqual(score.confirm(records, ["4"], "B")["status"], "keep")
+
+    def test_adjacent_baselines_and_confirmation_threshold(self):
+        samples = [('A', 100), ('B', 140), ('A', 100), ('B', 104),
+                   ('A', 100), ('B', 120), ('A', 100)]
+        records = {'A': {'4': []}, 'B': {'4': []}}
+        for order, (profile, rate) in enumerate(samples):
+            measurement = run(rate)
+            measurement['order'] = order
+            records[profile]['4'].append(measurement)
+        self.assertEqual(score.confirm(records, ['4'], 'B')['status'], 'restore')
+        records['B']['4'][1]['rate'] = 120
+        self.assertEqual(score.confirm(records, ['4'], 'B')['status'], 'keep')
 
 
 if __name__ == "__main__":

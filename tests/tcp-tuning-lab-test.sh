@@ -20,10 +20,8 @@ daimon_tcp_ram_mb() { echo 512; }
 # 现有上限低于 BDP 目标：上调阶梯
 list=$(daimon_tcp_lab_candidate_list 200 150)
 [ "$list" = '9597152 16777216' ]
-if daimon_tcp_lab_candidate_list 1 50 >/dev/null; then
-    echo 'floor target must not rewrite current 4 MiB ceiling' >&2
-    exit 1
-fi
+list=$(daimon_tcp_lab_candidate_list 1 50)
+[ "$list" = '8388608' ]
 
 DAIMON_TCP_LAB_TCP_WMEM='4096 16384 33554432'
 DAIMON_TCP_LAB_WMEM=33554432
@@ -32,10 +30,8 @@ list=$(daimon_tcp_lab_candidate_list 190 164)
 
 DAIMON_TCP_LAB_TCP_WMEM='4096 16384 8388608'
 DAIMON_TCP_LAB_WMEM=8388608
-if daimon_tcp_lab_candidate_list 190 164 >/dev/null; then
-    echo 'ceiling within 25% of the BDP target must stay untouched' >&2
-    exit 1
-fi
+list=$(daimon_tcp_lab_candidate_list 190 164)
+[ "$list" = '4194304 16777216' ]
 
 # 对半值与 BDP 目标接近：只保留目标候选
 DAIMON_TCP_LAB_TCP_WMEM='4096 16384 20971520'
@@ -47,7 +43,7 @@ daimon_tcp_ram_mb() { echo 4096; }
 DAIMON_TCP_LAB_TCP_WMEM='4096 16384 134217728'
 DAIMON_TCP_LAB_WMEM=134217728
 list=$(daimon_tcp_lab_candidate_list 100 100)
-[ "$list" = '4597152 67108864' ]
+[ "$list" = '4597152 67108864 7097152' ]
 daimon_tcp_ram_mb() { echo 512; }
 
 daimon_tcp_write_key() { printf '%s' "$2" > "$WORK/key-$1"; }
