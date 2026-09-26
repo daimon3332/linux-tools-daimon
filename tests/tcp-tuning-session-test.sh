@@ -154,6 +154,18 @@ report_retained_ceiling() {
     command -v cygpath >/dev/null 2>&1 && report=$(cygpath -w "$report")
     command "$PYTHON_BIN" -c 'import json,sys; assert json.load(open(sys.argv[1]))["ceiling_bytes"] == 33554432' "$report"
 }
+budget_stops_active_round() {
+    fixture active-budget
+    DAIMON_TCP_LAB_IP4=127.0.0.1
+    DAIMON_TCP_LAB_IP6=''
+    DAIMON_TCP_LAB_PORT=50280
+    DAIMON_TCP_LAB_ROUND=0
+    DAIMON_TCP_LAB_WAIT=10
+    iperf3() { exec sleep 30; }
+    daimon_tcp_lab_budget_used() { echo 20000000000; }
+    if daimon_tcp_lab_round B1 4; then return 1; fi
+    [ -z "$DAIMON_TCP_LAB_IPERF_PID" ] && [ -z "$(jobs -pr)" ]
+}
 check 'rejected confirmation restores original runtime' rejected_winner_restores
 check 'accepted winner snapshots the original runtime' original_snapshot
 check 'near 2x-BDP still explores distinct 4x-BDP' candidate_gate
@@ -162,5 +174,6 @@ check 'concurrent sessions cannot touch the same profile' concurrent_run_rejecte
 check 'traffic budget reserves independent confirmation' budget_reserves_confirmation
 check 'real A/B/A scorer accepts gains and rejects slower confirmations' actual_score_keeps_or_restores
 check 'restored report includes the retained original ceiling' report_retained_ceiling
+check 'budget stop terminates only the active benchmark process' budget_stops_active_round
 echo "$passed passed, $failed failed, $skipped skipped"
 [ "$failed" -eq 0 ]
