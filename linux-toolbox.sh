@@ -9429,7 +9429,6 @@ daimon_tcp_restore() {
 		rm -f "$DAIMON_TCP_TUNING_CONF"
 	fi
 	rm -f "$tmp"
-	sysctl --system >/dev/null 2>&1 || failed=1
 	while IFS='=' read -r key value; do
 		key=$(printf '%s' "$key" | tr -d '[:space:]')
 		value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
@@ -9443,18 +9442,19 @@ daimon_tcp_restore() {
 		[ "$(daimon_tcp_read_key "$key")" = "$value" ] || failed=1
 	done < "$DAIMON_TCP_SNAPSHOT"
 	sysctl -qw net.core.default_qdisc=fq net.ipv4.tcp_congestion_control=bbr 2>/dev/null || failed=1
-	[ "$failed" != 0 ] || daimon_network_verify_sysctl_file "$DAIMON_TCP_TUNING_CONF" || failed=1
+	[ "$(daimon_tcp_read_key net.core.default_qdisc)" = fq ] &&
+		[ "$(daimon_tcp_read_key net.ipv4.tcp_congestion_control)" = bbr ] || failed=1
 	exec {lock_fd}>&-
 	if [ "$failed" -eq 0 ]; then
 		rm -f "$DAIMON_TCP_SNAPSHOT"
 		echo -e "${gl_lv}已恢复到调优前的参数，并保留 BBR + FQ。${gl_bai}"
 	else
-		echo -e "${gl_huang}部分参数未恢复到快照值，快照保留在 $DAIMON_TCP_SNAPSHOT，可重启后再次恢复。${gl_bai}"
+		echo -e "${gl_huang}恢复或持久化未完成，快照保留在 $DAIMON_TCP_SNAPSHOT。${gl_bai}"
 	fi
 	printf '  当前拥塞算法: %s   队列算法: %s\n' \
 		"$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)" \
 		"$(sysctl -n net.core.default_qdisc 2>/dev/null)"
-	printf '  当前缓冲区上限: %s\n' "$(sysctl -n net.core.rmem_max 2>/dev/null)"
+	printf '  当前发送缓冲区上限: %s\n' "$(daimon_tcp_read_key net.core.wmem_max)"
 	return "$failed"
 }
 

@@ -89,6 +89,21 @@ class ControlServerTest(unittest.TestCase):
                     self.assertTrue(json.load(reply)["accepted"])
                 self.assertEqual(json.loads((state / "abort.json").read_text())["reason"],
                                  "traffic limit")
+                ack = Request(f'{url}/ack?token=secret',
+                              data=b'{"id":2,"state":"done"}', method='POST')
+                with self.assertRaises(HTTPError) as premature:
+                    urlopen(ack)
+                self.assertEqual(premature.exception.code, 400)
+                (state / 'stage.json').write_text(json.dumps({'state': 'done', 'id': 2}))
+                for _ in range(2):
+                    with urlopen(ack) as reply:
+                        self.assertTrue(json.load(reply)['accepted'])
+                self.assertEqual(json.loads((state / 'completed.json').read_text()),
+                                 {'id': 2, 'state': 'done'})
+                with self.assertRaises(HTTPError) as stale_ack:
+                    urlopen(Request(f'{url}/ack?token=secret',
+                                    data=b'{"id":1,"state":"done"}', method='POST'))
+                self.assertEqual(stale_ack.exception.code, 400)
             finally:
                 server.terminate()
                 server.wait(timeout=5)

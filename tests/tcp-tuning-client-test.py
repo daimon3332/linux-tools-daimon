@@ -64,11 +64,13 @@ class ClientTest(unittest.TestCase):
                         result = json.loads((state / 'result-1.json').read_text())
                         self.assertGreater(result['receiver_mbps'], 0)
                         self.assertGreaterEqual(result['seconds'], 0.9)
-                        (state / 'stage.json').write_text(json.dumps({'state': 'done', 'message': 'Test complete'}))
+                        (state / 'stage.json').write_text(json.dumps({'state': 'done', 'id': 1, 'message': 'Test complete'}))
                     output, _ = client.communicate(timeout=10)
                     self.assertEqual(client.returncode, 0, output)
                     self.assertIn('Test complete', output)
                     self.assertIn('PARENT_CONTINUED', output)
+                    self.assertEqual(json.loads((state / 'completed.json').read_text()),
+                                     {'id': 1, 'state': 'done'})
                 finally:
                     for process in (client, server, control):
                         if process and process.poll() is None:

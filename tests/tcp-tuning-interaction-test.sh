@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+source "$ROOT/tcp-tuning-lab.sh"
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/tcp-interaction.XXXXXX") || exit 1
 trap 'case "$WORK" in "$ROOT"/.tmp/tcp-interaction.*) rm -rf -- "$WORK" ;; esac' EXIT
@@ -80,6 +81,39 @@ ipv6_preference_retains_ipv4() {
     values=$(daimon_tcp_public_ips) || return 1
     [[ "$values" == *198.51.100.17* ]] && [[ "$values" == *2001:db8::1* ]]
 }
+control_rule_is_family_scoped() {
+    local prefix="${1:-::/0}" family="${2:-6}" marker="$WORK/control-rule"
+    command() { if [ "$1" = -v ] && [ "$2" = ufw ]; then return 0; fi; builtin command "$@"; }
+    ufw() {
+        [ "$1" != --force ] || shift
+        case "$1" in
+            status)
+                printf 'Status: active\n'
+                if [ "$family" = 6 ]; then
+                    printf '50281/tcp ALLOW Anywhere\n'
+                    [ ! -f "$marker" ] || printf '50281/tcp (v6) ALLOW Anywhere (v6)\n'
+                else
+                    printf '50281/tcp (v6) ALLOW Anywhere (v6)\n'
+                    [ ! -f "$marker" ] || printf '50281/tcp ALLOW Anywhere\n'
+                fi
+                ;;
+            allow)
+                [[ "$*" == "allow proto tcp from $prefix to $prefix port 50281" ]] || return 1
+                touch "$marker"
+                ;;
+            delete)
+                [[ "$*" == "delete allow proto tcp from $prefix to $prefix port 50281" ]] || return 1
+                rm -f "$marker"
+                ;;
+        esac
+        return 0
+    }
+    daimon_tcp_lab_control_open 50281 "$family" || return 1
+    [ -f "$marker" ] || return 1
+    daimon_tcp_lab_control_close 50281 || return 1
+    [ ! -f "$marker" ]
+}
+control_ipv4_rule_is_scoped() { control_rule_is_family_scoped 0.0.0.0/0 4; }
 check 'existing IPv4 rule still adds missing IPv6 rule' ipv6_rule_missing
 check 'UFW allow failure propagates' ufw_failure
 check 'different sessions do not recommend a protocol' history_not_comparable
@@ -88,5 +122,7 @@ check 'protocol zero returns without an operation' family_back
 check 'missing iperf installation failure stops component load' prerequisite_failure
 check 'empty accept-policy nft tables do not block testing' empty_nft_ruleset
 check 'IPv6-preferred discovery still obtains a real IPv4 endpoint' ipv6_preference_retains_ipv4
+check 'IPv6 control rule is added and removed without deleting existing IPv4' control_rule_is_family_scoped
+check 'IPv4 control rule preserves the existing IPv6 rule' control_ipv4_rule_is_scoped
 echo "$passed passed, $failed failed"
 [ "$failed" = 0 ]

@@ -30,6 +30,7 @@ fixture() {
     DAIMON_TCP_LAB_HELPER_PID=""
     DAIMON_TCP_LAB_IPERF_PID=""
     DAIMON_TCP_LAB_FILES_CHANGED=0
+    DAIMON_TCP_LAB_RUNTIME_CHANGED=1
     DAIMON_TCP_LAB_TX_START=0
     DAIMON_TCP_LAB_BUDGET=20000000000
     DAIMON_TCP_LAB_DURATION=12
@@ -166,6 +167,57 @@ budget_stops_active_round() {
     if daimon_tcp_lab_round B1 4; then return 1; fi
     [ -z "$DAIMON_TCP_LAB_IPERF_PID" ] && [ -z "$(jobs -pr)" ]
 }
+test_only_preserves_external_settings() {
+    fixture readonly
+    DAIMON_TCP_LAB_RUNTIME_CHANGED=0
+    DAIMON_TCP_PROFILE=''
+    printf 'net.core.wmem_max = 33554432\nvm.swappiness = 10\n' > "$DAIMON_TCP_LAB_DIR/runtime.conf"
+    WRITES=0
+    daimon_tcp_read_key() { case "$1" in vm.swappiness) echo 30 ;; *) echo "$CEILING" ;; esac; }
+    daimon_tcp_write_key() { WRITES=$((WRITES+1)); }
+    daimon_tcp_lab_cleanup 0 || return 1
+    [ "$WRITES" = 0 ]
+}
+rollback_only_owned_keys() {
+    fixture owned
+    printf 'net.core.wmem_max = 33554432\nvm.swappiness = 10\n' > "$DAIMON_TCP_LAB_DIR/runtime.conf"
+    CEILING=4194304; SWAPPINESS=30
+    daimon_tcp_read_key() { case "$1" in vm.swappiness) echo "$SWAPPINESS" ;; *) echo "$CEILING" ;; esac; }
+    daimon_tcp_write_key() { case "$1" in vm.swappiness) SWAPPINESS="$2" ;; *) CEILING="$2" ;; esac; }
+    daimon_tcp_lab_restore_runtime || return 1
+    [ "$CEILING" = 33554432 ] && [ "$SWAPPINESS" = 30 ]
+}
+capture_only_owned_keys() {
+    fixture capture
+    DAIMON_TCP_MANAGED_KEYS=(net.core.wmem_max net.ipv4.tcp_wmem vm.swappiness)
+    daimon_tcp_key_supported() { return 0; }
+    daimon_tcp_read_key() { case "$1" in net.ipv4.tcp_wmem) echo '4096 16384 33554432' ;; *) echo 33554432 ;; esac; }
+    daimon_tcp_lab_capture || return 1
+    [ "$(wc -l < "$DAIMON_TCP_LAB_DIR/runtime.conf")" = 2 ] &&
+        ! grep -q swappiness "$DAIMON_TCP_LAB_DIR/runtime.conf" && [ "$DAIMON_TCP_LAB_RUNTIME_CHANGED" = 0 ]
+}
+menu_restore_does_not_reload_unrelated_config() {
+    fixture menu-restore
+    eval "$(sed -n '/^daimon_tcp_restore() {/,/^}/p' "$ROOT/linux-toolbox.sh")"
+    DAIMON_TCP_TUNING_CONF="$DAIMON_TCP_STATE_DIR/tuning.conf"
+    DAIMON_TCP_BBR_CONF=''
+    gl_lv='' gl_bai='' gl_huang='' gl_hong=''
+    printf 'net.core.wmem_max = 33554432\n' > "$DAIMON_TCP_SNAPSHOT"
+    CEILING=4194304; SWAPPINESS=30
+    root_use() { :; }
+    flock() { return 0; }
+    daimon_network_bbr_supported() { return 0; }
+    daimon_tcp_key_supported() { return 0; }
+    daimon_tcp_read_key() {
+        case "$1" in net.core.default_qdisc) echo fq ;; net.ipv4.tcp_congestion_control) echo bbr ;;
+            vm.swappiness) echo "$SWAPPINESS" ;; *) echo "$CEILING" ;; esac
+    }
+    daimon_network_persist() { printf 'vm.swappiness = 10\n' > "$DAIMON_TCP_TUNING_CONF"; }
+    daimon_network_verify_sysctl_file() { return 0; }
+    sysctl() { [ "${1:-}" != --system ] || SWAPPINESS=10; return 0; }
+    daimon_tcp_restore || return 1
+    [ "$CEILING" = 33554432 ] && [ "$SWAPPINESS" = 30 ]
+}
 check 'rejected confirmation restores original runtime' rejected_winner_restores
 check 'accepted winner snapshots the original runtime' original_snapshot
 check 'near 2x-BDP still explores distinct 4x-BDP' candidate_gate
@@ -175,5 +227,9 @@ check 'traffic budget reserves independent confirmation' budget_reserves_confirm
 check 'real A/B/A scorer accepts gains and rejects slower confirmations' actual_score_keeps_or_restores
 check 'restored report includes the retained original ceiling' report_retained_ceiling
 check 'budget stop terminates only the active benchmark process' budget_stops_active_round
+check 'test-only cleanup never writes sysctl' test_only_preserves_external_settings
+check 'rollback restores owned buffers without reverting external settings' rollback_only_owned_keys
+check 'new snapshots capture only the two owned buffer keys' capture_only_owned_keys
+check 'menu restore preserves unrelated runtime settings' menu_restore_does_not_reload_unrelated_config
 echo "$passed passed, $failed failed, $skipped skipped"
 [ "$failed" -eq 0 ]

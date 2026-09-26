@@ -24,11 +24,39 @@ $totalBytes = [long]0
 $deadline = (Get-Date).AddMinutes(35)
 $completed = $false
 $process = $null
+function Confirm-FinalResult($Stage) {
+    $json = @{ id = [int]$Stage.id; state = [string]$Stage.state } | ConvertTo-Json -Compress
+    for ($attempt = 0; $attempt -lt 3; $attempt++) {
+        $cancel = New-Object Threading.CancellationTokenSource
+        $cancel.CancelAfter(5000)
+        $body = New-Object System.Net.Http.StringContent($json, [Text.Encoding]::UTF8, 'application/json')
+        $response = $null
+        try {
+            $response = $http.PostAsync("$base/ack?token=$tokenQuery", $body, $cancel.Token).GetAwaiter().GetResult()
+            $response.EnsureSuccessStatusCode() | Out-Null
+            return
+        } catch {
+            if ($attempt -eq 2) {
+                Write-Warning 'Final result received, but its acknowledgment could not be confirmed.'
+            }
+        } finally {
+            if ($response) { $response.Dispose() }
+            $body.Dispose()
+            $cancel.Dispose()
+        }
+        if ($attempt -lt 2) { Start-Sleep -Milliseconds 300 }
+    }
+}
 try {
   while ((Get-Date) -lt $deadline) {
     $stage = $http.GetStringAsync("$base/stage?token=$tokenQuery").GetAwaiter().GetResult() | ConvertFrom-Json
-    if ($stage.state -eq 'done') { Write-Host $stage.message; $completed = $true; return }
-    if ($stage.state -eq 'error') { throw $stage.message }
+    if ($stage.state -in @('done', 'error')) {
+        $completed = $true
+        Confirm-FinalResult $stage
+        if ($stage.state -eq 'error') { throw $stage.message }
+        Write-Host $stage.message
+        return
+    }
     if ($stage.state -ne 'ready' -or [int]$stage.id -le $lastId) {
         Start-Sleep -Milliseconds 700
         continue
@@ -110,12 +138,14 @@ try {
   }
   throw 'Benchmark session timed out'
 } catch {
-  try {
-    $abortJson = @{ reason = $_.Exception.Message } | ConvertTo-Json -Compress
-    $abortBody = New-Object System.Net.Http.StringContent($abortJson, [Text.Encoding]::UTF8, 'application/json')
-    $null = $http.PostAsync("$base/abort?token=$tokenQuery", $abortBody).GetAwaiter().GetResult()
-    $abortBody.Dispose()
-  } catch { }
+  if (-not $completed) {
+    try {
+      $abortJson = @{ reason = $_.Exception.Message } | ConvertTo-Json -Compress
+      $abortBody = New-Object System.Net.Http.StringContent($abortJson, [Text.Encoding]::UTF8, 'application/json')
+      $null = $http.PostAsync("$base/abort?token=$tokenQuery", $abortBody).GetAwaiter().GetResult()
+      $abortBody.Dispose()
+    } catch { }
+  }
   throw
 } finally {
     if ($process) {

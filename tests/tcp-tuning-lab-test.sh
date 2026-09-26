@@ -61,6 +61,10 @@ daimon_tcp_lab_apply_ceiling 1048576
 daimon_network_persist() { cp -f "$1" "$DAIMON_TCP_TUNING_CONF"; }
 daimon_network_verify_sysctl_file() { [ -s "$1" ]; }
 sysctl() {
+    if [ "${1:-}" = --system ]; then
+        echo 'Unexpected global sysctl reload' >&2
+        return 1
+    fi
     local line key value
     while IFS= read -r line; do
         case "$line" in *' = '*)

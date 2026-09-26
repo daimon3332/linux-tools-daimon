@@ -23,9 +23,11 @@ def main():
     args = parser.parse_args()
     write_lock = threading.Lock()
 
-    def publish(target, data):
+    def publish(target, data, repeat_ok=False):
         with write_lock:
             if target.exists():
+                if repeat_ok and json.loads(target.read_text(encoding='utf-8')) == data:
+                    return
                 raise ValueError('duplicate submission')
             temporary = target.with_suffix('.new')
             descriptor = os.open(temporary, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
@@ -72,7 +74,7 @@ def main():
             if not self.authorized():
                 return
             path = urlsplit(self.path).path
-            if path not in ("/result", "/abort"):
+            if path not in ("/result", "/abort", "/ack"):
                 self.send_error(404)
                 return
             try:
@@ -87,6 +89,14 @@ def main():
                     self.respond(b'{"accepted":true}')
                     return
                 stage = json.loads((args.state_dir / "stage.json").read_text())
+                if path == '/ack':
+                    if (stage.get('state') not in ('done', 'error') or
+                            result.get('id') != stage.get('id') or result.get('state') != stage.get('state')):
+                        raise ValueError('stale terminal acknowledgment')
+                    publish(args.state_dir / 'completed.json',
+                            {'id': stage['id'], 'state': stage['state']}, repeat_ok=True)
+                    self.respond(b'{"accepted":true}')
+                    return
                 if stage.get("state") != "ready" or result.get("id") != stage.get("id"):
                     raise ValueError("stale stage")
                 if result.get("family") != stage.get("family"):

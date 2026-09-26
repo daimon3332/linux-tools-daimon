@@ -14,15 +14,29 @@ daimon_tcp_lab_download_helpers() {
     command -v sha256sum >/dev/null 2>&1 || return 1
 }
 
+daimon_tcp_lab_ufw_allowed() {
+    local port="$1" family="$2" pattern
+    pattern="^${port}/tcp[[:space:]]+"
+    [ "$family" != 6 ] || pattern="${pattern}\\(v6\\)[[:space:]]+"
+    LC_ALL=C ufw status 2>/dev/null | grep -qE "${pattern}ALLOW([[:space:]]+IN)?[[:space:]]+Anywhere([[:space:]]|$)"
+}
+
 daimon_tcp_lab_control_open() {
-    local port="$1" family="$2"
+    local port="$1" family="$2" cidr
+    case "$family" in 4) cidr=0.0.0.0/0 ;; 6) cidr=::/0 ;; *) return 1 ;; esac
     DAIMON_TCP_LAB_FW="none"
-    if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -qi '^Status: active'; then
-        if ufw status 2>/dev/null | grep -qE "(^|[[:space:]])${port}/tcp([[:space:]]|$)"; then
+    DAIMON_TCP_LAB_FW_FAMILY="$family"
+    if command -v ufw >/dev/null 2>&1 && LC_ALL=C ufw status 2>/dev/null | grep -qi '^Status: active'; then
+        if daimon_tcp_lab_ufw_allowed "$port" "$family"; then
             DAIMON_TCP_LAB_FW="existing"
         else
-            ufw allow "$port/tcp" >/dev/null 2>&1 || return 1
             DAIMON_TCP_LAB_FW="ufw"
+            if ! ufw allow proto tcp from "$cidr" to "$cidr" port "$port" >/dev/null 2>&1 ||
+                ! daimon_tcp_lab_ufw_allowed "$port" "$family"; then
+                daimon_tcp_lab_control_close "$port" || true
+                echo "UFW 未能放行 IPv$family 控制端口 $port。" >&2
+                return 1
+            fi
         fi
     elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
         if firewall-cmd --query-port="$port/tcp" >/dev/null 2>&1; then
@@ -45,23 +59,32 @@ daimon_tcp_lab_control_open() {
 }
 
 daimon_tcp_lab_control_close() {
-    local port="$1"
+    local port="$1" cidr=0.0.0.0/0 failed=0
+    [ "${DAIMON_TCP_LAB_FW_FAMILY:-4}" != 6 ] || cidr=::/0
     case "$DAIMON_TCP_LAB_FW" in
-        ufw) ufw delete allow "$port/tcp" >/dev/null 2>&1 || true ;;
-        firewalld) firewall-cmd --remove-port="$port/tcp" >/dev/null 2>&1 || true ;;
-        iptables) iptables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true ;;
-        ip6tables) ip6tables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || true ;;
+        ufw) ufw --force delete allow proto tcp from "$cidr" to "$cidr" port "$port" >/dev/null 2>&1 || failed=1 ;;
+        firewalld) firewall-cmd --remove-port="$port/tcp" >/dev/null 2>&1 || failed=1 ;;
+        iptables) iptables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || failed=1 ;;
+        ip6tables) ip6tables -D INPUT -p tcp --dport "$port" -j ACCEPT >/dev/null 2>&1 || failed=1 ;;
     esac
-    DAIMON_TCP_LAB_FW="none"
+    [ "$failed" != 0 ] || DAIMON_TCP_LAB_FW="none"
+    return "$failed"
 }
 
 daimon_tcp_lab_capture() {
     local key
     : > "$DAIMON_TCP_LAB_DIR/runtime.conf" || return 1
-    for key in "${DAIMON_TCP_MANAGED_KEYS[@]}"; do
-        daimon_tcp_key_supported "$key" || continue
+    for key in net.core.wmem_max net.ipv4.tcp_wmem; do
+        daimon_tcp_key_supported "$key" || return 1
         printf '%s = %s\n' "$key" "$(daimon_tcp_read_key "$key")" >> "$DAIMON_TCP_LAB_DIR/runtime.conf" || return 1
     done
+    DAIMON_TCP_LAB_RUNTIME_CHANGED=0
+    DAIMON_TCP_LAB_WMEM=$(daimon_tcp_read_key net.core.wmem_max)
+    DAIMON_TCP_LAB_TCP_WMEM=$(daimon_tcp_read_key net.ipv4.tcp_wmem)
+    [ -n "$DAIMON_TCP_LAB_WMEM" ] && [ -n "$DAIMON_TCP_LAB_TCP_WMEM" ]
+}
+
+daimon_tcp_lab_capture_files() {
     DAIMON_TCP_LAB_SYSCTL_PRESENT=0
     if [ -f "${DAIMON_SYSCTL_CONF:-/etc/sysctl.conf}" ]; then
         DAIMON_TCP_LAB_SYSCTL_PATH=$(readlink -f "${DAIMON_SYSCTL_CONF:-/etc/sysctl.conf}") || return 1
@@ -71,21 +94,22 @@ daimon_tcp_lab_capture() {
     if [ -f "$DAIMON_TCP_TUNING_CONF" ]; then
         cp -a "$DAIMON_TCP_TUNING_CONF" "$DAIMON_TCP_LAB_DIR/tuning.conf.before" || return 1
     fi
-    DAIMON_TCP_LAB_WMEM=$(daimon_tcp_read_key net.core.wmem_max)
-    DAIMON_TCP_LAB_TCP_WMEM=$(daimon_tcp_read_key net.ipv4.tcp_wmem)
-    [ -n "$DAIMON_TCP_LAB_WMEM" ] && [ -n "$DAIMON_TCP_LAB_TCP_WMEM" ]
+    return 0
 }
 
 daimon_tcp_lab_restore_runtime() {
+    [ "${DAIMON_TCP_LAB_RUNTIME_CHANGED:-0}" = 1 ] || return 0
     local key value failed=0
     while IFS='=' read -r key value; do
         key=$(printf '%s' "$key" | tr -d '[:space:]')
+        case "$key" in net.core.wmem_max|net.ipv4.tcp_wmem) ;; *) continue ;; esac
         value=$(printf '%s' "$value" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
         [ -n "$key" ] && [ -n "$value" ] || continue
         [ "$(daimon_tcp_read_key "$key")" = "$value" ] && continue
         daimon_tcp_write_key "$key" "$value" || failed=1
         [ "$(daimon_tcp_read_key "$key")" = "$value" ] || failed=1
     done < "$DAIMON_TCP_LAB_DIR/runtime.conf"
+    [ "$failed" != 0 ] || DAIMON_TCP_LAB_RUNTIME_CHANGED=0
     return "$failed"
 }
 
@@ -102,6 +126,7 @@ daimon_tcp_lab_wmem_triple() {
 daimon_tcp_lab_apply_ceiling() {
     local ceiling="$1" triple
     triple=$(daimon_tcp_lab_wmem_triple "$ceiling") || return 1
+    DAIMON_TCP_LAB_RUNTIME_CHANGED=1
     daimon_tcp_write_key net.core.wmem_max "$ceiling" || return 1
     daimon_tcp_write_key net.ipv4.tcp_wmem "$triple" || return 1
     [ "$(daimon_tcp_read_key net.core.wmem_max)" = "$ceiling" ] &&
@@ -301,12 +326,14 @@ net.ipv4.tcp_congestion_control = bbr
 net.core.wmem_max = $target_core
 net.ipv4.tcp_wmem = $min $def $target_tcp
 EOF
+    daimon_tcp_lab_capture_files || return 1
+    DAIMON_TCP_LAB_FILES_CHANGED=1
     DAIMON_NETWORK_MERGE_EXISTING=1 DAIMON_NETWORK_PRIORITY_CONF="$DAIMON_TCP_TUNING_CONF" daimon_network_persist "$file" || return 1
-    sysctl --system >/dev/null 2>&1 || return 1
-    daimon_network_verify_sysctl_file "$DAIMON_TCP_TUNING_CONF" || return 1
+    daimon_tcp_lab_apply_ceiling "$ceiling" || return 1
+    daimon_network_verify_sysctl_file "$file" || return 1
     [ "$(daimon_tcp_read_key net.core.wmem_max)" = "$target_core" ] &&
         [ "$(daimon_tcp_read_key net.ipv4.tcp_wmem)" = "$min $def $target_tcp" ] || return 1
-    echo "已验证优化参数在 sysctl --system 后仍生效。"
+    echo "本次发送参数已应用并验证；未重载其他系统配置。"
 }
 
 daimon_tcp_lab_restore_files() {
@@ -372,9 +399,17 @@ PY
 }
 
 daimon_tcp_lab_finish() {
-    local status="$1" message="$2"
-    daimon_tcp_lab_stage_json "$status" "$DAIMON_TCP_LAB_ROUND" 4 "$DAIMON_TCP_LAB_IP4" "$message" || true
-    sleep 2
+    local status="$1" message="$2" wait_seconds="${DAIMON_TCP_LAB_FINISH_WAIT:-30}" deadline
+    [[ "$wait_seconds" =~ ^[0-9]+$ ]] && [ "$wait_seconds" -ge 1 ] && [ "$wait_seconds" -le 120 ] || wait_seconds=30
+    daimon_tcp_lab_stage_json "$status" "$DAIMON_TCP_LAB_ROUND" 4 "$DAIMON_TCP_LAB_IP4" "$message" || return 1
+    deadline=$((SECONDS + wait_seconds))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        [ ! -s "$DAIMON_TCP_LAB_DIR/completed.json" ] || return 0
+        [ -z "${DAIMON_TCP_LAB_HELPER_PID:-}" ] || kill -0 "$DAIMON_TCP_LAB_HELPER_PID" 2>/dev/null || break
+        sleep 0.2
+    done
+    echo "客户端未确认结束结果，控制接口将按超时关闭；参数状态以服务器汇总为准。" >&2
+    return 0
 }
 
 daimon_tcp_lab_run_inner() {
@@ -477,11 +512,13 @@ daimon_tcp_lab_cleanup() {
         if [ "${DAIMON_TCP_LAB_FILES_CHANGED:-0}" = 1 ]; then
             daimon_tcp_lab_restore_files || failed=1
         fi
-        daimon_tcp_lab_restore_runtime || failed=1
+        if [ "${DAIMON_TCP_LAB_RUNTIME_CHANGED:-0}" = 1 ]; then
+            daimon_tcp_lab_restore_runtime || failed=1
+            [ "$failed" != 0 ] || echo "本次修改的发送参数已复读验证恢复。"
+        fi
         if [ "$failed" = 0 ] && [ "${DAIMON_TCP_LAB_NEW_SNAPSHOT:-0}" = 1 ]; then
             rm -f -- "$DAIMON_TCP_SNAPSHOT" || failed=1
         fi
-        [ "$failed" = 0 ] && echo "原运行参数已复读验证恢复；BBR + FQ 保留。"
     fi
     if [ "$failed" != 0 ]; then
         echo "自动恢复不完整，快照保留在 $DAIMON_TCP_LAB_DIR" >&2
@@ -500,7 +537,10 @@ daimon_tcp_lab_cleanup() {
         wait "$DAIMON_TCP_LAB_HELPER_PID" 2>/dev/null || true
     fi
     if [ "${DAIMON_TCP_LAB_CONTROL_OPEN:-0}" = 1 ]; then
-        daimon_tcp_lab_control_close "$DAIMON_TCP_LAB_CONTROL_PORT"
+        if ! daimon_tcp_lab_control_close "$DAIMON_TCP_LAB_CONTROL_PORT"; then
+            echo "临时控制规则删除失败：$DAIMON_TCP_LAB_FW / IPv$DAIMON_TCP_LAB_FW_FAMILY / TCP $DAIMON_TCP_LAB_CONTROL_PORT" >&2
+            status=1
+        fi
     fi
     if [ "$status" -eq 0 ] && [ -n "${DAIMON_TCP_LAB_DIR:-}" ]; then
         [ -f "$DAIMON_TCP_LAB_DIR/records.tsv" ] &&
@@ -523,6 +563,7 @@ daimon_tcp_lab_run() (
     DAIMON_TCP_LAB_IPERF_PID=""
     DAIMON_TCP_LAB_COMMITTED=0
     DAIMON_TCP_LAB_FILES_CHANGED=0
+    DAIMON_TCP_LAB_RUNTIME_CHANGED=0
     DAIMON_TCP_LAB_NEW_SNAPSHOT=0
     DAIMON_TCP_LAB_WINNER=A
     DAIMON_TCP_LAB_WINNING_CEILING=0
@@ -636,9 +677,8 @@ daimon_tcp_lab_execute() {
         return 0
     fi
     daimon_tcp_lab_save_snapshot || return 1
-    DAIMON_TCP_LAB_FILES_CHANGED=1
     if ! daimon_tcp_lab_persist "$ceiling"; then
-        echo "持久化或重载验证失败，恢复本次开始时的配置。" >&2
+        echo "持久化或运行参数验证失败，恢复本次修改的发送参数。" >&2
         return 1
     fi
     DAIMON_TCP_LAB_COMMITTED=1
