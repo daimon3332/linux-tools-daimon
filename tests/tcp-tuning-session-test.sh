@@ -5,6 +5,8 @@ mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/tcp-session.XXXXXX") || exit 1
 trap 'case "$WORK" in "$ROOT"/.tmp/tcp-session.*) rm -rf -- "$WORK" ;; esac' EXIT
 source "$ROOT/tcp-tuning-lab.sh"
+PYTHON_BIN=python3
+command -v python >/dev/null 2>&1 && PYTHON_BIN=python
 passed=0 failed=0 skipped=0
 check() {
     if ( "$2" ) > "$WORK/output" 2>&1; then
@@ -127,7 +129,7 @@ actual_score_keeps_or_restores() {
         printf '%s\t4\t%s\t0\t100000000\t100\n' "$1" "$rate" >> "$DAIMON_TCP_LAB_DIR/records.tsv"
     }
     daimon_tcp_lab_score() {
-        command python "$ROOT/tcp-tuning-score.py" "$1" "$DAIMON_TCP_LAB_DIR/records.tsv" 4 "$2" "${3:-}"
+        command "$PYTHON_BIN" "$ROOT/tcp-tuning-score.py" "$1" "$DAIMON_TCP_LAB_DIR/records.tsv" 4 "$2" "${3:-}"
     }
     local real_round real_score
     real_round=$(declare -f daimon_tcp_lab_profile_round)
