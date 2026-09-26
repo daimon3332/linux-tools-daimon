@@ -5,7 +5,7 @@ mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/tcp-interaction.XXXXXX") || exit 1
 trap 'case "$WORK" in "$ROOT"/.tmp/tcp-interaction.*) rm -rf -- "$WORK" ;; esac' EXIT
 load() { eval "$(sed -n "/^$1() {/,/^}/p" "$ROOT/linux-toolbox.sh")"; }
-for fn in daimon_tcp_fw_open daimon_tcp_family_speed_block daimon_tcp_lab_menu_family daimon_tcp_lab_load; do
+for fn in daimon_tcp_fw_open daimon_tcp_family_speed_block daimon_tcp_lab_menu_family daimon_tcp_lab_load daimon_tcp_public_ips; do
     load "$fn" || exit 1
 done
 passed=0 failed=0
@@ -72,6 +72,14 @@ empty_nft_ruleset() {
     POLICY=drop
     ! daimon_tcp_fw_open 50280 6
 }
+ipv6_preference_retains_ipv4() {
+    ip_address() { ipv4_address='2001:db8::1'; ipv6_address='2001:db8::1'; }
+    ip() { :; }
+    curl() { [ "$1" = -4 ] && echo 198.51.100.17; }
+    local values
+    values=$(daimon_tcp_public_ips) || return 1
+    [[ "$values" == *198.51.100.17* ]] && [[ "$values" == *2001:db8::1* ]]
+}
 check 'existing IPv4 rule still adds missing IPv6 rule' ipv6_rule_missing
 check 'UFW allow failure propagates' ufw_failure
 check 'different sessions do not recommend a protocol' history_not_comparable
@@ -79,5 +87,6 @@ check 'paired history can recommend the faster family' history_comparable
 check 'protocol zero returns without an operation' family_back
 check 'missing iperf installation failure stops component load' prerequisite_failure
 check 'empty accept-policy nft tables do not block testing' empty_nft_ruleset
+check 'IPv6-preferred discovery still obtains a real IPv4 endpoint' ipv6_preference_retains_ipv4
 echo "$passed passed, $failed failed"
 [ "$failed" = 0 ]

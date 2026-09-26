@@ -9623,7 +9623,7 @@ daimon_tcp_public_ips() {
 		out="$out $cand"
 	done
 	case "$ipv4_address" in
-		''|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
+		''|*:*|10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*)
 			cand=$(curl -4 -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/ip 2>/dev/null)
 			case "$cand" in
 				''|*[!0-9.]*) ;;
