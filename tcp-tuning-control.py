@@ -55,7 +55,8 @@ def main():
         def do_POST(self):
             if not self.authorized():
                 return
-            if urlsplit(self.path).path != "/result":
+            path = urlsplit(self.path).path
+            if path not in ("/result", "/abort"):
                 self.send_error(404)
                 return
             try:
@@ -63,6 +64,15 @@ def main():
                 if not 0 < size <= 16384:
                     raise ValueError("invalid payload size")
                 result = json.loads(self.rfile.read(size))
+                if path == "/abort":
+                    reason = str(result.get("reason", "client aborted"))[:200]
+                    target = args.state_dir / "abort.json"
+                    descriptor = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+                    with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+                        json.dump({"reason": reason}, output)
+                        output.write("\n")
+                    self.respond(b'{"accepted":true}')
+                    return
                 stage = json.loads((args.state_dir / "stage.json").read_text())
                 if stage.get("state") != "ready" or result.get("id") != stage.get("id"):
                     raise ValueError("stale stage")

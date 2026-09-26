@@ -234,9 +234,9 @@ bash /root/linux-daimon/daimon/install-docker-auto.sh 2   # 国外和香港：Do
 ### 4.8 系统网络自适应优化
 
 ```bash
-one_click_network_auto_optimize   # 等价于 daimon_tcp_tune_auto_apply tcpquality
+one_click_network_auto_optimize   # 只检查并保留 BBR + FQ
 ```
-解释：一键配置第 8 项使用 TCPquality（无需本地客户端）测速，按实测带宽和 RTT 计算并应用参数；带复测和回滚的完整流程在主菜单 `5 → 15`。不下载第三方脚本、不换内核，当前内核不支持 BBR 时不写入配置。
+解释：批量配置不能与本地 iperf3 客户端完成可靠多轮 A/B，因此第 8 项不再凭 TCPquality 公共端点的一次测速写全局缓冲参数。多轮动态调优须进入主菜单 `5 → 15`。
 
 ### 4.9 安装第三方工具
 
@@ -590,27 +590,29 @@ journalctl --vacuum-size=500M
 
 ### 5.15 系统网络自适应优化
 
-默认展示当前内核、内存/角色、拥塞算法、队列算法、缓冲区上限、tcp_mem、BBR 支持情况和上次调优记录。菜单只保留两个入口：
+默认展示当前内核、内存、拥塞算法、队列算法、缓冲上限，以及最近一次 IPv4/IPv6 测速记录：
 
 ```text
 1. 动态调优（先测速，再按本机实测计算并应用参数）
-   1) iperf3 单线程下载（到本地电脑，最准确，需要本地客户端）
-   2) TCPquality 国内三网单线程下载（无需本地开端口）
-2. 恢复调优前参数
+   1) iperf3 本地单线程下载：IPv4 / IPv6 / 共用配置 / 分别试调后择优
+   2) TCPquality：只做公共端点诊断，不写入 sysctl
+2. 恢复调优前参数（保留 BBR + FQ）
+3. iperf3 本地测试（只测速，不修改参数）
+0. 返回
 ```
 
-菜单顶部“线路速度记录”展示最近一次 IPv4 / IPv6 实测（`/root/linux-daimon/tcp-tuning/family-speed.conf`），并给出 `IPv4 更快` / `IPv6 更快`（相差 10% 以上）或“两者接近”的结论，用于决定节点协议；只测过一个协议时会提示补测另一个。
+菜单顶部“线路速度记录”展示最近一次 IPv4 / IPv6 实测（`/root/linux-daimon/tcp-tuning/family-speed.conf`），供选择节点协议。
 
-协议选择：进入动态调优后可选 `1. 只优化 IPv4`、`2. 只优化 IPv6`、`3. IPv4 + IPv6 一起优化`；选 3 时会依次打印 IPv4、IPv6 两条命令（各运行 1 次），参数按两者中更大的 BDP 计算，任何一个协议复测下降都会整体回滚。
+IPv4 与 IPv6 使用同一套 TCP 缓冲 sysctl。第 4 项会分别试验 IPv4、IPv6 推导的候选值，但最终只持久化一套不使另一协议明显变慢的配置。
 
 iperf3 测速方式：
 
 ```bash
-iperf3 -s -p 50280 --forceflush                    # 服务端，脚本自动临时放行防火墙端口
-iperf3 -c <公网IP> -p 50280 -4 -R -t 20 -O 4 -i 1  # 本地客户端：单线程下载，只运行 1 次
+iperf3 -s -1 -p 50280 --forceflush             # 每轮仅接受一次客户端连接
+iperf3 -c <公网IP> -p 50280 -4 -R -t 12 -O 2 -J # 本地实际接收速率见 JSON end.sum_received
 ```
 
-解释：本地只需要运行 1 次这一条命令，脚本按服务端日志里预热 4 秒之后的每秒采样计算中位数、均值、最低/最高和重传合计（20 秒测试约 16 个采样），不再要求手动跑 3 次。服务端必须 `--forceflush`（或 `stdbuf -oL`），否则输出重定向到文件时被块缓冲，日志里读不到结果。RTT 优先取测试连接的 TCP 采样（`ss -tin`），其次 ICMP ping，都没有时才要求手工输入。
+解释：菜单会打印一条 PowerShell 命令；本地执行一次后，它从带随机令牌的临时控制端口获取客户端脚本（SHA256 校验），自动运行所有独立轮次并反馈**客户端接收端** JSON。服务器发送端的每秒数字不能当作实际下载速度。同一个 iperf3 端口在各轮重启，只有参数切换完成后才接受下一轮；临时控制端口结束即撤销放行。
 
 TCPquality 测速方式：
 
@@ -619,17 +621,17 @@ printf 'n\nn\nn\ny\nn\n' | TERM=xterm script -qec \
   "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null
 ```
 
-解释：输出经 ANSI 清理后按行解析国内三网的单线程下载/上传/重传，取下载最快三个结果的中位数作为实测带宽，RTT 取 `223.5.5.5`、`119.29.29.29`、`180.76.76.76` 的 ping 中位数；解析失败时打印原始输出并要求手工输入带宽和 RTT。
+解释：结果仅供国内三网线路参考，无法替代本地路径的 iperf3 多轮 A/B，不参与自动持久化。
 
 应用参数：
 
 ```bash
-# BDP = 实测带宽 × RTT；缓冲区上限 = 2×BDP+2MiB，4MiB–256MiB 且不超过内存/32
+# BDP = 本地实收带宽 × 最小 RTT；候选发送缓冲上限 = 2×BDP+2MiB 或 4×BDP+2MiB
 # 调优文件：/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf（并按同一份值写 sysctl.conf 标记块）
 sysctl --system
 ```
 
-解释：实际入口为 `daimon_tcp_tune_run`，参数由 `daimon_tcp_calc_profile` 按实测值计算，写入 `/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf`，并通过 `daimon_network_persist` 同步写入 `/etc/sysctl.conf` 末尾的 daimon 标记块。procps 的 `sysctl --system` 最后处理 `/etc/sysctl.conf`，只写 `/etc/sysctl.d` 会被旧配置覆盖，这是旧版“提示成功但重载后失效”的根因。应用后逐项核对运行态，被覆盖时列出冲突文件；不支持的内核参数会注释掉，避免开机 systemd-sysctl 报错。
+解释：试验时只改 `net.core.wmem_max` 和 `net.ipv4.tcp_wmem` 的上限，且不低于现值；`tcp_mem`、backlog、Swap、默认缓冲等不参与候选。当前值和候选先探索，复测基线确认链路稳定，再复测优胜候选；不达标则恢复本次开始时的配置。持久化时同步 `/etc/sysctl.conf` 标记块并重载核对。
 
 复测与回滚：
 
@@ -638,7 +640,7 @@ cat /root/linux-daimon/tcp-tuning/profile.json          # 本次实测与前后�
 sed -n '1,40p' /root/linux-daimon/tcp-tuning/runtime-snapshot.conf   # 调优前快照
 ```
 
-解释：应用成功后自动再测一轮对比（本地把同一条 iperf3 命令再运行 1 次即可）：只要复测低于优化前（留 5% 容差）就自动恢复原参数并保留 BBR + FQ，绝不保留更慢的结果。测速端口自动放行并永久保留（ufw `allow`、firewalld `--permanent`、iptables 规则 + 持久化尝试），原本已放行的不动；只有 iperf3 进程监听期间端口才真正可用。菜单第 2 项按快照恢复运行态并删除调优文件。当前内核不支持 BBR 时不写入任何配置。
+解释：客户端默认 4 GiB 流量上限，超额、连接失败或结果无效会中止并恢复。测速端口按既定行为永久放行，但只有 iperf3 运行时才监听；结果控制端口只临时放行。菜单第 2 项按原快照恢复运行态，保留 BBR + FQ。
 ### 5.16 禁用 IPv6
 
 ```bash

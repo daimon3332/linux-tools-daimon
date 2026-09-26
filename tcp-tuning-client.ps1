@@ -73,6 +73,14 @@ try {
     $lastId = [int]$stage.id
   }
   throw 'Benchmark session timed out'
+} catch {
+  try {
+    $abortJson = @{ reason = $_.Exception.Message } | ConvertTo-Json -Compress
+    $abortBody = New-Object System.Net.Http.StringContent($abortJson, [Text.Encoding]::UTF8, 'application/json')
+    $null = $http.PostAsync("$base/abort?token=$tokenQuery", $abortBody).GetAwaiter().GetResult()
+    $abortBody.Dispose()
+  } catch { }
+  throw
 } finally {
   $http.Dispose()
   $handler.Dispose()

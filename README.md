@@ -133,7 +133,7 @@ Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python
 | 12 | 查看ssh的ip | 查看当前 SSH 连接 IP 和所有 SSH 连接地址 |
 | 13 | 网卡管理工具 | 查看、启用、禁用网卡和查看网卡详细信息 |
 | 14 | journalctl日志管理 | 配置日志自动清理、查看占用、查看服务日志、按时间/大小清理 |
-| 15 | 系统网络自适应优化 | 先测速再调优：iperf3 本地单线程下载或 TCPquality 国内三网测速，按实测带宽与 RTT 计算缓冲区，应用后复测对比，可一键恢复 |
+| 15 | 系统网络自适应优化 | iperf3 本地单线程下载多轮 A/B 调优、TCPquality 线路参考、恢复配置及独立测速 |
 | 16 | 禁用IPv6 | 写入 sysctl 配置禁用 IPv6 |
 | 17 | 开启IPv6 | 写入 sysctl 配置开启 IPv6 |
 | 18 | 设置本地语言 | 支持 `en_US.UTF-8`、中文简体和其他常用 UTF-8 locale |
@@ -146,42 +146,23 @@ Swap 只调整带本脚本 inode 归属标记的 `/swapfile`；未标记的已�
 
 #### 系统网络自适应优化参数
 
-主菜单 `5 → 15` 只提供两个入口：`1. 动态调优` 和 `2. 恢复调优前参数`。动态调优内置两种测速方式：
+主菜单 `5 → 15` 提供 `1. 动态调优`、`2. 恢复调优前参数`、`3. iperf3 本地测试`。第 3 项只测速，不修改参数。动态调优的自动持久化只使用本地 iperf3 接收端多轮结果；TCPquality 公共端点仅供线路参考。
 
 - 菜单顶部显示“线路速度记录”：最近一次 IPv4 / IPv6 实测（Mbps、RTT、重传、时间），并直接给出结论——`IPv4 更快` / `IPv6 更快`（相差 10% 以上）或“两者接近”，方便决定节点用哪个协议；只测过一个协议时会提示还缺哪个。
-- 进入动态调优后可选择协议：`只优化 IPv4`、`只优化 IPv6`、`IPv4 + IPv6 一起优化`（两者都可用时才会继续，按更大的 BDP 取参数；两个地址都测，任何一个变慢就整体回滚）。本机缺少对应公网地址时直接停止，不写入参数。
-- `iperf3`：脚本监听临时端口并打印**一条**本地客户端命令 `iperf3 -c <IP> -p <端口> [-4|-6] -R -t 20 -O 4 -i 1`，本地只需运行 1 次；脚本按服务端日志里预热 4 秒之后的每秒采样取中位数（同时打印均值/最低/最高），不再要求手动跑 3 次。选“IPv4 + IPv6”时依次打印 IPv4、IPv6 两条命令，各运行 1 次。RTT 优先取测试连接的 TCP 采样值，其次 ICMP，都没有时才要求手工输入。iperf3 服务端使用 `--forceflush` 输出，避免重定向到文件时缓冲导致读不到结果。
+- 动态调优内可选 IPv4、IPv6、共用配置或分别试调后择优。TCP sysctl 参数两种协议共用，第四项最终只能保留一套配置；任一协议明显变慢则不保留候选。
+- 本地只需粘贴**一条 PowerShell 命令**。它从服务器临时令牌接口取得经过 SHA256 校验的客户端脚本，自动运行多轮 iperf3 `-R`，将本地 JSON 的实际接收速率回传。服务器只在本轮参数准备好后启动一次性 iperf3 服务端；不把同一连接的每秒采样误当多轮。
 - `TCPquality`：运行 `ibsgss/TcpQuality` 国内三网单线程测速，取下载最快三个结果的中位数，RTT 取国内公共 DNS 的 ping 中位数；解析失败时打印原始输出并要求手工输入带宽和 RTT。
 
-参数按实测值计算，不再固定：`BDP = 实测带宽 × RTT`，缓冲区上限 `2×BDP+2MiB`，同时受 `内存/32` 和 256MiB 上限约束，下限 4MiB；缓冲区默认值按角色（代理 1MiB、其他 2MiB）；`tcp_mem` 按物理内存的 1/16、1/8、1/4 计算。调优文件为 `/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf`，并同步写入 `/etc/sysctl.conf` 末尾的 daimon 标记块：procps 的 `sysctl --system` 最后才处理 `/etc/sysctl.conf`，只写 `/etc/sysctl.d` 会被旧配置覆盖，这正是“提示成功但重载/重启后失效”的原因。应用后逐项核对运行态，被其他文件覆盖时列出文件名并重新写入运行态。
+本次调优只比较**发送缓冲上限**：依据本地实收吞吐和测试连接的最小 RTT 计算 BDP，探索 `2×BDP+2MiB`、必要时 `4×BDP+2MiB`，受内存/32 和 256MiB 限制，不主动降低现有上限。只修改 `net.core.wmem_max` 与 `net.ipv4.tcp_wmem` 的最大值；BBR+FQ、`tcp_mem`、默认缓冲、backlog、Swap 等保持原状。基线两轮差异超过 20% 即判为线路不稳定；候选须通过探索和独立确认，并且接收端吞吐提升超过基线波动、其他所测协议未明显倒退，才写入 `/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf` 和 `/etc/sysctl.conf` daimon 标记块。写入后用 `sysctl --system` 验证持久性。
 
-应用成功后自动再测一轮对比（本地再运行同一条命令 1 次）：只要复测低于优化前（留 5% 波动容差），就自动恢复原参数并保留 BBR + FQ，绝不保留更慢的结果；只有复测不低于优化前才保留动态参数。菜单第 2 项也可手动恢复，同样保留 BBR + FQ。测速端口会自动放行并**永久保留**：ufw 直接 `ufw allow <port>/tcp`，firewalld 用 `--permanent`，纯 iptables 环境写入规则后尝试 `netfilter-persistent`/`/etc/iptables` 持久化；原本已放行则不动。端口只在测速时监听，测速进程结束即关闭，规则留着方便以后重复测试。调优前保存一次运行态快照，菜单第 2 项据此恢复。当前内核不支持 BBR 时不写入任何配置，可选择主菜单 13 安装兼容内核。iperf3 与 TCPquality 结果都不保证所有线路都变快，实际效果见 [审计记录](AUDIT.md)。
+中途失败或不达标时恢复**本次开始时**的配置。iperf3 测速端口按要求永久放行、仅测速时监听；用于回传结果的临时控制端口带随机令牌，只在会话期间放行，结束即撤销。客户端默认最多接收 4 GiB 测试数据，超过即停止并恢复。当前内核不支持 BBR 时不写入调优配置。实际效果见 [审计记录](AUDIT.md)。
 
-| 参数 | 参数的含义 | 调优的参数值 | 调优之后的效果 |
-|---|---|---|---|
-| `net.core.default_qdisc` | 默认网络队列调度算法 | `fq` | 配合 BBR 做公平队列调度，降低排队延迟 |
-| `net.ipv4.tcp_congestion_control` | TCP 拥塞控制算法 | `bbr` | 使用 BBR 提升高延迟、高带宽链路吞吐 |
-| `net.core.rmem_max` | Socket 最大接收缓冲区 | `2×BDP+2MiB`，4MiB–256MiB 且不超过内存/32 | 按本机带宽时延积给窗口留余量 |
-| `net.core.wmem_max` | Socket 最大发送缓冲区 | 同上 | 上传方向同样不受缓冲区限制 |
-| `net.core.rmem_default` / `wmem_default` | Socket 默认缓冲区 | 代理 `1048576`，其他 `2097152` | 默认值决定爬坡速度和每连接内存占用 |
-| `net.core.netdev_max_backlog` | 网卡收包队列长度 | `16384` | 缓解高并发或突发流量下的丢包 |
-| `net.ipv4.tcp_rmem` | TCP 接收缓冲区最小值、默认值、最大值 | `4096 <默认值> <上限>` | 让 TCP 接收窗口可随链路质量扩大 |
-| `net.ipv4.tcp_wmem` | TCP 发送缓冲区最小值、默认值、最大值 | `4096 16384 <上限>` | 让 TCP 发送窗口可随链路质量扩大 |
-| `net.ipv4.tcp_mem` | TCP 全局内存上限（页） | 内存的 1/16、1/8、1/4 | 避免小内存机器 OOM，同时给出硬顶 |
-| `net.ipv4.tcp_limit_output_bytes` | TCP 单连接排队输出上限 | 同缓冲区上限 | 不因旧值 4MiB 截断高延迟链路吞吐 |
-| `net.ipv4.tcp_adv_win_scale` | 接收窗口预留比例 | `1` | 为协议和应用预留 socket 空间 |
-| `net.ipv4.tcp_moderate_rcvbuf` | 自动调整接收缓冲区 | `1` | 放大 `rmem_max` 的前提 |
-| `fs.file-max` | 系统最大文件句柄数 | `2097152` | 提升大量连接和文件打开场景的容量 |
-| `net.ipv4.tcp_tw_reuse` | TIME_WAIT 连接复用 | `1` | 减少短连接过多时的端口占用 |
-| `net.ipv4.tcp_fastopen` | TCP Fast Open | `3` | 客户端和服务端均启用 TFO，减少握手延迟 |
-| `net.ipv4.tcp_window_scaling` | TCP 窗口缩放 | `1` | 支持更大的 TCP 窗口，提高长肥链路吞吐 |
-| `net.ipv4.tcp_max_syn_backlog` | SYN 半连接队列长度 | `8192` | 提升高并发建连承载能力 |
-| `net.core.somaxconn` | Socket listen 队列上限 | `8192` | 提升服务端连接排队能力 |
-| `net.ipv4.ip_local_port_range` | 本地临时端口范围 | `1024 65535` | 扩大主动连接可用端口范围 |
-| `vm.swappiness` | Swap 使用倾向 | `10` | 降低系统主动使用 Swap 的概率 |
-| `net.ipv4.tcp_slow_start_after_idle` | 空闲后重新慢启动 | `0` | 避免连接空闲后吞吐重新爬升过慢 |
-| `net.ipv4.tcp_fin_timeout` | FIN_WAIT_2 超时 | `15` | 加快短连接资源回收 |
-| `net.ipv4.tcp_mtu_probing` | TCP MTU 探测 | `1` | 遇到 PMTU 黑洞时自动探测，减少传输异常 |
+| 参数 | 多轮调优方式 |
+|---|---|
+| `net.core.wmem_max` | 候选发送缓冲上限，不低于本次开始时的值 |
+| `net.ipv4.tcp_wmem` | 只调整第三个最大值，保留原最小值和默认值；该 TCP 参数同时影响 IPv4 和 IPv6 |
+| BBR + FQ | 必须在调优前已生效，试验期间不切换 |
+| 其他 sysctl | 不参加本轮候选比较，避免混淆单线程下载结果 |
 
 ### 第三方工具
 

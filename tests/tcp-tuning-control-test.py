@@ -70,6 +70,12 @@ class ControlServerTest(unittest.TestCase):
                     urlopen(Request(f"{url}/result?token=secret",
                                     data=json.dumps(result).encode(), method="POST"))
                 self.assertEqual(stale.exception.code, 400)
+                abort = Request(f"{url}/abort?token=secret",
+                                data=b'{"reason":"traffic limit"}', method="POST")
+                with urlopen(abort) as reply:
+                    self.assertTrue(json.load(reply)["accepted"])
+                self.assertEqual(json.loads((state / "abort.json").read_text())["reason"],
+                                 "traffic limit")
             finally:
                 server.terminate()
                 server.wait(timeout=5)

@@ -9938,9 +9938,41 @@ daimon_tcp_tune_auto_apply() {
 	daimon_tcp_apply_profile "$bw" "$rtt" "$method" "$retr"
 }
 
+daimon_tcp_lab_load() {
+	local base="https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master"
+	local library="$DAIMON_TCP_STATE_DIR/tcp-tuning-lab.sh"
+	command -v python3 >/dev/null 2>&1 || install python3 || return 1
+	mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
+	chmod 700 "$DAIMON_TCP_STATE_DIR" || return 1
+	daimon_download_to "$base/tcp-tuning-lab.sh?cb=$(date +%s)" "$library" 60 || return 1
+	if ! grep -q '^# DAIMON_TCP_LAB_VERSION=1$' "$library"; then
+		echo "TCP 调优组件版本不匹配，未修改配置。"
+		return 1
+	fi
+	# shellcheck source=/dev/null
+	source "$library" || return 1
+	daimon_tcp_lab_download_helpers
+}
+
+daimon_tcp_lab_menu_family() {
+	local choice="$1"
+	echo "1. IPv4"
+	echo "2. IPv6"
+	echo "3. IPv4 + IPv6"
+	[ "$choice" = tune ] && echo "4. 分别试调 IPv4 / IPv6 候选，择优保留一套全局参数"
+	read -e -p "请选择协议: " DAIMON_TCP_LAB_CHOICE || return 1
+	case "$DAIMON_TCP_LAB_CHOICE" in
+		1) DAIMON_TCP_LAB_FAMILY=4 ;;
+		2) DAIMON_TCP_LAB_FAMILY=6 ;;
+		3) DAIMON_TCP_LAB_FAMILY=both ;;
+		4) [ "$choice" = tune ] || return 1; DAIMON_TCP_LAB_FAMILY=both ;;
+		*) echo "无效选择"; return 1 ;;
+	esac
+}
+
 daimon_tcp_tune_menu() {
 	root_use
-	local choice method fam_choice
+	local choice method
 	while true; do
 		clear
 		echo "系统网络自适应优化"
@@ -9966,6 +9998,7 @@ daimon_tcp_tune_menu() {
 		echo "------------------------------------------------"
 		echo "1. 动态调优（先测速，再按本机实测计算并应用参数）"
 		echo "2. 恢复调优前参数（保留 BBR + FQ）"
+		echo "3. iperf3 本地测试（只测速，不修改参数）"
 		echo "0. 返回上一级菜单"
 		echo "------------------------------------------------"
 		read -e -p "请输入你的选择: " choice || return 1
@@ -9977,23 +10010,27 @@ daimon_tcp_tune_menu() {
 				read -e -p "请选择测速方式: " method || return 1
 				case "$method" in
 					1)
-						echo ""
-						echo "1. 只优化 IPv4（按 IPv4 实测计算参数）"
-						echo "2. 只优化 IPv6（按 IPv6 实测计算参数）"
-						echo "3. IPv4 + IPv6 一起优化（两个都测，按更大的 BDP 取参数）"
-						read -e -p "请选择要优化的协议: " fam_choice || return 1
-						case "$fam_choice" in
-							1) daimon_tcp_tune_run iperf3 4 ;;
-							2) daimon_tcp_tune_run iperf3 6 ;;
-							3) daimon_tcp_tune_run iperf3 both ;;
-							*) echo "无效选择" ;;
-						esac
+						daimon_tcp_lab_menu_family tune || break
+						daimon_tcp_lab_load || break
+						if [ "$DAIMON_TCP_LAB_CHOICE" = 4 ]; then
+							daimon_tcp_lab_run separate "$DAIMON_TCP_LAB_FAMILY"
+						else
+							daimon_tcp_lab_run tune "$DAIMON_TCP_LAB_FAMILY"
+						fi
 						;;
-					2) daimon_tcp_tune_run tcpquality ;;
+					2)
+						echo "TCPquality 公共端点结果仅供线路参考，不据此写入全局 TCP 参数。"
+						daimon_tcp_measure_tcpquality
+						;;
 					*) echo "无效选择" ;;
 				esac
 				;;
 			2) daimon_tcp_restore ;;
+			3)
+				daimon_tcp_lab_menu_family test || break
+				daimon_tcp_lab_load || break
+				daimon_tcp_lab_run test "$DAIMON_TCP_LAB_FAMILY"
+				;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
@@ -10001,7 +10038,8 @@ daimon_tcp_tune_menu() {
 	done
 }
 one_click_network_auto_optimize() {
-	daimon_tcp_tune_auto_apply tcpquality
+	one_click_enable_bbr_fq || return 1
+	echo "已保留 BBR + FQ；缓冲参数需要进入系统工具的网络优化菜单，按本地 iperf3 多轮实测后再应用。"
 }
 
 one_click_auto_dns_optimize() {
