@@ -38,6 +38,20 @@ class ScoreTest(unittest.TestCase):
         }
         self.assertEqual(score.choose(records, ["4", "6"], ["B"], [8388608])["status"], "no_gain")
 
+    def test_lossy_baseline_allows_down_candidate(self):
+        records = {
+            "A": {"6": [run(10, retrans=14000), run(11, retrans=13000)]},
+            "B": {"6": [run(190, retrans=2400)]},
+        }
+        self.assertEqual(score.choose(records, ["6"], ["B"], [8388608])["status"], "candidate")
+
+    def test_candidate_with_worse_loss_than_clean_baseline_rejected(self):
+        records = {
+            "A": {"6": [run(100, retrans=100), run(101, retrans=120)]},
+            "B": {"6": [run(150, retrans=4000)]},
+        }
+        self.assertEqual(score.choose(records, ["6"], ["B"], [8388608])["status"], "no_gain")
+
     def test_confirmation_requires_two_consistent_runs(self):
         records = {"A": {"4": [run(100), run(102)]}, "B": {"4": [run(130), run(90)]}}
         self.assertEqual(score.confirm(records, ["4"], "B")["status"], "restore")

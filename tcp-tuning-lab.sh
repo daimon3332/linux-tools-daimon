@@ -85,34 +85,85 @@ daimon_tcp_lab_restore_runtime() {
     return "$failed"
 }
 
-daimon_tcp_lab_apply_ceiling() {
-    local ceiling="$1" min def old_max target_core target_tcp
-    read -r min def old_max <<< "$DAIMON_TCP_LAB_TCP_WMEM"
-    target_core="$DAIMON_TCP_LAB_WMEM"
-    target_tcp="$old_max"
-    [ "$ceiling" -gt "$target_core" ] && target_core="$ceiling"
-    [ "$ceiling" -gt "$target_tcp" ] && target_tcp="$ceiling"
-    daimon_tcp_write_key net.core.wmem_max "$target_core" || return 1
-    daimon_tcp_write_key net.ipv4.tcp_wmem "$min $def $target_tcp" || return 1
-    [ "$(daimon_tcp_read_key net.core.wmem_max)" = "$target_core" ] &&
-        [ "$(daimon_tcp_read_key net.ipv4.tcp_wmem)" = "$min $def $target_tcp" ]
+daimon_tcp_lab_wmem_triple() {
+    local ceiling="$1" min def
+    read -r min def _ <<< "$DAIMON_TCP_LAB_TCP_WMEM"
+    [ "$min" -ge 4096 ] || min=4096
+    [ "$def" -lt "$min" ] && def="$min"
+    [ "$def" -gt "$ceiling" ] && def="$ceiling"
+    printf '%s %s %s\n' "$min" "$def" "$ceiling"
 }
 
-daimon_tcp_lab_candidate() {
-    local rate="$1" rtt="$2" factor="$3" ram cap candidate old_max
+daimon_tcp_lab_apply_ceiling() {
+    local ceiling="$1" triple
+    triple=$(daimon_tcp_lab_wmem_triple "$ceiling") || return 1
+    daimon_tcp_write_key net.core.wmem_max "$ceiling" || return 1
+    daimon_tcp_write_key net.ipv4.tcp_wmem "$triple" || return 1
+    [ "$(daimon_tcp_read_key net.core.wmem_max)" = "$ceiling" ] &&
+        [ "$(daimon_tcp_read_key net.ipv4.tcp_wmem)" = "$triple" ]
+}
+
+daimon_tcp_lab_cap() {
+    local ram cap
     ram=$(daimon_tcp_ram_mb)
     cap=$((ram * 32768))
     [ "$cap" -gt 268435456 ] && cap=268435456
     [ "$cap" -lt 4194304 ] && cap=4194304
-    candidate=$(awk -v rate="$rate" -v rtt="$rtt" -v factor="$factor" \
+    printf '%s\n' "$cap"
+}
+
+daimon_tcp_lab_target() {
+    local rate="$1" rtt="$2" factor="$3" cap value
+    cap=$(daimon_tcp_lab_cap)
+    value=$(awk -v rate="$rate" -v rtt="$rtt" -v factor="$factor" \
         'BEGIN{printf "%.0f", factor*rate*1000000/8*rtt/1000+2097152}')
-    [ "$candidate" -gt "$cap" ] && candidate="$cap"
-    [ "$candidate" -lt 4194304 ] && candidate=4194304
-    old_max=${DAIMON_TCP_LAB_TCP_WMEM##* }
-    if [ "$candidate" -le "$old_max" ] && [ "$candidate" -le "$DAIMON_TCP_LAB_WMEM" ]; then
-        return 1
+    [ "$value" -gt "$cap" ] && value="$cap"
+    [ "$value" -lt 4194304 ] && value=4194304
+    printf '%s\n' "$value"
+}
+
+daimon_tcp_lab_current_ceiling() {
+    local old_max=${DAIMON_TCP_LAB_TCP_WMEM##* }
+    [ "$old_max" -lt "$DAIMON_TCP_LAB_WMEM" ] && old_max="$DAIMON_TCP_LAB_WMEM"
+    printf '%s\n' "$old_max"
+}
+
+# 与当前上限的相对差异达到 25% 才值得再花一轮测速。
+daimon_tcp_lab_distinct() {
+    awk -v a="$1" -v b="$2" 'BEGIN{exit !(b > 0 && ((a>b?a-b:b-a)/b) >= 0.25)}'
+}
+
+# 以实测 BDP 生成候选阶梯：现有上限偏低时给出上调候选，明显偏高时给出下调候选。
+# 候选是否保留完全由多轮实测决定，绝不按理论值直接写入。
+daimon_tcp_lab_candidate_list() {
+    local rate="$1" rtt="$2" current cap target wider middle value seen out="" skip
+    current=$(daimon_tcp_lab_current_ceiling)
+    cap=$(daimon_tcp_lab_cap)
+    target=$(daimon_tcp_lab_target "$rate" "$rtt" 2) || return 1
+    daimon_tcp_lab_distinct "$target" "$current" || return 1
+    wider=$(daimon_tcp_lab_target "$rate" "$rtt" 4) || return 1
+    if [ "$target" -gt "$current" ]; then
+        set -- "$target" "$wider"
+    else
+        middle=$((current / 2))
+        [ "$middle" -lt "$target" ] && middle="$target"
+        set -- "$target" "$middle"
     fi
-    printf '%s\n' "$candidate"
+    for value in "$@"; do
+        [ "$value" -gt "$cap" ] && value="$cap"
+        [ "$value" -lt 4194304 ] && value=4194304
+        daimon_tcp_lab_distinct "$value" "$current" || continue
+        skip=0
+        for seen in $out; do
+            daimon_tcp_lab_distinct "$value" "$seen" || skip=1
+        done
+        if [ "$skip" -eq 1 ]; then
+            continue
+        fi
+        out="$out $value"
+    done
+    [ -n "$out" ] || return 1
+    printf '%s\n' "${out# }"
 }
 
 daimon_tcp_lab_stage_json() {
@@ -196,12 +247,10 @@ daimon_tcp_lab_score() {
 }
 
 daimon_tcp_lab_persist() {
-    local ceiling="$1" min def old_max target_core target_tcp file="$DAIMON_TCP_LAB_DIR/winner.conf"
-    read -r min def old_max <<< "$DAIMON_TCP_LAB_TCP_WMEM"
-    target_core="$DAIMON_TCP_LAB_WMEM"
-    target_tcp="$old_max"
-    [ "$ceiling" -gt "$target_core" ] && target_core="$ceiling"
-    [ "$ceiling" -gt "$target_tcp" ] && target_tcp="$ceiling"
+    local ceiling="$1" min def target_core target_tcp triple file="$DAIMON_TCP_LAB_DIR/winner.conf"
+    triple=$(daimon_tcp_lab_wmem_triple "$ceiling") || return 1
+    read -r min def target_tcp <<< "$triple"
+    target_core="$ceiling"
     cat > "$file" <<EOF
 net.core.default_qdisc = fq
 net.ipv4.tcp_congestion_control = bbr
@@ -353,9 +402,9 @@ daimon_tcp_lab_record_baseline() {
 }
 
 daimon_tcp_lab_execute() {
-    local mode="$1" f rate rtt retrans candidate factor ceiling profile score_status scorer winner
+    local mode="$1" f rate rtt retrans candidate ceiling profile score_status scorer winner
     local profile_list="" ceiling_list="" choice
-    local best_bdp="" best_rate="" best_rtt=""
+    local best_bdp="" best_rate="" best_rtt="" candidate_list="" candidate_seen="" current_ceiling
     : > "$DAIMON_TCP_LAB_DIR/records.tsv"
     daimon_tcp_lab_profile_round A 0 || return 1
     if [ "$mode" = test ]; then
@@ -363,6 +412,7 @@ daimon_tcp_lab_execute() {
         echo "iperf3 本地测试完成；未修改任何 sysctl 参数。"
         return 0
     fi
+    current_ceiling=$(daimon_tcp_lab_current_ceiling)
     for f in $DAIMON_TCP_LAB_FAMILIES; do
         read -r rate rtt < <(awk -F '\t' -v f="$f" '$1=="A" && $2==f {print $3, $6}' "$DAIMON_TCP_LAB_DIR/records.tsv")
         if [ "$rtt" = 0 ] || [ -z "$rtt" ]; then
@@ -370,37 +420,37 @@ daimon_tcp_lab_execute() {
             return 1
         fi
         if [ "$mode" = separate ]; then
-            for factor in 2; do
-                candidate=$(daimon_tcp_lab_candidate "$rate" "$rtt" "$factor") || continue
-                case " $ceiling_list " in *" $candidate "*) continue ;; esac
-                profile="B$(( ${#candidates[@]} + 1 ))"
-                candidates+=("$candidate"); profiles+=("$profile")
-                ceiling_list="$ceiling_list $candidate"
+            # 分别试调时每个协议只取首选候选，控制测速轮次与流量。
+            for candidate in $(daimon_tcp_lab_candidate_list "$rate" "$rtt" || true); do
+                candidate_seen="$candidate_seen $candidate"
+                break
             done
-        else
-            if [ -z "${best_bdp:-}" ] || awk -v a="$rate" -v r="$rtt" -v b="$best_bdp" 'BEGIN{exit !(a*r > b)}'; then
-                best_bdp=$(awk -v a="$rate" -v r="$rtt" 'BEGIN{print a*r}')
-                best_rate="$rate"; best_rtt="$rtt"
-            fi
+        elif [ -z "${best_bdp:-}" ] || awk -v a="$rate" -v r="$rtt" -v b="$best_bdp" 'BEGIN{exit !(a*r > b)}'; then
+            best_bdp=$(awk -v a="$rate" -v r="$rtt" 'BEGIN{print a*r}')
+            best_rate="$rate"; best_rtt="$rtt"
         fi
     done
     if [ "$mode" != separate ]; then
-        for factor in 2 4; do
-            candidate=$(daimon_tcp_lab_candidate "$best_rate" "$best_rtt" "$factor") || continue
-            case " $ceiling_list " in *" $candidate "*) continue ;; esac
-            profile="B$(( ${#candidates[@]} + 1 ))"
-            candidates+=("$candidate"); profiles+=("$profile")
-            ceiling_list="$ceiling_list $candidate"
-        done
+        candidate_list=$(daimon_tcp_lab_candidate_list "$best_rate" "$best_rtt") || true
     fi
+    for candidate in $candidate_seen $candidate_list; do
+        case " $current_ceiling " in *" $candidate "*) continue ;; esac
+        case " ${candidates[*]} " in *" $candidate "*) continue ;; esac
+        candidates+=("$candidate")
+        profiles+=("B${#candidates[@]}")
+    done
     if [ "${#candidates[@]}" -eq 0 ]; then
-        echo "当前发送缓冲上限已覆盖 BDP 候选；不降低现有值，保留原配置。"
+        echo "当前发送缓冲上限 ${current_ceiling} 字节已与实测 BDP 匹配，没有值得测速的候选，保留原配置。"
         daimon_tcp_lab_record_baseline
         return 0
     fi
     local i
     for ((i=0; i<${#candidates[@]}; i++)); do
-        echo "探索 ${profiles[i]}: 发送缓冲上限候选 ${candidates[i]} 字节"
+        if [ "${candidates[i]}" -lt "$current_ceiling" ]; then
+            echo "探索 ${profiles[i]}: 下调发送缓冲上限至 ${candidates[i]} 字节（当前 ${current_ceiling}）"
+        else
+            echo "探索 ${profiles[i]}: 上调发送缓冲上限至 ${candidates[i]} 字节（当前 ${current_ceiling}）"
+        fi
         daimon_tcp_lab_profile_round "${profiles[i]}" "${candidates[i]}" || return 1
     done
     daimon_tcp_lab_profile_round A 0 || return 1

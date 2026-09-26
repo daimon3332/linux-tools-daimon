@@ -27,8 +27,13 @@ def load_records(path):
     return records
 
 
+def estimated_loss(run):
+    return run["retrans"] * 1460 / run["bytes"]
+
+
 def baseline(records, families):
     base = {}
+    loss = {}
     drift = 0.0
     for family in families:
         measurements = records["A"][family]
@@ -39,10 +44,11 @@ def baseline(records, families):
         family_drift = abs(rates[0] - rates[1]) / center
         drift = max(drift, family_drift)
         base[family] = center
-    return base, drift
+        loss[family] = statistics.median(estimated_loss(run) for run in measurements)
+    return base, loss, drift
 
 
-def score_candidate(records, profile, families, base, min_gain, confirmed):
+def score_candidate(records, profile, families, base, base_loss, min_gain, confirmed):
     ratios = []
     improved = False
     for family in families:
@@ -56,24 +62,24 @@ def score_candidate(records, profile, families, base, min_gain, confirmed):
         if ratio >= 1 + min_gain:
             improved = True
         ratios.append(ratio)
-        for run in runs:
-            # A substantial retransmission increase defeats a marginal speed gain.
-            estimated_loss = run["retrans"] * 1460 / run["bytes"]
-            if estimated_loss > 0.03:
-                return None
+        # 丢包阈值相对基线：基线本身就高丢包时，明显更低的丢包不应被判失败；
+        # 但候选比基线再多 3 个百分点丢失仍然淘汰。
+        loss_limit = max(0.03, base_loss[family] + 0.03)
+        if any(estimated_loss(run) > loss_limit for run in runs):
+            return None
     if not improved:
         return None
     return math.prod(ratios) ** (1 / len(ratios))
 
 
 def choose(records, families, profiles, ceilings):
-    base, drift = baseline(records, families)
+    base, base_loss, drift = baseline(records, families)
     if drift > 0.20:
         return {"status": "unstable", "drift": round(drift, 4), "baseline": base}
     threshold = max(0.05, drift + 0.03)
     ranked = []
     for profile, ceiling in zip(profiles, ceilings):
-        score = score_candidate(records, profile, families, base, threshold, False)
+        score = score_candidate(records, profile, families, base, base_loss, threshold, False)
         if score is not None:
             ranked.append((score, -ceiling, profile, ceiling))
     if not ranked:
@@ -87,11 +93,11 @@ def choose(records, families, profiles, ceilings):
 
 
 def confirm(records, families, profile):
-    base, drift = baseline(records, families)
+    base, base_loss, drift = baseline(records, families)
     if drift > 0.20:
         return {"status": "unstable", "drift": round(drift, 4)}
     threshold = max(0.05, drift + 0.03)
-    score = score_candidate(records, profile, families, base, threshold, True)
+    score = score_candidate(records, profile, families, base, base_loss, threshold, True)
     return {"status": "keep" if score is not None else "restore",
             "threshold": round(threshold, 4), "baseline": base,
             "score": round(score, 4) if score is not None else None}

@@ -17,14 +17,47 @@ DAIMON_TCP_LAB_WMEM=4194304
 mkdir "$DAIMON_TCP_LAB_DIR"
 daimon_tcp_ram_mb() { echo 512; }
 
-candidate=$(daimon_tcp_lab_candidate 200 150 2)
-[ "$candidate" = 9597152 ]
-candidate=$(daimon_tcp_lab_candidate 200 150 4)
-[ "$candidate" = 16777216 ]
-if daimon_tcp_lab_candidate 1 50 2 >/dev/null; then
-    echo 'floor candidate must not rewrite current 4 MiB ceiling' >&2
+list=$(daimon_tcp_lab_candidate_list 200 150)
+[ "$list" = '9597152 16777216' ]
+if daimon_tcp_lab_candidate_list 1 50 >/dev/null; then
+    echo 'floor target must not rewrite current 4 MiB ceiling' >&2
     exit 1
 fi
+
+DAIMON_TCP_LAB_TCP_WMEM='4096 16384 33554432'
+DAIMON_TCP_LAB_WMEM=33554432
+list=$(daimon_tcp_lab_candidate_list 190 164)
+[ "$list" = '9887152 16777216' ]
+
+DAIMON_TCP_LAB_TCP_WMEM='4096 16384 8388608'
+DAIMON_TCP_LAB_WMEM=8388608
+if daimon_tcp_lab_candidate_list 190 164 >/dev/null; then
+    echo 'ceiling within 25% of the BDP target must stay untouched' >&2
+    exit 1
+fi
+
+DAIMON_TCP_LAB_TCP_WMEM='4096 16384 20971520'
+DAIMON_TCP_LAB_WMEM=20971520
+list=$(daimon_tcp_lab_candidate_list 190 164)
+[ "$list" = '9887152' ]
+
+daimon_tcp_ram_mb() { echo 4096; }
+DAIMON_TCP_LAB_TCP_WMEM='4096 16384 134217728'
+DAIMON_TCP_LAB_WMEM=134217728
+list=$(daimon_tcp_lab_candidate_list 100 100)
+[ "$list" = '4597152 67108864' ]
+daimon_tcp_ram_mb() { echo 512; }
+
+daimon_tcp_write_key() { printf '%s' "$2" > "$WORK/key-$1"; }
+daimon_tcp_read_key() { cat "$WORK/key-$1" 2>/dev/null; }
+printf '33554432' > "$WORK/key-net.core.wmem_max"
+printf '4096 16384 33554432' > "$WORK/key-net.ipv4.tcp_wmem"
+DAIMON_TCP_LAB_TCP_WMEM='4096 2097152 33554432'
+daimon_tcp_lab_apply_ceiling 4194304
+[ "$(cat "$WORK/key-net.core.wmem_max")" = 4194304 ]
+[ "$(cat "$WORK/key-net.ipv4.tcp_wmem")" = '4096 2097152 4194304' ]
+daimon_tcp_lab_apply_ceiling 1048576
+[ "$(cat "$WORK/key-net.ipv4.tcp_wmem")" = '4096 1048576 1048576' ]
 
 daimon_tcp_lab_stage_json ready 3 6 '2400:c620:22:295::12'
 json_path="$DAIMON_TCP_LAB_DIR/stage.json"
@@ -41,4 +74,4 @@ assert data['id'] == 3
 assert data['duration'] == 12
 PY
 
-echo 'PASS TCP candidate bounds, duplicate skip and stage contract'
+echo 'PASS TCP candidate ladder, ceiling apply and stage contract'
