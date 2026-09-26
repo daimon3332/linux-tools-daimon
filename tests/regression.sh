@@ -308,10 +308,17 @@ load_nginx_functions() {
 test_nginx_menu_no_install() {
     local mode="${1:-return}" fixture="$WORK/nginx-wrapper.sh" trace="$WORK/nginx-install.trace" status=0
     load_function crontab_sync_cron_entry || return 1
+    local helper
+    for helper in crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
+        crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools; do
+        load_function "$helper" || return 1
+    done
     declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
         rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
         rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
         rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore crontab_sync_cron_entry > "$fixture"
+    declare -f crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
+        crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools >> "$fixture"
     awk '/^ssl_nginx_manager\(\)/ {active=1} active {print}
         active && /^DAIMON_CERT_NGINX_SCRIPT$/ {closed=1}
         active && closed && /^}/ {exit}' "$SOURCE" >> "$fixture"
