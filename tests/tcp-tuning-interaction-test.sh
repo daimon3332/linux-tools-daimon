@@ -58,11 +58,26 @@ prerequisite_failure() {
     daimon_download_to() { echo unexpected > "$WORK/downloaded"; }
     ! daimon_tcp_lab_load && [ "$(cat "$WORK/dependency")" = iperf3 ] && [ ! -e "$WORK/downloaded" ]
 }
+empty_nft_ruleset() {
+    command() {
+        if [ "$1" = -v ]; then
+            case "$2" in nft) return 0 ;; ufw|firewall-cmd|iptables) return 1 ;; esac
+        fi
+        builtin command "$@"
+    }
+    command -v python >/dev/null 2>&1 && python3() { command python "$@"; }
+    nft() { printf '{"nftables":[{"chain":{"family":"ip","table":"filter","name":"INPUT","hook":"input","policy":"%s"}}]}\n' "$POLICY"; }
+    POLICY=accept
+    daimon_tcp_fw_open 50280 6 || return 1
+    POLICY=drop
+    ! daimon_tcp_fw_open 50280 6
+}
 check 'existing IPv4 rule still adds missing IPv6 rule' ipv6_rule_missing
 check 'UFW allow failure propagates' ufw_failure
 check 'different sessions do not recommend a protocol' history_not_comparable
 check 'paired history can recommend the faster family' history_comparable
 check 'protocol zero returns without an operation' family_back
 check 'missing iperf installation failure stops component load' prerequisite_failure
+check 'empty accept-policy nft tables do not block testing' empty_nft_ruleset
 echo "$passed passed, $failed failed"
 [ "$failed" = 0 ]

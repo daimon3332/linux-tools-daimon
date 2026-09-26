@@ -9520,9 +9520,19 @@ daimon_tcp_fw_open() {
 		DAIMON_TCP_FW_METHOD="iptables-已放行并持久化"
 		return 0
 	fi
-	if command -v nft >/dev/null 2>&1 && [ -n "$(nft list ruleset 2>/dev/null)" ]; then
-		echo "检测到独立 nftables 规则，不能安全推断放行位置，未启动测速。" >&2
-		return 1
+	if command -v nft >/dev/null 2>&1; then
+		if ! nft -j list ruleset 2>/dev/null | python3 -c '
+import json, sys
+items = json.load(sys.stdin)["nftables"]
+chains = {(c["family"], c["table"], c["name"]): c for item in items
+          if (c := item.get("chain")) and c.get("hook") in ("input", "output")}
+blocked = any(c.get("policy", "accept") != "accept" for c in chains.values())
+blocked |= any((r["family"], r["table"], r["chain"]) in chains for item in items if (r := item.get("rule")))
+sys.exit(1 if blocked else 0)
+'; then
+			echo "检测到独立 nftables 过滤规则，不能安全推断放行位置，未启动测速。" >&2
+			return 1
+		fi
 	fi
 	echo "未检测到本机防火墙规则；云安全组需由云平台放行 TCP $port。"
 	return 0
