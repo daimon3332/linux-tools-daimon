@@ -344,15 +344,15 @@ daimon_tcp_lab_run() {
 }
 
 daimon_tcp_lab_execute() {
-    local mode="$1" f rate rtt source candidate factor ceiling profile score_status scorer winner
+    local mode="$1" f rate rtt retrans candidate factor ceiling profile score_status scorer winner
     local profile_list="" ceiling_list="" choice
     local best_bdp="" best_rate="" best_rtt=""
     : > "$DAIMON_TCP_LAB_DIR/records.tsv"
     daimon_tcp_lab_profile_round A 0 || return 1
     if [ "$mode" = test ]; then
         for f in $DAIMON_TCP_LAB_FAMILIES; do
-            read -r rate rtt < <(awk -F '\t' -v f="$f" '$1=="A" && $2==f {print $3, $6}' "$DAIMON_TCP_LAB_DIR/records.tsv")
-            daimon_tcp_record_family "$f" "$rate" "$rtt" 0
+            read -r rate retrans rtt < <(awk -F '\t' -v f="$f" '$1=="A" && $2==f {print $3, $4, $6}' "$DAIMON_TCP_LAB_DIR/records.tsv")
+            daimon_tcp_record_family "$f" "$rate" "$rtt" "$retrans"
         done
         echo "iperf3 本地测试完成；未修改任何 sysctl 参数。"
         return 0
@@ -423,7 +423,8 @@ daimon_tcp_lab_execute() {
     for f in $DAIMON_TCP_LAB_FAMILIES; do
         rate=$(awk -F '\t' -v p="$winner" -v f="$f" '$1==p && $2==f {v=$3} END {print v}' "$DAIMON_TCP_LAB_DIR/records.tsv")
         rtt=$(awk -F '\t' -v p="$winner" -v f="$f" '$1==p && $2==f {v=$6} END {print v}' "$DAIMON_TCP_LAB_DIR/records.tsv")
-        daimon_tcp_record_family "$f" "$rate" "$rtt" 0
+        retrans=$(awk -F '\t' -v p="$winner" -v f="$f" '$1==p && $2==f {v=$4} END {print v}' "$DAIMON_TCP_LAB_DIR/records.tsv")
+        daimon_tcp_record_family "$f" "$rate" "$rtt" "$retrans"
     done
     echo "多轮确认通过：保留 $winner（发送缓冲上限 $ceiling 字节）。"
 }
