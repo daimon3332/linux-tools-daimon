@@ -144,6 +144,16 @@ actual_score_keeps_or_restores() {
     daimon_tcp_lab_execute tune || return 1
     [ "$DAIMON_TCP_LAB_COMMITTED" = 0 ] && [ "$CEILING" = 33554432 ]
 }
+report_retained_ceiling() {
+    fixture report
+    DAIMON_TCP_PROFILE="$DAIMON_TCP_STATE_DIR/profile.json"
+    DAIMON_TCP_LAB_WINNING_CEILING=0
+    printf 'A\t4\t100\t0\t100000000\t100\n' > "$DAIMON_TCP_LAB_DIR/records.tsv"
+    daimon_tcp_lab_save_report 0 || return 1
+    local report="$DAIMON_TCP_PROFILE"
+    command -v cygpath >/dev/null 2>&1 && report=$(cygpath -w "$report")
+    command "$PYTHON_BIN" -c 'import json,sys; assert json.load(open(sys.argv[1]))["ceiling_bytes"] == 33554432' "$report"
+}
 check 'rejected confirmation restores original runtime' rejected_winner_restores
 check 'accepted winner snapshots the original runtime' original_snapshot
 check 'near 2x-BDP still explores distinct 4x-BDP' candidate_gate
@@ -151,5 +161,6 @@ check 'TERM restores the original runtime and returns failure' signal_restores
 check 'concurrent sessions cannot touch the same profile' concurrent_run_rejected
 check 'traffic budget reserves independent confirmation' budget_reserves_confirmation
 check 'real A/B/A scorer accepts gains and rejects slower confirmations' actual_score_keeps_or_restores
+check 'restored report includes the retained original ceiling' report_retained_ceiling
 echo "$passed passed, $failed failed, $skipped skipped"
 [ "$failed" -eq 0 ]

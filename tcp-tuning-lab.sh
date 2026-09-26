@@ -336,12 +336,16 @@ daimon_tcp_lab_save_snapshot() {
 }
 
 daimon_tcp_lab_save_report() {
-    local status="$1" used
+    local status="$1" used retained_ceiling
     [ -s "${DAIMON_TCP_LAB_DIR:-}/records.tsv" ] || return 0
     used=$(daimon_tcp_lab_budget_used) || used=0
+    retained_ceiling="${DAIMON_TCP_LAB_WINNING_CEILING:-0}"
+    if [ "${DAIMON_TCP_LAB_COMMITTED:-0}" != 1 ]; then
+        retained_ceiling=$(daimon_tcp_lab_current_ceiling) || return 1
+    fi
     python3 - "$DAIMON_TCP_LAB_DIR/records.tsv" "$DAIMON_TCP_PROFILE" "$status" \
         "${DAIMON_TCP_LAB_COMMITTED:-0}" "${DAIMON_TCP_LAB_WINNER:-A}" \
-        "${DAIMON_TCP_LAB_WINNING_CEILING:-0}" "$used" <<'PY'
+        "$retained_ceiling" "$used" <<'PY'
 import json, os, statistics, sys
 from collections import defaultdict
 from datetime import datetime, timezone
