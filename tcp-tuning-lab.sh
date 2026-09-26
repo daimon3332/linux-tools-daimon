@@ -343,6 +343,15 @@ daimon_tcp_lab_run() {
     return "$status"
 }
 
+daimon_tcp_lab_record_baseline() {
+    local f rate retrans rtt
+    for f in $DAIMON_TCP_LAB_FAMILIES; do
+        read -r rate retrans rtt < <(awk -F '\t' -v f="$f" '$1=="A" && $2==f {v3=$3; v4=$4; v6=$6} END {print v3, v4, v6}' "$DAIMON_TCP_LAB_DIR/records.tsv")
+        [ -n "$rate" ] || continue
+        daimon_tcp_record_family "$f" "$rate" "$rtt" "$retrans"
+    done
+}
+
 daimon_tcp_lab_execute() {
     local mode="$1" f rate rtt retrans candidate factor ceiling profile score_status scorer winner
     local profile_list="" ceiling_list="" choice
@@ -350,10 +359,7 @@ daimon_tcp_lab_execute() {
     : > "$DAIMON_TCP_LAB_DIR/records.tsv"
     daimon_tcp_lab_profile_round A 0 || return 1
     if [ "$mode" = test ]; then
-        for f in $DAIMON_TCP_LAB_FAMILIES; do
-            read -r rate retrans rtt < <(awk -F '\t' -v f="$f" '$1=="A" && $2==f {print $3, $4, $6}' "$DAIMON_TCP_LAB_DIR/records.tsv")
-            daimon_tcp_record_family "$f" "$rate" "$rtt" "$retrans"
-        done
+        daimon_tcp_lab_record_baseline
         echo "iperf3 本地测试完成；未修改任何 sysctl 参数。"
         return 0
     fi
@@ -389,6 +395,7 @@ daimon_tcp_lab_execute() {
     fi
     if [ "${#candidates[@]}" -eq 0 ]; then
         echo "当前发送缓冲上限已覆盖 BDP 候选；不降低现有值，保留原配置。"
+        daimon_tcp_lab_record_baseline
         return 0
     fi
     local i
@@ -403,6 +410,7 @@ daimon_tcp_lab_execute() {
     score_status=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["status"])' <<< "$scorer")
     if [ "$score_status" != candidate ]; then
         echo "探索结论: $score_status；线路波动或收益不足，保留原配置。"
+        daimon_tcp_lab_record_baseline
         return 0
     fi
     winner=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["profile"])' <<< "$scorer")
@@ -413,6 +421,7 @@ daimon_tcp_lab_execute() {
     score_status=$(python3 -c 'import json,sys;print(json.load(sys.stdin)["status"])' <<< "$scorer")
     if [ "$score_status" != keep ]; then
         echo "确认轮未重复获得收益，恢复原配置。"
+        daimon_tcp_lab_record_baseline
         return 0
     fi
     daimon_tcp_snapshot || return 1
