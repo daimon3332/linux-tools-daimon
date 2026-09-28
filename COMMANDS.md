@@ -350,50 +350,21 @@ sudo -n -lU 用户名
 ```
 解释：列出用户、用户组、sudo 状态。
 
-创建普通用户：
+创建普通/高级用户：
 
 ```bash
-useradd -m -s /bin/bash 用户名
-passwd 用户名
-mkdir -p /home/用户名/.ssh
-chmod 700 /home/用户名/.ssh
-echo "公钥" >> /home/用户名/.ssh/authorized_keys
-chmod 600 /home/用户名/.ssh/authorized_keys
-chown -R 用户名:用户名 /home/用户名/.ssh
+create_user_with_sshkey 用户名 false
+create_user_with_sshkey 用户名 true
 ```
-解释：创建普通用户并导入 SSH 公钥。
+解释：使用 `useradd -m -s /bin/bash` 创建账号；已存在时只允许普通用户。通过 `getent passwd` 查询并检查真实主目录及归属。公钥交给共享校验/原子导入函数，支持合法 ECDSA、Ed25519、RSA 等格式及 URL，不递归改写已有 `.ssh` 内容，不修改全局 SSH 策略。留空跳过；失败返回错误，不继续授予 sudo。
 
-创建高级用户：
+赋予/取消最高权限：
 
 ```bash
-useradd -m -s /bin/bash 用户名
-apt install -y sudo
-usermod -aG sudo 用户名
-cat > /etc/sudoers.d/用户名 <<EOF
-用户名 ALL=(ALL:ALL) NOPASSWD:ALL
-EOF
-chmod 440 /etc/sudoers.d/用户名
-visudo -cf /etc/sudoers.d/用户名
+daimon_user_sudo grant 用户名
+daimon_user_sudo revoke 用户名
 ```
-解释：创建用户并授予免密 sudo 权限。
-
-赋予最高权限：
-
-```bash
-cat > /etc/sudoers.d/用户名 <<EOF
-用户名 ALL=(ALL:ALL) NOPASSWD:ALL
-EOF
-chmod 440 /etc/sudoers.d/用户名
-```
-解释：写入 sudo 授权。
-
-取消最高权限：
-
-```bash
-rm -f /etc/sudoers.d/用户名
-sed -i "/^用户名\s*ALL=(ALL)/d" /etc/sudoers
-```
-解释：删除 sudo 授权。
+解释：按需检查 sudo，以互斥锁串行处理；拒绝符号链接及含其他用户/Include 规则的同名授权文件。暂存并用 `visudo -cf` 验证，原子提交配置，失败恢复原配置及 sudo 组成员状态。授权使用 `用户名 ALL=(ALL) NOPASSWD:ALL` 并加入 sudo 组；撤销删除该用户直接规则（包含 `ALL:ALL`）、同名授权文件和 sudo 组成员资格。若仍有别名、其他组或 Include 文件中的 sudo 权限，会明确报错提示手动核查，不声称完全撤权。
 
 删除账号：
 

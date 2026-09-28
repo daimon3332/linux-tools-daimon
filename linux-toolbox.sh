@@ -10532,58 +10532,106 @@ one_click_config_manager() {
 
 
 # ===== system tools restored helper functions =====
-create_user_with_sshkey() {
-	local new_username="$1"
-	local is_sudo="${2:-false}"
-	local sshkey_vl
+daimon_user_home() {
+	local name password uid gid comment home shell
+	IFS=: read -r name password uid gid comment home shell < <(getent passwd "$1")
+	[ "$name" = "$1" ] && [[ "$home" = /* ]] && [ -d "$home" ] && [ ! -L "$home" ] &&
+		[ "$(stat -c %u -- "$home")" = "$uid" ] || { echo "用户主目录不存在、归属不符或不安全。" >&2; return 1; }
+	printf '%s\n' "$home"
+}
 
-	if [ -z "$new_username" ]; then
-		echo "用法：create_user_with_sshkey <用户名> [true|false]"
-		return 1
+daimon_user_sudo() (
+	local action="$1" username="$2" file work main_tmp="" lockfd had_group=0 had_file=0 mutating=0 committed=0
+	daimon_regular_user_valid "$username" || return 1
+	case "$action" in grant|revoke) ;; *) return 1 ;; esac
+	install sudo || return 1
+	command -v visudo >/dev/null || return 1
+	file="/etc/sudoers.d/$username"
+	[ -f /etc/sudoers ] && [ ! -L /etc/sudoers ] && [ ! -L "$file" ] &&
+		{ [ ! -e "$file" ] || [ -f "$file" ]; } || { echo "sudo 配置路径不安全，未修改。"; return 1; }
+	mkdir -p "$DAIMON_ROOT_DIR" || return 1
+	[ ! -L "$DAIMON_ROOT_DIR/.users.lock" ] || return 1
+	exec {lockfd}> "$DAIMON_ROOT_DIR/.users.lock" || return 1
+	flock -n "$lockfd" || { echo "另一个用户权限操作正在进行。"; return 1; }
+	if [ -f "$file" ]; then
+		awk -v user="$username" '$1 ~ /^#include(dir)?$/ || (NF && $1 !~ /^#/ && $1 != user) {exit 1}' "$file" || { echo "该 sudo 文件包含其他规则，请手动核查。"; return 1; }
+		had_file=1
 	fi
-	[[ "$new_username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "用户名格式无效"; return 1; }
+	id -nG "$username" | grep -qw sudo && had_group=1
+	work=$(mktemp -d /etc/sudoers.d/.daimon-user.XXXXXX) || return 1
+	trap '
+		status=$?
+		trap "" INT TERM HUP
+		if [ "$mutating" = 1 ] && [ "$committed" = 0 ]; then
+			if ! cmp -s "$work/original-main" /etc/sudoers || [ "$(stat -c %a:%u:%g "$work/original-main")" != "$(stat -c %a:%u:%g /etc/sudoers)" ]; then
+				cp -p -- "$work/original-main" "$main_tmp" && mv -Tf -- "$main_tmp" /etc/sudoers || { echo "sudo 配置恢复失败: $work"; exit 1; }
+			fi
+			if [ "$had_file" = 1 ]; then
+				if ! cmp -s "$work/original-grant" "$file" || [ "$(stat -c %a:%u:%g "$work/original-grant")" != "$(stat -c %a:%u:%g "$file")" ]; then
+					cp -p -- "$work/original-grant" "$work/restore" && mv -Tf -- "$work/restore" "$file" || { echo "sudo 规则恢复失败: $work"; exit 1; }
+				fi
+			else
+				rm -f -- "$file" || { echo "sudo 规则恢复失败: $work"; exit 1; }
+			fi
+			if [ "$had_group" = 1 ]; then
+				id -nG "$username" | grep -qw sudo || usermod -aG sudo "$username" || { echo "用户组恢复失败。"; exit 1; }
+			elif id -nG "$username" | grep -qw sudo; then
+				gpasswd -d "$username" sudo || { echo "用户组恢复失败。"; exit 1; }
+			fi
+		fi
+		rm -f -- "$main_tmp" "$work/original-main" "$work/original-grant" "$work/grant" "$work/restore"
+		rmdir -- "$work"
+		exit "$status"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	main_tmp=$(mktemp /etc/.daimon-sudoers.XXXXXX) || return 1
+	cp -p -- /etc/sudoers "$work/original-main" || return 1
+	[ "$had_file" = 0 ] || cp -p -- "$file" "$work/original-grant" || return 1
+	if [ "$action" = grant ]; then
+		printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$username" > "$work/grant" || return 1
+		chmod 440 "$work/grant" && chown 0:0 "$work/grant" && visudo -cf "$work/grant" || return 1
+		mutating=1
+		mv -Tf -- "$work/grant" "$file" && usermod -aG sudo "$username" || return 1
+	else
+		awk -v user="$username" '$1 != user' /etc/sudoers > "$main_tmp" || return 1
+		chmod --reference=/etc/sudoers "$main_tmp" && chown --reference=/etc/sudoers "$main_tmp" && visudo -cf "$main_tmp" || return 1
+		mutating=1
+		mv -Tf -- "$main_tmp" /etc/sudoers && rm -f -- "$file" || return 1
+		[ "$had_group" = 0 ] || gpasswd -d "$username" sudo || return 1
+	fi
+	visudo -cf /etc/sudoers || return 1
+	committed=1
+	if [ "$action" = revoke ]; then
+		if sudo -n -lU "$username" >/dev/null 2>&1; then
+			echo "已移除该用户的直接授权和 sudo 组；仍检测到其他 sudo 规则，请手动核查。"
+			return 1
+		fi
+		echo "已取消用户 sudo 权限: $username"
+	else
+		echo "已赋予 sudo 免密权限: $username"
+	fi
+)
 
+create_user_with_sshkey() {
+	local new_username="${1:-}" is_sudo="${2:-false}" sshkey_vl user_home
+	[[ "$new_username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "用户名格式无效"; return 1; }
 	if id "$new_username" >/dev/null 2>&1; then
+		daimon_regular_user_valid "$new_username" || { echo "不能修改系统账号。"; return 1; }
 		echo "用户已存在: $new_username"
 	else
 		useradd -m -s /bin/bash "$new_username" || return 1
 		echo "已创建用户: $new_username"
 	fi
-
-	if [ "$is_sudo" = "true" ]; then
-		install sudo
-		usermod -aG sudo "$new_username" 2>/dev/null || true
-		cat > "/etc/sudoers.d/$new_username" <<EOF
-$new_username ALL=(ALL) NOPASSWD:ALL
-EOF
-		chmod 440 "/etc/sudoers.d/$new_username"
-		echo "已赋予 sudo 免密权限: $new_username"
+	user_home=$(daimon_user_home "$new_username") || return 1
+	echo "公钥可输入 URL 或完整 SSH 公钥；留空跳过。"
+	read -r -e -p "请输入 ${new_username} 的公钥（可留空跳过）: " sshkey_vl || return 1
+	if [ -n "$sshkey_vl" ]; then
+		{
+			declare -f ssh_public_key_valid ssh_import_key_file import_sshkey fetch_remote_ssh_keys
+			printf '%s\n' 'sshkey_on() { :; }' 'case "$1" in http://*|https://*) fetch_remote_ssh_keys "$1" "$2" ;; *) import_sshkey "$1" "$2" ;; esac'
+		} | runuser -u "$new_username" -- bash --noprofile --norc -s -- "$sshkey_vl" "$user_home" || return 1
 	fi
-
-	echo "导入公钥示例："
-	echo "  URL：      ${gh_https_url}github.com/torvalds.keys"
-	echo "  直接粘贴： ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI..."
-	read -e -p "请输入 ${new_username} 的公钥（可留空跳过）: " sshkey_vl || return 1
-	[ -z "$sshkey_vl" ] && return 0
-
-	local user_home="/home/$new_username"
-	mkdir -p "$user_home/.ssh"
-	chmod 700 "$user_home/.ssh"
-	case "$sshkey_vl" in
-		http://*|https://*)
-			send_stats "从 URL 导入 SSH 公钥"
-			fetch_remote_ssh_keys "$sshkey_vl" "$user_home"
-			;;
-		ssh-rsa*|ssh-ed25519*|ssh-ecdsa*)
-			send_stats "公钥直接导入"
-			grep -qxF "$sshkey_vl" "$user_home/.ssh/authorized_keys" 2>/dev/null || echo "$sshkey_vl" >> "$user_home/.ssh/authorized_keys"
-			;;
-		*)
-			echo "公钥格式不正确，已跳过导入"
-			;;
-	esac
-	chmod 600 "$user_home/.ssh/authorized_keys" 2>/dev/null || true
-	chown -R "$new_username:$new_username" "$user_home/.ssh"
+	[ "$is_sudo" != true ] || daimon_user_sudo grant "$new_username" || return 1
 }
 
 daimon_env_name_valid() {
@@ -11286,7 +11334,9 @@ linux_Settings() {
 						[ "$userid" -lt 1000 ] && [ "$username" != "root" ] && continue
 						local groups sudo_status
 						groups=$(groups "$username" 2>/dev/null | cut -d : -f 2)
-						if sudo -n -lU "$username" 2>/dev/null | grep -q "(ALL) \(NOPASSWD: \)\?ALL" || id -nG "$username" 2>/dev/null | grep -qw sudo; then
+						if ! command -v sudo >/dev/null 2>&1; then
+							sudo_status="Unknown"
+						elif sudo -n -lU "$username" >/dev/null 2>&1; then
 							sudo_status="Yes"
 						else
 							sudo_status="No"
@@ -11308,8 +11358,8 @@ linux_Settings() {
 					case "$choice" in
 						1) read -e -p "请输入新用户名: " new_username || return 1; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" false ;;
 						2) read -e -p "请输入新用户名: " new_username || return 1; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" true ;;
-						3) read -e -p "请输入用户名: " username || return 1; daimon_regular_user_valid "$username" && { install sudo && usermod -aG sudo "$username" && { echo "$username ALL=(ALL) NOPASSWD:ALL" > "/etc/sudoers.d/$username"; chmod 440 "/etc/sudoers.d/$username"; }; } ;;
-						4) read -e -p "请输入用户名: " username || return 1; daimon_regular_user_valid "$username" && { rm -f "/etc/sudoers.d/$username"; sed -i "/^$username\s*ALL=(ALL)/d" /etc/sudoers 2>/dev/null || true; gpasswd -d "$username" sudo 2>/dev/null || true; } ;;
+						3) read -e -p "请输入用户名: " username || return 1; daimon_user_sudo grant "$username" ;;
+						4) read -e -p "请输入用户名: " username || return 1; daimon_user_sudo revoke "$username" ;;
 						5)
 							read -e -p "请输入要删除的用户名: " username || return 1
 							if ! daimon_regular_user_valid "$username" || [ "$username" = "${SUDO_USER:-${USER:-}}" ]; then
