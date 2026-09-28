@@ -486,17 +486,9 @@ ip route
 ### 5.14 journalctl日志管理
 
 ```bash
-cp /etc/systemd/journald.conf /etc/systemd/journald.conf.bak.$(date +%Y%m%d%H%M%S)
-cat > /etc/systemd/journald.conf <<EOF
-[Journal]
-SystemMaxUse=500M
-SystemKeepFree=1G
-SystemMaxFileSize=50M
-MaxRetentionSec=1month
-EOF
-systemctl restart systemd-journald
+daimon_journal_configure 500M 1G 50M 1month
 ```
-解释：配置 journal 自动清理并重启 journald。
+解释：校验大小与保留时间，原子更新 `/etc/systemd/journald.conf.d/99-daimon-journal.conf`，保留 Storage 等其他设置，拒绝符号链接。仅重启原先运行的 journald；原先未运行时保存配置供下次启动使用。写入/重启失败恢复原配置并明确报告服务恢复结果，不创建持久备份。收紧限制可能删除旧日志，恢复配置不能还原这些日志。
 
 ```bash
 journalctl --disk-usage
@@ -504,7 +496,7 @@ journalctl -u nginx.service -n 200 --no-pager
 journalctl --vacuum-time=7d
 journalctl --vacuum-size=500M
 ```
-解释：查看日志占用、服务日志、按时间清理、按大小清理。
+解释：查看日志占用、服务最后 200 条日志、按时间/大小清理归档日志。vacuum 不删除活动 journal 文件，因此清理后的总占用不保证低于指定上限。
 
 ### 5.15 系统网络自适应优化
 

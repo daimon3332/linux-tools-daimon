@@ -11092,6 +11092,80 @@ net_menu() {
 	done
 }
 
+daimon_journal_size_valid() {
+	local value shifts=0
+	[[ "$1" =~ ^([0-9]{1,18})([KMGTPE]?)$ ]] || return 1
+	value=$((10#${BASH_REMATCH[1]}))
+	case "${BASH_REMATCH[2]}" in K) shifts=1 ;; M) shifts=2 ;; G) shifts=3 ;; T) shifts=4 ;; P) shifts=5 ;; E) shifts=6 ;; esac
+	while [ "$shifts" -gt 0 ]; do
+		[ "$value" -le 9007199254740991 ] || return 1
+		value=$((value * 1024)); shifts=$((shifts - 1))
+	done
+}
+
+daimon_journal_configure() (
+	local file=/etc/systemd/journald.conf.d/99-daimon-journal.conf work lockfd had_file=0 active=0
+	local mutating=0 restart_attempted=0 committed=0 status value
+	[ "$#" = 4 ] || return 1
+	for value in "$1" "$2" "$3"; do
+		daimon_journal_size_valid "$value" || { echo "日志大小无效，请使用字节数或 K/M/G/T/P/E 后缀。"; return 1; }
+	done
+	[[ "$4" != *$'\n'* && "$4" != *$'\r'* ]] && systemd-analyze timespan "$4" >/dev/null 2>&1 || {
+		echo "日志保留时间无效。"; return 1
+	}
+	command -v systemctl >/dev/null || return 1
+	[ ! -L "${file%/*}" ] && [ ! -L "$file" ] && { [ ! -e "$file" ] || [ -f "$file" ]; } || return 1
+	mkdir -p "${file%/*}" "$DAIMON_ROOT_DIR" || return 1
+	[ ! -L "$DAIMON_ROOT_DIR/.journal.lock" ] || return 1
+	exec {lockfd}> "$DAIMON_ROOT_DIR/.journal.lock" || return 1
+	flock -n "$lockfd" || return 1
+	systemctl is-active --quiet systemd-journald && active=1
+	work=$(mktemp -d "${file%/*}/.daimon-journal.XXXXXX") || return 1
+	trap '
+		status=$?
+		trap "" INT TERM HUP
+		if [ "$mutating" = 1 ] && [ "$committed" = 0 ]; then
+			if [ "$had_file" = 1 ]; then
+				if ! cmp -s "$work/original" "$file"; then
+					cp -p -- "$work/original" "$work/restore" && mv -Tf -- "$work/restore" "$file" || { echo "日志配置恢复失败: $work"; exit 1; }
+				fi
+			else
+				rm -f -- "$file" || { echo "日志配置恢复失败: $work"; exit 1; }
+			fi
+			if [ "$restart_attempted" = 1 ]; then
+				systemctl restart systemd-journald && systemctl is-active --quiet systemd-journald || {
+					echo "原日志配置已恢复，但服务恢复未能确认，请手动核查。"; status=1
+				}
+			fi
+		fi
+		rm -f -- "$work/original" "$work/config" "$work/restore" && rmdir -- "$work" || status=1
+		exit "$status"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	if [ -f "$file" ]; then
+		had_file=1
+		cp -p -- "$file" "$work/original" || return 1
+	else
+		: > "$work/original" || return 1
+	fi
+	awk '
+		BEGIN {print "[Journal]"}
+		/^[[:space:]]*\[/ {if ($0 !~ /^[[:space:]]*\[Journal\][[:space:]]*$/) exit 1; next}
+		/^[[:space:]]*(SystemMaxUse|SystemKeepFree|SystemMaxFileSize|MaxRetentionSec)[[:space:]]*=/ {next}
+		{print}
+	' "$work/original" > "$work/config" || return 1
+	printf 'SystemMaxUse=%s\nSystemKeepFree=%s\nSystemMaxFileSize=%s\nMaxRetentionSec=%s\n' "$1" "$2" "$3" "$4" >> "$work/config" || return 1
+	mutating=1
+	daimon_config_commit "$file" "$work/config" || return 1
+	if [ "$active" = 1 ]; then
+		restart_attempted=1
+		systemctl restart systemd-journald && systemctl is-active --quiet systemd-journald || return 1
+	fi
+	committed=1
+	echo "日志配置已更新: $file"
+	[ "$active" = 1 ] || echo "日志服务原先未运行；配置将在下次启动时生效。"
+)
+
 journalctl_log_manager() {
 	root_use
 	send_stats "journalctl日志管理"
@@ -11110,6 +11184,7 @@ journalctl_log_manager() {
 		case "$choice" in
 			1)
 				local system_max_use system_keep_free system_max_file_size max_retention_sec
+				echo "收紧日志限制可能清理旧日志；恢复配置不能找回已删除的日志。"
 				read -e -p "SystemMaxUse 最大总占用（默认 500M）: " system_max_use || return 1
 				system_max_use=${system_max_use:-500M}
 				read -e -p "SystemKeepFree 系统至少保留空闲空间（默认 1G）: " system_keep_free || return 1
@@ -11118,16 +11193,7 @@ journalctl_log_manager() {
 				system_max_file_size=${system_max_file_size:-50M}
 				read -e -p "MaxRetentionSec 最长保留时间（默认 1month）: " max_retention_sec || return 1
 				max_retention_sec=${max_retention_sec:-1month}
-				mkdir -p /etc/systemd/journald.conf.d
-				cat > /etc/systemd/journald.conf.d/99-daimon-journal.conf <<EOF
-[Journal]
-SystemMaxUse=$system_max_use
-SystemKeepFree=$system_keep_free
-SystemMaxFileSize=$system_max_file_size
-MaxRetentionSec=$max_retention_sec
-EOF
-				systemctl restart systemd-journald 2>/dev/null || service systemd-journald restart 2>/dev/null || true
-				echo "已写入 /etc/systemd/journald.conf.d/99-daimon-journal.conf"
+				daimon_journal_configure "$system_max_use" "$system_keep_free" "$system_max_file_size" "$max_retention_sec" || echo "日志配置未完成，请检查上方错误。"
 				;;
 			2) journalctl --disk-usage ;;
 			3) read -e -p "请输入服务名（可不带 .service）: " svc || return 1; [ -z "$svc" ] && continue; [[ "$svc" != *.service ]] && svc="$svc.service"; journalctl -u "$svc" -n 200 --no-pager ;;
