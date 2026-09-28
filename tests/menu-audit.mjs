@@ -3,6 +3,9 @@ import {spawnSync} from 'node:child_process';
 
 const sourcePath = process.env.DAIMON_TEST_SOURCE || 'linux-toolbox.sh';
 const source = Buffer.from(fs.readFileSync(sourcePath, 'utf8').replace(/\r/g, ''));
+if (['moltbot_menu', 'openclaw_', 'claw|oc|OpenClaw'].some(name => source.includes(name))) {
+  throw new Error('Removed OpenClaw feature remains reachable or defined');
+}
 function parse(input) {
   const parsed = spawnSync(process.argv[2] || 'shfmt', ['-ln', 'bash', '-tojson'], {
     input, encoding: 'utf8', maxBuffer: 128 * 1024 * 1024,

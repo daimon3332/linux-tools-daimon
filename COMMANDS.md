@@ -34,7 +34,7 @@ mkdir -p /root/linux-daimon/daimon
 - Nginx/域名菜单统一使用宿主机 Nginx + acme.sh webroot；挑战目录为 `/var/www/acme-challenge`，证书目录为 `/root/domain/<完整域名>`，证书续期会自动 reload Nginx。
 - 申请证书不会杀死未知进程，若 80 端口被占用会提示处理；域名、配置名、端口输入非法时停留在当前菜单。
 - SSH/UFW 操作会先放行现有 sshd 端口；一键 SSH 配置必须粘贴有效公钥。
-- OpenClaw 项目还原不生成还原前备份；Docker 备份删除需确认，备份目录仅接受 `/tmp/docker_backup_*`。
+- Docker 备份删除需确认，备份目录仅接受 `/tmp/docker_backup_*`。
 
 进入主菜单主要是 `echo/read/case` 交互，不会主动修改系统。主菜单选项为：
 
