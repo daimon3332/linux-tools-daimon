@@ -286,7 +286,7 @@ set_dns_ui
 # 1 国外；2 国内；3 vim 手动编辑；4 恢复系统管理；0 返回
 ```
 
-选择地址后写入 resolv.conf 并尝试锁定；不创建持久备份。手动编辑使用 vim。
+选择地址后仅替换 nameserver 行，保留 search/options 等配置，原子替换 resolv.conf 并尝试锁定；不覆盖其符号链接指向的管理器文件，不创建持久备份。手动编辑使用 vim 编辑临时文件，再用 Python 标准库验证 DNS 地址；编辑器失败或内容无效时保留原配置。
 
 ```bash
 restore_dns_config

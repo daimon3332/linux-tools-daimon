@@ -5682,18 +5682,78 @@ sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
 }
 
 
+daimon_dns_commit() (
+	local staged="$1" attrs locked=0 committed=0
+	trap '
+		[ "$committed" = 1 ] || [ "$locked" = 0 ] || chattr +i /etc/resolv.conf
+		rm -f -- "$staged"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	[ ! -e /etc/resolv.conf ] || [ -f /etc/resolv.conf ] || return 1
+	chmod 644 "$staged" || return 1
+	if [ -f /etc/resolv.conf ]; then
+		chmod --reference=/etc/resolv.conf "$staged" || return 1
+		[ "$(id -u)" != 0 ] || chown --reference=/etc/resolv.conf "$staged" || return 1
+		if [ ! -L /etc/resolv.conf ]; then
+			attrs=$(lsattr -d /etc/resolv.conf 2>/dev/null || true); attrs=${attrs%% *}
+			[[ "$attrs" != *i* ]] || locked=1
+			chattr -i /etc/resolv.conf 2>/dev/null || { [ "$locked" = 0 ] || return 1; }
+		fi
+	fi
+	mv -Tf -- "$staged" /etc/resolv.conf || return 1
+	committed=1
+	chattr +i /etc/resolv.conf 2>/dev/null || echo "DNS 已写入，但此文件系统不支持锁定 resolv.conf。"
+	return 0
+)
+
 set_dns() {
 	ip_address
+	local staged server
 	local -a servers=()
 	if [ -n "$ipv4_address" ]; then servers+=("$dns1_ipv4" "$dns2_ipv4"); fi
 	if [ -n "$ipv6_address" ]; then servers+=("$dns1_ipv6" "$dns2_ipv6"); fi
 	if [ "${#servers[@]}" -eq 0 ]; then servers=("$dns1_ipv4" "$dns2_ipv4"); fi
-	chattr -i /etc/resolv.conf 2>/dev/null || true
-	printf 'nameserver %s\n' "${servers[@]}" > /etc/resolv.conf || return 1
-	chattr +i /etc/resolv.conf 2>/dev/null || echo "DNS 已写入，但此文件系统不支持锁定 resolv.conf。"
-	return 0
+	for server in "${servers[@]}"; do
+		[ -n "$server" ] && [[ "$server" != *[[:space:]]* ]] || return 1
+	done
+	[ ! -e /etc/resolv.conf ] || [ -f /etc/resolv.conf ] || return 1
+	staged=$(mktemp /etc/.daimon-dns.XXXXXX) || return 1
+	if [ -f /etc/resolv.conf ]; then
+		awk '$1 != "nameserver"' /etc/resolv.conf > "$staged" || { rm -f -- "$staged"; return 1; }
+	fi
+	printf 'nameserver %s\n' "${servers[@]}" >> "$staged" || { rm -f -- "$staged"; return 1; }
+	daimon_dns_commit "$staged"
 }
 
+edit_dns_config() (
+	local staged
+	install vim python3 || return 1
+	command -v vim >/dev/null && command -v python3 >/dev/null || return 1
+	[ ! -e /etc/resolv.conf ] || [ -f /etc/resolv.conf ] || return 1
+	staged=$(mktemp /etc/.daimon-dns.XXXXXX) || return 1
+	trap 'rm -f -- "$staged"' EXIT
+	trap 'exit 1' INT TERM HUP
+	if [ -e /etc/resolv.conf ]; then cat /etc/resolv.conf > "$staged" || return 1; fi
+	vim "$staged" || return 1
+	cmp -s /etc/resolv.conf "$staged" && return 0
+	python3 - "$staged" <<'PY' || { echo "DNS 配置无效，保留原配置。"; return 1; }
+import ipaddress, sys
+servers = []
+try:
+    with open(sys.argv[1]) as config:
+        for line in config:
+            fields = line.split('#', 1)[0].split(';', 1)[0].split()
+            if fields and fields[0] == 'nameserver':
+                if len(fields) != 2:
+                    raise ValueError('Invalid nameserver line')
+                servers.append(ipaddress.ip_address(fields[1]))
+    if not servers:
+        raise ValueError('No nameserver configured')
+except (OSError, ValueError) as error:
+    sys.exit(str(error))
+PY
+	daimon_dns_commit "$staged"
+)
 
 restore_dns_config() (
 	local target service source="" work attrs locked=0 committed=0
@@ -5768,11 +5828,7 @@ while true; do
 		send_stats "国内DNS优化"
 		;;
 	  3)
-		install vim
-		chattr -i /etc/resolv.conf
-		vim /etc/resolv.conf
-		chattr +i /etc/resolv.conf
-		send_stats "手动编辑DNS配置"
+		edit_dns_config && send_stats "手动编辑DNS配置"
 		;;
 	  4)
 		restore_dns_config

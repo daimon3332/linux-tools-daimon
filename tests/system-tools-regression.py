@@ -43,7 +43,7 @@ class SystemTools(unittest.TestCase):
 
     def shell(self, names, action, inputs='', setup=''):
         optional = ['daimon_config_commit', 'daimon_env_write', 'daimon_env_name_valid', 'daimon_gai_preference',
-                    'prefer_ipv6', 'daimon_hosts_edit', 'daimon_set_hostname']
+                    'prefer_ipv6', 'daimon_hosts_edit', 'daimon_set_hostname', 'daimon_dns_commit', 'edit_dns_config']
         for name in optional:
             if name not in names and re.search(r'(?m)^' + name + r'\(\)', SOURCE):
                 names = names + [name]
@@ -53,6 +53,7 @@ class SystemTools(unittest.TestCase):
         body = body.replace('/etc/hostname', str(self.etc / 'hostname').replace('\\', '/'))
         body = body.replace('/etc/resolv.conf', (self.etc / 'resolv.conf').as_posix())
         body = body.replace('/etc/.daimon-resolv', (self.etc / '.daimon-resolv').as_posix())
+        body = body.replace('/etc/.daimon-dns', (self.etc / '.daimon-dns').as_posix())
         body = body.replace('/run/systemd/resolve', (self.work / 'run/systemd/resolve').as_posix())
         body = body.replace('/run/NetworkManager', (self.work / 'run/NetworkManager').as_posix())
         body = body.replace('/run/resolvconf', (self.work / 'run/resolvconf').as_posix())
@@ -378,6 +379,60 @@ mv() { case "${@: -1}" in "$WORK/system-bin/audit") return 1 ;; esac; command mv
         result = self.shell(['restore_dns_config'], 'restore_dns_config', setup='systemctl() { return 0; }; chattr() { :; }; mv() { return 1; }')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(before, (self.etc / 'resolv.conf').read_bytes())
+
+    def dns_setup(self):
+        return 'ip_address() { ipv4_address=192.0.2.1; ipv6_address=""; }; chattr() { :; }; dns1_ipv4=1.1.1.1; dns2_ipv4=8.8.8.8; '
+
+    def test_dns_optimization_preserves_search_and_options(self):
+        path = self.etc / 'resolv.conf'
+        path.write_bytes(b'nameserver 192.0.2.53\nsearch business.test\noptions edns0 timeout:2\n')
+        result = self.shell(['set_dns'], 'set_dns', setup=self.dns_setup())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('search business.test', path.read_text())
+        self.assertIn('options edns0 timeout:2', path.read_text())
+        self.assertNotIn('192.0.2.53', path.read_text())
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX managed resolver fixture')
+    def test_dns_optimization_does_not_overwrite_manager_symlink_target(self):
+        path = self.etc / 'resolv.conf'
+        original = path.read_bytes()
+        target = self.work / 'run/systemd/resolve/resolv.conf'; target.write_bytes(original)
+        path.unlink(); path.symlink_to(target)
+        result = self.shell(['set_dns'], 'set_dns', setup=self.dns_setup())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(path.is_symlink())
+        self.assertEqual(target.read_bytes(), original)
+
+    def test_dns_optimization_replace_failure_preserves_config(self):
+        path = self.etc / 'resolv.conf';before = path.read_bytes()
+        result = self.shell(['set_dns'], 'set_dns', setup=self.dns_setup()+'mv() { return 1; }')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(before, path.read_bytes())
+
+    def test_dns_failed_editor_does_not_commit_partial_changes(self):
+        before = (self.etc / 'resolv.conf').read_bytes()
+        result = self.shell(['set_dns_ui'], 'set_dns_ui', '3\n0\n', setup='''
+install() { :; }; chattr() { :; }
+vim() { echo 'nameserver 192.0.2.99' > "${@: -1}"; return 1; }
+''')
+        self.assertEqual(before, (self.etc / 'resolv.conf').read_bytes(), result.stderr)
+
+    def test_dns_editor_rejects_invalid_nameserver_and_preserves_config(self):
+        before = (self.etc / 'resolv.conf').read_bytes()
+        result = self.shell([], 'edit_dns_config', setup='''
+install() { :; }; chattr() { :; }
+vim() { echo 'nameserver invalid-address' > "${@: -1}"; }
+''')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(before, (self.etc / 'resolv.conf').read_bytes())
+
+    def test_dns_editor_valid_config_is_committed(self):
+        result = self.shell([], 'edit_dns_config', setup='''
+install() { :; }; chattr() { :; }
+vim() { printf 'nameserver 2001:db8::53\\nsearch edited.test\\n' > "${@: -1}"; }
+''')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual((self.etc / 'resolv.conf').read_text(), 'nameserver 2001:db8::53\nsearch edited.test\n')
 
 
 if __name__ == '__main__':
