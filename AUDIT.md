@@ -789,3 +789,23 @@ APT 测试使用 Docker 官方 Ubuntu 22.04 ARM64/x86_64、Debian 13 slim x86_64
 六台宿主已通过内置更新器安装同版，各通过 13 个 journal 回归和此前的通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 29、locale 10 个回归，采集状态未变。真实证据为 `.tmp/audit-20260928/c6c215b-vm-{debian,ubuntu}-journal-real.jsonl`，另保留旧版红测试与 `277318d` 中间验证，不将错误复现的退出 0 当功能通过。
 
 日志清理不可逆；配置恢复不能恢复已清理的历史日志。vacuum 仅处理归档，不保证活动文件在内的总占用立即低于限额。VM 继续复用进行 IPv6 等测试，整个审计仍未完成。
+
+#### IPv6 开关：运行时通过，重启持久性存在缺口
+
+`b1e6b4d` 修复配置写入失败仍改运行态、symlink 覆盖、sysctl 失败后全局重载及无条件报成功；加入互斥、配置原子写入、逐接口验证与 IPv6 SSH 禁用拒绝。原生 Debian 测试进一步发现新恢复逻辑盲目回放 `ip -6 route save table all` 会新增重复 local 路由，并因 RA nexthop ID 与网关同时出现而报错，**该版真实验收失败**。`4de03a3` 移除不安全回放：失败只尝试恢复原配置和开关，事前及失败后明确提示地址、路由和连接不能自动恢复。两个 VM 随后正常重启，未新增 VM 或修改宿主网络。
+
+两 VM 在 `4de03a3` 各通过 22 项运行时检查：完整主菜单 `5 → 16/17`、真实 sysctl、地址/路由删除、重复、新接口默认值、immutable/symlink/目录/外来配置拒绝、真实锁、只读 `all` 控制文件和 TERM 故障、真实 IPv6 SSH 中禁用拒绝与开启成功。Debian 初次测试的临时 sshd 因禁用 PAM 拒绝锁定的 root 公钥登录，修正夹具为原生 PAM 后重新通过；没有把该次失败记为通过。Ubuntu 原只读 `default` 夹具不足以制造故障：procps 忽略 EROFS，且 `all` 已改变其值；改用只读 `all` 后实际验证不一致和恢复。
+
+**Debian 13 的真实重启检查失败**：配置仍为禁用，`all/default/lo=1`，但 `ens3=0`。该 VM 的活动 systemd-networkd 使用 cloud-init Netplan 的 `dhcp6: true` 和 `LinkLocalAddressing=ipv6`。因此当前 sysctl 开关不能保证网络管理器重配置或重启后仍禁用。已请求用户确认是否扩展为适配网络管理器的 IPv6 配置；未擅自改写 IPv4、Netplan 或宿主网络。Ubuntu 重启检查仍在进行，不能宣称持久性已通过。
+
+运行时证据：`.tmp/audit-20260928/4de03a3-vm-debian-ipv6-real-r2.jsonl`、`4de03a3-vm-ubuntu-ipv6-real.jsonl`；失败与诊断另有版本化 persistence/boot-diagnose JSON。内核 [5.15](https://www.kernel.org/doc/html/v5.15/networking/ip-sysctl.html) 与 [6.12](https://www.kernel.org/doc/html/v6.12/networking/ip-sysctl.html) 文档均说明禁用会删除接口地址和路由，读取 `conf/all` 不能代替逐接口状态。当前不承诺网络状态事务性恢复。
+
+#### 工具箱卸载：保留独立任务和业务
+
+`91fc65d` 移除按 `kejilion.sh` 字符串过滤 crontab 的危险逻辑，先核查脚本/链接归属，再删除主脚本和快捷键，删除失败不假报成功。真实测试发现新 guard 错把既有 `root_use` 在 root 下的返回值 1 当拒绝，`cac885b` 改为显式 UID 检查；前版不算通过。
+
+`cac885b` 六台通过内置更新器部署，归一化 SHA256 为 `2a66b8660d435e75b70b824194f5f7b91ec61d4efa9e5dc9bcd9e8a996685e14`。在每台私有 `/usr/bin` OverlayFS、私有 `/usr/local/bin`、root 和 crontab spool 中，真实主菜单 `5 → 20` 各完成 11 项检查：原生 uid 65534 拒绝、取消/EOF/非法输入、卸载/重复、外来命令/文件/目录保护、immutable 删除失败及解除后重试。使用真实 crontab、unlink 和符号链接，逐次确认全部定时任务、备份/证书辅助脚本及无关命令保留。**未卸载任何生产工具箱或业务服务。** 多文件删除不是原子事务，失败时保留未删除项并允许重试。
+
+六台各通过通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 29、locale 10、journal 13、IPv6 15、卸载 10 个隔离回归。真实卸载证据为 `cac885b-uninstall-all-r2.jsonl`，各宿主前后状态无变化。两个 VM 因仍在 IPv6 完整菜单/重启测试而暂留 `4de03a3`，不把它们称作已验证最新卸载版。全项目逐选项审计仍未完成。
+
+当前清单 974 行，116 行登记了有限真实证据（含 IPv6 重启失败），858 行仍为 not-run；不能把行数当完整通过的功能数。静态菜单审计仍为 669 patterns / 83 case blocks / 9 内嵌 Bash。
