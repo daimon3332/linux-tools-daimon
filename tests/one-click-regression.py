@@ -237,6 +237,23 @@ one_click_network_auto_optimize() { echo NETWORK; }
             self.assertNotEqual(result.returncode,0,result.stdout)
             self.assertNotIn('ZYPPER:update',result.stdout)
 
+    def test_apt_transient_index_failure_aborts_before_upgrade(self):
+        setup = '''
+command() { [ "$1" = -v ] && [ "$2" = apt ]; }
+fix_dpkg() { :; }
+apt() {
+    if [ "$1" = update ]; then
+        case " $* " in *' APT::Update::Error-Mode=any '*) return 100 ;; esac
+        echo 'Warning: Some index files failed to download' >&2
+        return 0
+    fi
+    echo UNEXPECTED_UPGRADE
+}
+'''
+        result = self.shell(['linux_update'], setup, 'linux_update')
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertNotIn('UNEXPECTED_UPGRADE', result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

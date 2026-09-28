@@ -145,10 +145,10 @@ SSH 认证项表示 `sshd -T` 读取的全局配置，不评估特定连接的 M
 
 ```bash
 DEBIAN_FRONTEND=noninteractive dpkg --configure -a
-DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y
+DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y -o APT::Update::Error-Mode=any
 DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt full-upgrade -y
 ```
-解释：修复 apt/dpkg 状态，更新软件源并升级系统软件包。锁占用、dpkg 修复或索引更新失败时停止，不强杀进程或删除锁。
+解释：修复 apt/dpkg 状态，更新软件源并升级系统软件包。锁占用、dpkg 修复或任何索引更新失败时停止，包括 APT 默认仅警告的临时网络错误；不使用失败更新留下的旧索引继续升级，不强杀进程或删除锁。
 
 ## 3. 系统清理
 

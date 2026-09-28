@@ -5551,7 +5551,7 @@ linux_update() {
 		yum -y update
 	elif command -v apt &>/dev/null; then
 		fix_dpkg || return 1
-		DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y || return 1
+		DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y -o APT::Update::Error-Mode=any || return 1
 		DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt full-upgrade -y \
 			-o Dpkg::Options::="--force-confdef" \
 			-o Dpkg::Options::="--force-confold"
