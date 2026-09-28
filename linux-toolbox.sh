@@ -11263,13 +11263,11 @@ daimon_ipv6_configure() (
 					fi
 					read -r current < "$path" && [ "$current" = "${original[$path]}" ] || restore_failed=1
 				done
-				ip -6 address restore < "$work/addresses" || restore_failed=1
-				ip -6 route restore < "$work/routes" || restore_failed=1
-				echo "IPv6 修改失败，已尝试恢复配置、开关、地址和路由；连接中断及动态网络状态无法保证恢复，请核查网络。"
+				echo "IPv6 修改失败，已尝试恢复原配置和开关；被删除的地址、路由及中断的连接无法自动恢复，请通过控制台或 IPv4 核查网络配置。"
 			fi
 		fi
 		if [ "$restore_failed" = 1 ]; then echo "IPv6 恢复失败，请核查临时恢复文件: $work"; exit 1; fi
-		rm -f -- "$work/original" "$work/config" "$work/apply" "$work/restore" "$work/addresses" "$work/routes" && rmdir -- "$work" || status=1
+		rm -f -- "$work/original" "$work/config" "$work/apply" "$work/restore" && rmdir -- "$work" || status=1
 		exit "$status"
 	' EXIT
 	trap 'exit 1' INT TERM HUP
@@ -11281,7 +11279,6 @@ daimon_ipv6_configure() (
 	' "$work/original" > "$work/config" || { echo "IPv6 配置包含非工具箱设置，未修改。"; return 1; }
 	printf "net.ipv6.conf.all.disable_ipv6 = %s\nnet.ipv6.conf.default.disable_ipv6 = %s\nnet.ipv6.conf.lo.disable_ipv6 = %s\n" "$value" "$value" "$value" > "$work/apply" || return 1
 	cat "$work/apply" >> "$work/config" || return 1
-	ip -6 address save > "$work/addresses" && ip -6 route save table all > "$work/routes" || return 1
 	mutating=1
 	daimon_config_commit "$file" "$work/config" || return 1
 	runtime_started=1
@@ -11294,7 +11291,7 @@ daimon_ipv6_configure() (
 
 system_disable_ipv6() {
 	root_use
-	echo "禁用 IPv6 会删除接口上的 IPv6 地址和路由，并中断相关连接。"
+	echo "禁用 IPv6 会删除接口上的 IPv6 地址和路由、中断相关连接；失败时也无法自动恢复这些网络状态。"
 	daimon_ipv6_configure 1 || { echo "IPv6 禁用未完成，请检查上方错误。"; return 1; }
 	echo -e "${gl_lv}IPv6 已禁用。配置文件: /etc/sysctl.d/99-daimon-ipv6.conf${gl_bai}"
 	system_ipv6_status || return 1

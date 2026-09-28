@@ -57,7 +57,7 @@ sysctl() {
         if [ "$FAILURE" = signal ]; then kill -TERM "$BASHPID"; fi
     fi
 }
-ip() { [ "$FAILURE" != snapshot ]; }
+ip() { echo "$*" >> "$WORK/ip-calls"; }
 mv() {
     [ "$FAILURE" != write ] || return 1
     command mv "$@" || return
@@ -142,11 +142,12 @@ mv() {
         self.assertEqual(self.flags(), before)
         self.assertEqual(self.config.read_bytes(), self.initial)
 
-    def test_snapshot_failure_leaves_config_and_runtime_unchanged(self):
-        before = self.flags()
-        self.assertNotEqual(self.invoke(failure='snapshot').returncode, 0)
-        self.assertEqual(self.flags(), before)
-        self.assertEqual(self.config.read_bytes(), self.initial)
+    def test_failure_does_not_replay_dynamic_routes_or_kernel_local_routes(self):
+        result = self.invoke(failure='partial')
+        self.assertNotEqual(result.returncode, 0)
+        calls = (self.work / 'ip-calls').read_text(encoding='utf-8') if (self.work / 'ip-calls').exists() else ''
+        self.assertNotIn('restore', calls)
+        self.assertIn('无法自动恢复', result.stdout.decode())
 
     def test_unknown_settings_are_not_executed_or_overwritten(self):
         self.config.write_bytes(self.initial + b'net.ipv4.ip_forward = 1\n')
