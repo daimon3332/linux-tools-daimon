@@ -14,11 +14,12 @@ function parse(input) {
   return JSON.parse(parsed.stdout);
 }
 const cases = [];
+const inventory = [];
 let embedded = 0;
 function walk(node, fn = 'CLI', buffer = source, label = '') {
   if (!node || typeof node !== 'object') return;
   const text = item => buffer.subarray(item.Pos.Offset, item.End.Offset).toString();
-  if (node.Type === 'FuncDecl') fn = node.Name.Value;
+  if (node.Type === 'FuncDecl') fn = fn === 'CLI' ? node.Name.Value : `${fn}/${node.Name.Value}`;
   if (node.Hdoc?.Parts?.every(part => part.Type === 'Lit')) {
     const script = node.Hdoc.Parts.map(part => part.Value).join('');
     if (script.startsWith('#!/bin/bash')) {
@@ -31,6 +32,9 @@ function walk(node, fn = 'CLI', buffer = source, label = '') {
   }
   if (node.Type === 'CaseClause') {
     const patterns = node.Items.map(item => item.Patterns.map(text));
+    const previews = node.Items.map(item => (item.Stmts || []).map(text).join(' ')
+      .replace(/\s+/g, ' ').trim().slice(0, 240));
+    inventory.push({fn: label + fn, line: node.Pos.Line, selector: text(node.Word), patterns, previews});
     const numeric = patterns.flat().some(pattern => /^\d+$/.test(pattern));
     const cli = fn === 'CLI' && text(node.Word) === '$1';
     if ((numeric || cli) && patterns.flat().every(pattern =>
@@ -66,7 +70,25 @@ const result = spawnSync(process.env.BASH_BIN || 'bash', ['--noprofile', '--norc
   input: commands.join('\n'), encoding: 'utf8', maxBuffer: 8 * 1024 * 1024,
 });
 if (result.status !== 0) throw new Error(result.stdout + result.stderr);
-if (process.argv.includes('--inventory')) {
+if (process.argv.includes('--inventory-all')) {
+  console.log('Scope\tLine\tSelector\tOption\tHandlerPreview\tCoverage\tEvidence');
+  const row = values => console.log(values.map(value => String(value).replace(/[\t\r\n]/g, ' ')).join('\t'));
+  for (const entry of inventory) {
+    entry.patterns.forEach((patterns, index) => {
+      row([entry.fn, entry.line, entry.selector, patterns.join('|'), entry.previews[index], 'not-run', '-']);
+    });
+  }
+  for (const category of ['thirdparty', 'programming']) {
+    const ids = source.toString().match(new RegExp(`local ${category}_ids=\\(([^)]*)\\)`));
+    if (!ids) throw new Error(`Missing tool list: ${category}`);
+    ids[1].trim().split(/\s+/).forEach((id, index) => {
+      for (const action of ['install', 'remove']) {
+        row([`linux_tools/${category}/${action}`, '', 'tool number', index + 1,
+          `${action}_tool_by_id ${id}`, 'not-run', '-']);
+      }
+    });
+  }
+} else if (process.argv.includes('--inventory')) {
   console.log('Function\tLine\tSelector\tOption\tCoverage');
   for (const entry of cases) {
     for (const patterns of entry.patterns) {
@@ -76,4 +98,5 @@ if (process.argv.includes('--inventory')) {
     }
   }
 }
-console.log(`PASS ${checks} patterns in ${cases.length} case blocks; ${embedded} embedded Bash scripts parsed; handler side effects are not executed`);
+const report = process.argv.includes('--inventory-all') ? console.error : console.log;
+report(`PASS ${checks} patterns in ${cases.length} case blocks; ${embedded} embedded Bash scripts parsed; handler side effects are not executed`);
