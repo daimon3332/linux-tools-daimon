@@ -84,9 +84,9 @@ ln -sf /usr/local/bin/d /usr/bin/d
 默认展示：主机名、系统版本、内核、CPU、内存、Swap、硬盘、流量、网络算法、运营商、IPv4、IPv6、DNS、位置、时间、时区、本地语言、运行时长，以及 SSH、UFW、Docker、Nginx、Fail2ban、rclone、Bitwarden 状态。
 
 ```bash
-curl -s https://ipinfo.io/ip
-curl -s --max-time 1 https://v6.ipinfo.io/ip
-ip route get 8.8.8.8 | grep -oP 'src \K[^ ]+'
+curl -4 -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/ip
+curl -6 -fsS --connect-timeout 1 --max-time 1 https://v6.ipinfo.io/ip
+ip -4 route get 8.8.8.8
 ```
 解释：查询公网 IPv4、公网 IPv6、本机默认出口内网 IP。
 
@@ -105,7 +105,7 @@ df -h
 解释：查看内存、Swap、硬盘占用。
 
 ```bash
-curl -s ipinfo.io
+curl -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/json
 uptime
 awk '/^nameserver/{print $2}' /etc/resolv.conf
 uname -m
@@ -119,10 +119,13 @@ sysctl -n net.ipv4.tcp_congestion_control
 sysctl -n net.core.default_qdisc
 date "+%Y-%m-%d %I:%M %p"
 cat /proc/uptime
-ss -t | wc -l
-ss -u | wc -l
+timedatectl show -p Timezone --value
+ss -H -t | wc -l
+ss -H -u | wc -l
 ```
 解释：查看 TCP 算法、队列算法、时间、运行时长、TCP/UDP 连接数。
+
+查询失败不计为零连接；时区查询失败回退到 `date +"%Z %z"`。CPU 采样包括 nice、IRQ、softirq、steal，iowait 计入空闲，不重复计算 guest；采样无增量时避免除零。位置解析只使用已有 jq 或 Python，不为信息查询安装软件；缺失数据显示未知。
 
 ```bash
 sshd -T
@@ -135,6 +138,8 @@ rclone version
 grep '^\[BitwardenBackup\]' /var/lib/docker/volumes/vaultwarden-rclone-data/_data/rclone/rclone.conf
 ```
 解释：系统信息查询会额外检测 SSH 端口、密码/密钥登录状态、UFW 是否安装和是否开启、时区和语言、Docker daemon 可用性、Nginx、Fail2ban、rclone 版本，以及 Bitwarden/vaultwarden 相关容器和 vaultwarden-backup 使用的 rclone 配置状态。
+
+SSH 认证项表示 `sshd -T` 读取的全局配置，不评估特定连接的 Match、root 限制或组合认证。查询失败显示未知，不猜测端口 22 或已禁用密码。
 
 ## 2. 系统更新
 

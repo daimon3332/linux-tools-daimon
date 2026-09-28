@@ -514,17 +514,23 @@ CheckFirstRun_false
 ip_address() {
 
 get_public_ip() {
-	curl -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/ip && echo
+	curl -4 -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/ip 2>/dev/null && echo
 }
 
 get_local_ip() {
-	ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K[^ ]+' || \
-	hostname -I 2>/dev/null | awk '{print $1}' || \
-	ifconfig 2>/dev/null | grep -E 'inet [0-9]' | grep -v '127.0.0.1' | awk '{print $2}' | head -n1
+	local address
+	address=$(ip -4 route get 8.8.8.8 2>/dev/null | awk '{for(i=1;i<NF;i++) if($i=="src") {print $(i+1); exit}}')
+	if [ -z "$address" ]; then
+		address=$(hostname -I 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i ~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/) {print $i; exit}}')
+	fi
+	if [ -z "$address" ]; then
+		address=$(ifconfig 2>/dev/null | awk '$1=="inet" && $2 !~ /^127\./ {print $2; exit}')
+	fi
+	printf '%s\n' "$address"
 }
 
 public_ip=$(get_public_ip)
-isp_info=$(curl -s --max-time 3 http://ipinfo.io/org)
+isp_info=$(curl -fsS --connect-timeout 3 --max-time 3 https://ipinfo.io/org 2>/dev/null)
 
 
 if echo "$isp_info" | grep -Eiq 'CHINANET|mobile|unicom|telecom'; then
@@ -534,8 +540,7 @@ else
 fi
 
 
-# ipv4_address=$(curl -s https://ipinfo.io/ip && echo)
-ipv6_address=$(curl -s --max-time 1 https://v6.ipinfo.io/ip && echo)
+ipv6_address=$(curl -6 -fsS --connect-timeout 1 --max-time 1 https://v6.ipinfo.io/ip 2>/dev/null && echo)
 
 }
 
@@ -5507,12 +5512,12 @@ yt_menu_pro() {
 
 
 current_timezone() {
-	if grep -q 'Alpine' /etc/issue; then
-	   date +"%Z %z"
+	local timezone
+	if timezone=$(timedatectl show -p Timezone --value 2>/dev/null) && [ -n "$timezone" ]; then
+		printf '%s\n' "$timezone"
 	else
-	   timedatectl | grep "Time zone" | awk '{print $3}'
+		date +"%Z %z"
 	fi
-
 }
 
 
@@ -8343,15 +8348,10 @@ service_status_text() {
 
 sshd_effective_value() {
 	local key="$1"
-	local value="" sshd_bin
-	value=$(sshd_config_value "$key")
-	if [ -n "$value" ]; then
-		normalize_ssh_bool "$value"
-		return
-	fi
+	local value="" sshd_bin config
 	sshd_bin=$(sshd_bin_path)
-	if [ -n "$sshd_bin" ]; then
-		value=$("$sshd_bin" -T 2>/dev/null | awk -v k="$key" '$1==k {print $2; exit}')
+	if [ -n "$sshd_bin" ] && config=$("$sshd_bin" -T 2>/dev/null); then
+		value=$(printf '%s\n' "$config" | awk -v k="$key" '$1==k {print $2; exit}')
 	fi
 	normalize_ssh_bool "$value"
 }
@@ -8376,46 +8376,8 @@ normalize_ssh_bool() {
 	esac
 }
 
-sshd_config_value() {
-	local key="$1" value="" locale_key
-	locale_key=$(printf "%s" "$key" | tr '[:upper:]' '[:lower:]')
-
-	_parse_sshd_config_file() {
-		local file="$1" raw line first pattern inc_file
-		[ -f "$file" ] || return 0
-		while IFS= read -r raw || [ -n "$raw" ]; do
-			line="${raw%%#*}"
-			set -- $line
-			[ "$#" -eq 0 ] && continue
-			first=$(printf "%s" "$1" | tr '[:upper:]' '[:lower:]')
-			[ "$first" = "match" ] && return 0
-			if [ "$first" = "include" ]; then
-				shift
-				for pattern in "$@"; do
-					for inc_file in $pattern; do
-						[ -f "$inc_file" ] && _parse_sshd_config_file "$inc_file"
-					done
-				done
-				continue
-			fi
-			if [ "$first" = "$locale_key" ] && [ "$#" -ge 2 ]; then
-				value="$2"
-			fi
-		done < "$file"
-	}
-
-	_parse_sshd_config_file /etc/ssh/sshd_config
-	if [ -z "$value" ]; then
-		local inc_file
-		for inc_file in /etc/ssh/sshd_config.d/*.conf; do
-			[ -f "$inc_file" ] && _parse_sshd_config_file "$inc_file"
-		done
-	fi
-	echo "$value"
-}
-
 system_info_ssh() {
-	local service ports listening_ports password_auth kbd_auth pubkey_auth password_login sshd_bin
+	local service ports listening_ports password_auth kbd_auth pubkey_auth password_login sshd_bin config
 	service=$(service_status_text ssh sshd ssh.service sshd.service)
 	listening_ports=$(ss -ltnp 2>/dev/null | awk '/sshd/ {p=$4; sub(/.*:/,"",p); if (p ~ /^[0-9]+$/) print p}' | sort -nu | xargs 2>/dev/null)
 	if [ -n "$listening_ports" ]; then
@@ -8423,24 +8385,23 @@ system_info_ssh() {
 		ports="$listening_ports"
 	fi
 	sshd_bin=$(sshd_bin_path)
-	[ -z "$ports" ] && [ -n "$sshd_bin" ] && ports=$("$sshd_bin" -T 2>/dev/null | awk '$1=="port"{print $2}' | xargs 2>/dev/null)
-	if [ -z "$ports" ]; then
-		ports=$(awk 'tolower($1)=="port"{print $2}' /etc/ssh/sshd_config 2>/dev/null | xargs)
+	if [ -z "$ports" ] && [ -n "$sshd_bin" ] && config=$("$sshd_bin" -T 2>/dev/null); then
+		ports=$(printf '%s\n' "$config" | awk '$1=="port"{print $2}' | xargs)
 	fi
-	[ -z "$ports" ] && ports="22"
+	[ -z "$ports" ] && ports="未知"
 	password_auth=$(sshd_effective_value passwordauthentication)
 	kbd_auth=$(sshd_effective_value kbdinteractiveauthentication)
 	[ -z "$kbd_auth" ] && kbd_auth=$(sshd_effective_value challengeresponseauthentication)
 	pubkey_auth=$(sshd_effective_value pubkeyauthentication)
 	if [ "$password_auth" = "yes" ] || [ "$kbd_auth" = "yes" ]; then
 		password_login="yes"
-	elif [ "$password_auth" = "no" ] || [ "$kbd_auth" = "no" ]; then
+	elif [ "$password_auth" = "no" ] && [ "$kbd_auth" = "no" ]; then
 		password_login="no"
 	else
 		password_login="未知"
 	fi
 	[ -z "$pubkey_auth" ] && pubkey_auth="未知"
-	echo "服务: $service | 端口: $ports | 密码登录: $password_login | 密钥登录: $pubkey_auth"
+	echo "服务: $service | 端口: $ports | 密码登录: $password_login | 密钥登录: $pubkey_auth（认证项为全局配置，未评估 Match）"
 }
 
 system_info_ufw() {
@@ -8556,25 +8517,42 @@ linux_info() {
 
 	ip_address
 
-	local cpu_info=$(lscpu | awk -F': +' '/Model name:/ {print $2; exit}')
+	local cpu_info=$(LC_ALL=C lscpu 2>/dev/null | awk -F': +' '/Model name:/ {print $2; exit}')
 
-	local cpu_usage_percent=$(awk '{u=$2+$4; t=$2+$4+$5; if (NR==1){u1=u; t1=t;} else printf "%.0f\n", (($2+$4-u1) * 100 / (t-t1))}' \
+	local cpu_usage_percent=$(awk '{t=0; for (i=2;i<=9;i++) t+=$i; idle=$5+$6; if (NR==1){t1=t; idle1=idle;} else {dt=t-t1; busy=dt-(idle-idle1); printf "%.0f\n", (dt>0 && busy>=0 && busy<=dt ? busy*100/dt : 0)}}' \
 		<(grep 'cpu ' /proc/stat) <(sleep 1; grep 'cpu ' /proc/stat))
 
 	local cpu_cores=$(nproc)
 
 	local cpu_freq=$(cat /proc/cpuinfo | grep "MHz" | head -n 1 | awk '{printf "%.1f GHz\n", $4/1000}')
+	[ -z "$cpu_freq" ] && cpu_freq="未知"
 
 	local mem_info=$(free -b | awk 'NR==2{printf "%.2f/%.2fM (%.2f%%)", $3/1024/1024, $2/1024/1024, $3*100/$2}')
 
 	local disk_info=$(df -h | awk '$NF=="/"{printf "%s/%s (%s)", $3, $2, $5}')
 
-	local ipinfo=$(curl -s ipinfo.io)
-	local country=$(echo "$ipinfo" | grep 'country' | awk -F': ' '{print $2}' | tr -d '",')
-	local city=$(echo "$ipinfo" | grep 'city' | awk -F': ' '{print $2}' | tr -d '",')
-	local isp_info=$(echo "$ipinfo" | grep 'org' | awk -F': ' '{print $2}' | tr -d '",')
+	local ipinfo country city isp_info
+	local -a location=()
+	ipinfo=$(curl -fsS --connect-timeout 3 --max-time 5 https://ipinfo.io/json 2>/dev/null) || ipinfo=""
+	if [ -n "$ipinfo" ]; then
+		if command -v jq >/dev/null 2>&1; then
+			mapfile -t location < <(printf '%s' "$ipinfo" | jq -r '[.country, .city, .org][] | if type == "string" then gsub("[[:cntrl:]]"; " ") else "" end' 2>/dev/null)
+		elif command -v python3 >/dev/null 2>&1; then
+			mapfile -t location < <(printf '%s' "$ipinfo" | python3 -c 'import json, sys
+try:
+    data = json.load(sys.stdin)
+    for key in ("country", "city", "org"):
+        value = data.get(key)
+        print("".join(c if c.isprintable() else " " for c in value) if isinstance(value, str) else "")
+except (ValueError, AttributeError):
+    pass' 2>/dev/null)
+		fi
+	fi
+	country="${location[0]:-未知}"
+	city="${location[1]:-未知}"
+	isp_info="${location[2]:-未知}"
 
-	local load=$(uptime | awk '{print $(NF-2), $(NF-1), $NF}')
+	local load=$(LC_ALL=C uptime | awk '{print $(NF-2), $(NF-1), $NF}')
 	local dns_addresses=$(awk '/^nameserver/{printf "%s ", $2} END {print ""}' /etc/resolv.conf)
 
 
@@ -8608,8 +8586,13 @@ linux_info() {
 	local rclone_info=$(system_info_rclone)
 	local bitwarden_info=$(system_info_bitwarden)
 
-	local tcp_count=$(ss -t | wc -l)
-	local udp_count=$(ss -u | wc -l)
+	local tcp_count="未知" udp_count="未知" sockets
+	if sockets=$(ss -H -t 2>/dev/null); then
+		tcp_count=$(printf '%s\n' "$sockets" | awk 'NF {n++} END {print n+0}')
+	fi
+	if sockets=$(ss -H -u 2>/dev/null); then
+		udp_count=$(printf '%s\n' "$sockets" | awk 'NF {n++} END {print n+0}')
+	fi
 
 	clear
 	echo -e "系统信息查询"
@@ -8635,7 +8618,7 @@ linux_info() {
 	echo -e "${gl_kjlan}-------------"
 	echo -e "${gl_kjlan}网络算法:       ${gl_bai}$congestion_algorithm $queue_algorithm"
 	echo -e "${gl_kjlan}-------------"
-	echo -e "${gl_kjlan}运营商:         ${gl_bai}$isp_info"
+	printf '%b%s\n' "${gl_kjlan}运营商:         ${gl_bai}" "$isp_info"
 	if [ -n "$ipv4_address" ]; then
 		echo -e "${gl_kjlan}IPv4地址:       ${gl_bai}$ipv4_address"
 	fi
@@ -8646,7 +8629,7 @@ linux_info() {
 		echo -e "${gl_kjlan}IPv6地址:       ${gl_bai}无"
 	fi
 	echo -e "${gl_kjlan}DNS地址:        ${gl_bai}$dns_addresses"
-	echo -e "${gl_kjlan}地理位置:       ${gl_bai}$country $city"
+	printf '%b%s\n' "${gl_kjlan}地理位置:       ${gl_bai}" "$country $city"
 	echo -e "${gl_kjlan}系统时间:       ${gl_bai}$timezone $current_time"
 	echo -e "${gl_kjlan}本地语言:       ${gl_bai}$language_info"
 	echo -e "${gl_kjlan}-------------"

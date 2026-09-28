@@ -87,6 +87,7 @@ Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python
 ### 系统信息查询
 
 - 展示主机名、系统版本、内核、CPU、内存、Swap、硬盘、流量、拥塞算法、队列算法、运营商、IPv4、IPv6、DNS、位置、时间、时区、本地语言、运行时长，以及 SSH、UFW、Docker、Nginx、Fail2ban、rclone、Bitwarden 状态。
+- 只读查询，不安装依赖。公网查询限定地址族和超时；位置使用已有 jq/Python 解析，缺失或失败显示未知。SSH 认证项来自 `sshd -T` 的全局配置，不代表特定用户的 Match 策略或实际登录结果。
 
 ### 系统更新
 
