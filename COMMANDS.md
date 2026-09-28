@@ -355,14 +355,14 @@ grep -Eq '^\s*precedence\s+::ffff:0:0/96\s+100\s*$' /etc/gai.conf
 解释：判断当前是否 IPv4 优先。
 
 ```bash
-echo 'precedence ::ffff:0:0/96 100' >> /etc/gai.conf
+prefer_ipv4
 ```
-解释：设置 IPv4 优先。
+解释：脚本内部函数去重并设置 IPv4 映射地址的 precedence，原子替换配置，保留其他策略。
 
 ```bash
-rm -f /etc/gai.conf
+prefer_ipv6
 ```
-解释：恢复默认 IPv6 优先。
+解释：只移除 IPv4 映射地址的 precedence 覆盖，不删除整个 `/etc/gai.conf`。
 
 ```bash
 bash /root/linux-daimon/daimon/jhb-v6.sh
@@ -492,21 +492,18 @@ timedatectl set-timezone UTC
 
 ```bash
 hostname
-echo "新主机名" > /etc/hostname
-hostnamectl set-hostname "新主机名"
-sed -i "s/127.0.0.1 .*/127.0.0.1       新主机名 localhost localhost.localdomain/g" /etc/hosts
-sed -i "s/^::1 .*/::1             新主机名 localhost localhost.localdomain ipv6-localhost ipv6-loopback/g" /etc/hosts
+daimon_set_hostname new-host
 ```
-解释：显示并修改主机名，同步 hosts。
+解释：脚本内部函数验证主机名，暂存配置后修改并核对运行时主机名；只替换回环 hosts 行中的旧主机名，保留其他别名。配置写入失败或中断时尝试恢复原文件和运行时值，不重启 hostnamed，不保留备份。
 
 ### 5.9 本机 hosts 解析
 
 ```bash
 cat /etc/hosts
-echo "110.25.5.33 example.com" >> /etc/hosts
-sed -i "/关键字/d" /etc/hosts
+daimon_hosts_edit add '110.25.5.33 example.com'
+daimon_hosts_edit delete 'example.com'
 ```
-解释：查看、添加、删除 hosts 解析。
+解释：通过脚本内部函数校验 IPv4/IPv6 地址和主机名，重复添加不累积相同行；删除按字面子串匹配，不执行用户输入的正则或 sed 命令。修改保留文件权限，失败不替换原文件；校验需要 Python 3，缺少时按需安装。
 
 ### 5.10 系统变量管理工具
 
@@ -516,12 +513,9 @@ echo "$PATH" | tr ':' '\n' | nl -ba
 grep -E '^(export )?[A-Za-z_][A-Za-z0-9_]*=' ~/.bashrc ~/.profile /etc/environment
 cat ~/.bashrc
 cat ~/.profile
-vim ~/.bashrc
-vim ~/.profile
-source ~/.bashrc
-source ~/.profile
+env_menu
 ```
-解释：查看、编辑、重新加载环境变量。
+解释：脚本菜单验证变量名和写入位置，拒绝只读变量及数组；变量值按字面转义写入，原子替换配置，不执行整份 `.bashrc` 或 `.profile`。新增变量设置在当前脚本进程，父 Shell 需重新登录生效。
 
 ### 5.11 github镜像源
 
@@ -533,12 +527,11 @@ cat /root/linux-daimon/daimon/github_proxy_sources.txt
 解释：显示当前镜像源列表。
 
 ```bash
-echo "https://ghproxy.net" >> /root/linux-daimon/daimon/github_proxy_sources.txt
-sed -i "编号d" /root/linux-daimon/daimon/github_proxy_sources.txt
-curl -L --connect-timeout 4 --max-time 12 --retry 0 -o /tmp/daimon_proxy_test_xxx -w "%{http_code} %{time_total} %{speed_download} %{size_download}" -s "镜像后的测试URL"
-rm -f /tmp/daimon_proxy_test_xxx
+github_proxy_add_source
+github_proxy_delete_source
+github_proxy_speed_test
 ```
-解释：添加、删除、测速 GitHub 镜像源，测速文件会删除。
+解释：脚本内部函数按 `名称|URL` 保存，名称按字面去重，删除编号必须存在；不会重新初始化已有自定义列表。测速用独立临时目录，curl 失败或部分下载不能计为成功，结束删除本次临时文件。
 
 ### 5.12 查看 ssh 的 ip
 

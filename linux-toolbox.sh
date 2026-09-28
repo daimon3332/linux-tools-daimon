@@ -2183,11 +2183,43 @@ auto_optimize_dns() {
 }
 
 
+daimon_config_commit() {
+	local file="$1" staged="$2" mode="${3:-644}"
+	if [ -L "$file" ] || { [ -e "$file" ] && [ ! -f "$file" ]; }; then
+		rm -f -- "$staged"
+		return 1
+	fi
+	if [ -f "$file" ]; then
+		chmod --reference="$file" "$staged" &&
+			{ [ "$(id -u)" != 0 ] || chown --reference="$file" "$staged"; } || { rm -f -- "$staged"; return 1; }
+	else
+		chmod "$mode" "$staged" || { rm -f -- "$staged"; return 1; }
+	fi
+	mv -f -- "$staged" "$file" || { rm -f -- "$staged"; return 1; }
+}
+
+daimon_gai_preference() {
+	local family="$1" file=/etc/gai.conf staged
+	[[ "$family" = 4 || "$family" = 6 ]] || return 1
+	[ ! -L "$file" ] && { [ ! -e "$file" ] || [ -f "$file" ]; } || return 1
+	staged=$(mktemp "${file}.XXXXXX") || return 1
+	if [ -f "$file" ]; then
+		awk '!($1=="precedence" && ($2=="::ffff:0:0/96" || $2=="::ffff:0.0.0.0/96"))' "$file" > "$staged" || { rm -f -- "$staged"; return 1; }
+	fi
+	if [ "$family" = 4 ]; then
+		printf 'precedence ::ffff:0:0/96 100\n' >> "$staged" || { rm -f -- "$staged"; return 1; }
+	fi
+	daimon_config_commit "$file" "$staged" || return 1
+	echo "已切换为 IPv${family} 优先"
+	send_stats "已切换为 IPv${family} 优先"
+}
+
 prefer_ipv4() {
-grep -q '^precedence ::ffff:0:0/96  100' /etc/gai.conf 2>/dev/null \
-	|| echo 'precedence ::ffff:0:0/96  100' >> /etc/gai.conf
-echo "已切换为 IPv4 优先"
-send_stats "已切换为 IPv4 优先"
+	daimon_gai_preference 4
+}
+
+prefer_ipv6() {
+	daimon_gai_preference 6
 }
 
 
@@ -10442,6 +10474,29 @@ EOF
 	chown -R "$new_username:$new_username" "$user_home/.ssh"
 }
 
+daimon_env_name_valid() {
+	local declaration
+	[[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
+	declaration=$(declare -p "$1" 2>/dev/null) || return 0
+	[[ ! "$declaration" =~ ^declare\ -[^\ ]*[raA] ]]
+}
+
+daimon_env_write() {
+	local file="$1" name="$2" staged value
+	daimon_env_name_valid "$name" || return 1
+	[ ! -L "$file" ] && { [ ! -e "$file" ] || [ -f "$file" ]; } || return 1
+	[ -e "$file" ] || [ "$#" -gt 2 ] || return 0
+	staged=$(mktemp "${file}.XXXXXX") || return 1
+	if [ -f "$file" ]; then
+		awk -v name="$name" '$0 !~ "^[[:space:]]*export[[:space:]]+" name "="' "$file" > "$staged" || { rm -f -- "$staged"; return 1; }
+	fi
+	if [ "$#" -gt 2 ]; then
+		value=${3//\'/\'\\\'\'}
+		printf "export %s='%s'\n" "$name" "$value" >> "$staged" || { rm -f -- "$staged"; return 1; }
+	fi
+	daimon_config_commit "$file" "$staged" 600
+}
+
 env_menu() {
 	local bashrc_file="$HOME/.bashrc"
 	local profile_file="$HOME/.profile"
@@ -10464,31 +10519,32 @@ env_menu() {
 
 	add_env_var() {
 		local name value target
-		read -e -p "变量名（如 JAVA_HOME）: " name || return 1
+		read -r -e -p "变量名（如 JAVA_HOME）: " name || return 1
 		[ -z "$name" ] && return
-		read -e -p "变量值: " value || return 1
+		daimon_env_name_valid "$name" || { echo "变量名无效、只读或不是标量，未修改配置。"; return 1; }
+		read -r -e -p "变量值: " value || return 1
 		echo "1. 写入 ~/.bashrc（默认）"
 		echo "2. 写入 ~/.profile"
 		read -e -p "请选择写入位置: " target || return 1
 		local file="$bashrc_file"
-		[ "$target" = "2" ] && file="$profile_file"
-		touch "$file"
-		sed -i "/^export ${name}=/d" "$file"
-		echo "export ${name}=\"${value}\"" >> "$file"
-		source "$file" >/dev/null 2>&1 || true
-		export "$name=$value"
-		echo "已写入并尝试重新加载: $file"
+		case "$target" in
+			""|1) ;;
+			2) file="$profile_file" ;;
+			*) echo "写入位置无效，未修改配置。"; return 1 ;;
+		esac
+		daimon_env_write "$file" "$name" "$value" || { echo "环境变量写入失败"; return 1; }
+		declare -gx -- "$name=$value" || return 1
+		echo "已写入配置并设置当前变量: $file（未执行其他 Shell 配置）"
 	}
 
 	delete_env_var() {
 		local name
-		read -e -p "请输入要删除的变量名: " name || return 1
+		read -r -e -p "请输入要删除的变量名: " name || return 1
 		[ -z "$name" ] && return
-		sed -i "/^export ${name}=/d" "$bashrc_file" "$profile_file" 2>/dev/null || true
-		unset "$name"
-		[ -f "$bashrc_file" ] && source "$bashrc_file" >/dev/null 2>&1 || true
-		[ -f "$profile_file" ] && source "$profile_file" >/dev/null 2>&1 || true
-		echo "已删除变量配置并尝试重新加载: $name"
+		daimon_env_name_valid "$name" || { echo "变量名无效、只读或不是标量。"; return 1; }
+		daimon_env_write "$bashrc_file" "$name" && daimon_env_write "$profile_file" "$name" || { echo "环境变量配置删除失败"; return 1; }
+		unset -v "$name" || return 1
+		echo "已删除变量配置: $name（未执行其他 Shell 配置）"
 	}
 
 	while true; do
@@ -10517,21 +10573,24 @@ github_proxy_sources_file() {
 }
 
 github_proxy_init_sources() {
-	local file
+	local file staged
 	file=$(github_proxy_sources_file)
-	mkdir -p "$(dirname "$file")" >/dev/null 2>&1 || true
-	if [ ! -s "$file" ] || grep -Eq 'raw.githubusercontent.com\||ghproxy.homeboyc.cn|github.akams.cn' "$file"; then
-		cat > "$file" <<'EOF'
+	[ ! -L "$file" ] && { [ ! -e "$file" ] || [ -f "$file" ]; } || return 1
+	mkdir -p "$(dirname "$file")" || return 1
+	if [ ! -s "$file" ]; then
+		staged=$(mktemp "${file}.XXXXXX") || return 1
+		cat > "$staged" <<'EOF'
 gh-proxy.com|https://gh-proxy.com/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 ghproxy.net|https://ghproxy.net/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 testingcf.jsdelivr.net|https://testingcf.jsdelivr.net/gh/komari-monitor/komari-agent@main/install.sh
 ghfast.top|https://ghfast.top/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 EOF
+		daimon_config_commit "$file" "$staged" || return 1
 	fi
 }
 
 github_proxy_show_sources() {
-	github_proxy_init_sources
+	github_proxy_init_sources || return 1
 	local file idx=1 name url
 	file=$(github_proxy_sources_file)
 	while IFS='|' read -r name url; do
@@ -10542,50 +10601,59 @@ github_proxy_show_sources() {
 }
 
 github_proxy_add_source() {
-	github_proxy_init_sources
-	local name url file
+	github_proxy_init_sources || return 1
+	local name url file staged
 	file=$(github_proxy_sources_file)
-	read -e -p "请输入镜像名称: " name || return 1
-	read -e -p "请输入测速URL: " url || return 1
-	[ -z "$name" ] || [ -z "$url" ] && echo "名称和URL不能为空" && return 1
-	sed -i "/^${name//\//\\/}|/d" "$file"
-	echo "$name|$url" >> "$file"
+	read -r -e -p "请输入镜像名称: " name || return 1
+	read -r -e -p "请输入测速URL: " url || return 1
+	if [ -z "$name" ] || [[ "$name" == *'|'* || "$name" =~ [[:cntrl:]] ]] || ! [[ "$url" =~ ^https?://[^[:space:]\|]+$ ]]; then
+		echo "镜像名称或 URL 无效"; return 1
+	fi
+	staged=$(mktemp "${file}.XXXXXX") || return 1
+	DAIMON_PROXY_NAME="$name" awk -F'|' '$1 != ENVIRON["DAIMON_PROXY_NAME"]' "$file" > "$staged" &&
+		printf '%s|%s\n' "$name" "$url" >> "$staged" || { rm -f -- "$staged"; return 1; }
+	daimon_config_commit "$file" "$staged" || return 1
 	echo "已添加: $name"
 }
 
 github_proxy_delete_source() {
-	github_proxy_init_sources
-	local file num tmp
+	github_proxy_init_sources || return 1
+	local file num tmp count
 	file=$(github_proxy_sources_file)
 	github_proxy_show_sources
 	read -e -p "请输入要删除的编号: " num || return 1
-	[[ "$num" =~ ^[0-9]+$ ]] || return 1
-	tmp=$(mktemp)
-	awk -F'|' -v n="$num" 'NF && ++i != n {print}' "$file" > "$tmp"
-	cat "$tmp" > "$file"
-	rm -f "$tmp"
+	[[ "$num" =~ ^[0-9]{1,6}$ ]] || return 1
+	num=$((10#$num))
+	count=$(awk 'NF {i++} END {print i+0}' "$file")
+	[ "$num" -ge 1 ] && [ "$num" -le "$count" ] || { echo "编号不存在，未删除。"; return 1; }
+	tmp=$(mktemp "${file}.XXXXXX") || return 1
+	awk -F'|' -v n="$num" 'NF && ++i != n {print}' "$file" > "$tmp" || { rm -f -- "$tmp"; return 1; }
+	daimon_config_commit "$file" "$tmp" || return 1
 	echo "已删除编号: $num"
 }
 
-github_proxy_speed_test() {
-	github_proxy_init_sources
-	local file out idx name url tmp result http_code time_total speed size
+github_proxy_speed_test() (
+	github_proxy_init_sources || return 1
+	local file out idx name url tmp result http_code time_total speed size work curl_ok
 	file=$(github_proxy_sources_file)
-	out="/tmp/daimon_github_proxy_speed.txt"
+	work=$(mktemp -d) || return 1
+	trap 'rm -rf -- "$work"' EXIT
+	out="$work/ranking"
 	: > "$out"
 	echo "开始测速 GitHub 镜像源（小文件、短超时，下载后自动删除）..."
 	idx=0
 	while IFS='|' read -r name url; do
 		[ -z "$name" ] && continue
 		idx=$((idx + 1))
-		tmp="/tmp/daimon_github_proxy_${idx}.tmp"
+		tmp="$work/download"
 		echo "== Testing: $name"
-		result=$(curl -L --connect-timeout 5 --max-time 15 --retry 0 -o "$tmp" -w "%{http_code} %{time_total} %{speed_download} %{size_download}" -s "$url")
+		curl_ok=0
+		result=$(curl -L --connect-timeout 5 --max-time 15 --retry 0 -o "$tmp" -w "%{http_code} %{time_total} %{speed_download} %{size_download}" -s -- "$url") && curl_ok=1
 		http_code=$(echo "$result" | awk '{print $1}')
 		time_total=$(echo "$result" | awk '{print $2}')
 		speed=$(echo "$result" | awk '{print $3}')
 		size=$(echo "$result" | awk '{print $4}')
-		if [ "$http_code" = "200" ] && [ "${size:-0}" -gt 1000 ]; then
+		if [ "$curl_ok" = 1 ] && [ "$http_code" = "200" ] && [[ "$size" =~ ^[0-9]+$ ]] && [ "$size" -gt 1000 ]; then
 			printf "%s\t%s\t%s\t%s\t%s\n" "$speed" "$time_total" "$size" "$http_code" "$name" >> "$out"
 			echo "OK  HTTP:$http_code  TIME:${time_total}s  SPEED:${speed}B/s  SIZE:${size}B"
 		else
@@ -10597,8 +10665,7 @@ github_proxy_speed_test() {
 	echo "------------------------------------------------"
 	echo "Speed ranking:"
 	sort -nr "$out" | awk -F '\t' 'BEGIN{printf "%-4s %-28s %-12s %-10s %-10s %-8s\n","Rank","Proxy","Speed","Time","Size","HTTP"}{s=$1; if(s>=1048576){sf=sprintf("%.2f MB/s",s/1048576)}else if(s>=1024){sf=sprintf("%.2f KB/s",s/1024)}else{sf=sprintf("%.0f B/s",s)} printf "%-4d %-28s %-12s %-10ss %-10s %-8s\n",NR,$5,sf,$2,$3,$4}'
-	rm -f "$out"
-}
+)
 
 github_proxy_manager() {
 	while true; do
@@ -10850,6 +10917,86 @@ EOF
 # ===== end system tools restored helper functions =====
 
 
+daimon_hosts_edit() {
+	local action="$1" value="$2" file=/etc/hosts staged
+	[ ! -L "$file" ] && [ -f "$file" ] || return 1
+	[ -n "$value" ] || return 1
+	command -v python3 >/dev/null 2>&1 || { install python3 || return 1; }
+	staged=$(mktemp "${file}.XXXXXX") || return 1
+	if ! python3 -c 'import ipaddress, re, sys
+action, value = sys.argv[1:]
+text = sys.stdin.read()
+if any(c in value for c in "\r\n\0"):
+    raise SystemExit("Invalid hosts record")
+if action == "delete":
+    result = "".join(line for line in text.splitlines(keepends=True) if value not in line)
+elif action == "add":
+    fields = value.split("#", 1)[0].split()
+    if len(fields) < 2:
+        raise SystemExit("Expected an IP address and host names")
+    ipaddress.ip_address(fields[0])
+    for host in fields[1:]:
+        if len(host) > 253 or not re.fullmatch(r"[A-Za-z0-9_](?:[A-Za-z0-9_.-]*[A-Za-z0-9_.])?", host):
+            raise SystemExit("Invalid host name")
+    exists = any(line.split("#", 1)[0].split() == fields for line in text.splitlines())
+    result = text if exists else text + ("\n" if text and not text.endswith("\n") else "") + value + "\n"
+else:
+    raise SystemExit("Invalid hosts operation")
+sys.stdout.write(result)' "$action" "$value" < "$file" > "$staged"; then
+		rm -f -- "$staged"
+		echo "hosts 修改失败，原文件未改变。"
+		return 1
+	fi
+	daimon_config_commit "$file" "$staged"
+}
+
+daimon_set_hostname() (
+	local name="$1" old staged host_file=/etc/hostname hosts_file=/etc/hosts
+	local runtime_changed=0 host_changed=0 hosts_changed=0
+	[[ ${#name} -le 64 && "$name" =~ ^[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)*$ ]] || { echo "主机名无效"; return 1; }
+	[ ! -L "$host_file" ] && [ ! -L "$hosts_file" ] && [ -f "$host_file" ] && [ -f "$hosts_file" ] || return 1
+	old=$(uname -n) || return 1
+	staged=$(mktemp -d "${host_file%/*}/.daimon-hostname.XXXXXX") || return 1
+	cleanup_hostname() {
+		local status=$?
+		if [ "$status" != 0 ]; then
+			if [ "$host_changed" = 1 ]; then
+				daimon_config_commit "$host_file" "$staged/original-hostname" || echo "ERROR: 主机名文件恢复失败" >&2
+			fi
+			if [ "$hosts_changed" = 1 ]; then
+				daimon_config_commit "$hosts_file" "$staged/original-hosts" || echo "ERROR: hosts 文件恢复失败" >&2
+			fi
+			if [ "$runtime_changed" = 1 ]; then
+				hostname "$old" && [ "$(uname -n)" = "$old" ] || echo "ERROR: 运行时主机名恢复失败" >&2
+			fi
+		fi
+		case "$staged" in "${host_file%/*}"/.daimon-hostname.*) rm -rf -- "$staged" ;; esac
+		exit "$status"
+	}
+	trap cleanup_hostname EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM HUP
+	cp -p -- "$host_file" "$staged/original-hostname" && cp -p -- "$hosts_file" "$staged/original-hosts" || return 1
+	printf '%s\n' "$name" > "$staged/new-hostname" || return 1
+	awk -v old="$old" -v name="$name" '
+		$1=="127.0.0.1" || $1=="127.0.1.1" || $1=="::1" {
+			for (i=2;i<=NF && $i !~ /^#/;i++) {
+				if ($i==old) {$i=name; found=1}
+				if ($i==name) found=1
+			}
+		}
+		{print}
+		END {if (!found) print "127.0.1.1 " name}' "$hosts_file" > "$staged/new-hosts" || return 1
+	runtime_changed=1
+	hostname "$name" && [ "$(uname -n)" = "$name" ] || return 1
+	host_changed=1
+	daimon_config_commit "$host_file" "$staged/new-hostname" || return 1
+	hosts_changed=1
+	daimon_config_commit "$hosts_file" "$staged/new-hosts" || return 1
+	echo "主机名已更改为: $name"
+	return 0
+)
+
 daimon_shortcut_available() {
 	local name="$1" path
 	[[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9_-]{0,31}$ ]] || return 1
@@ -10943,7 +11090,7 @@ linux_Settings() {
 					read -e -p "选择优先的网络: " choice || return 1
 					case "$choice" in
 						1) prefer_ipv4 ;;
-						2) rm -f /etc/gai.conf; echo "已切换为 IPv6 优先"; send_stats "已切换为 IPv6 优先" ;;
+						2) prefer_ipv6 ;;
 						3) clear; daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"; echo "该功能由jhb大神提供，感谢他！"; send_stats "ipv6修复" ;;
 						0) break ;;
 						*) echo "无效的输入!" ;;
@@ -11108,26 +11255,7 @@ linux_Settings() {
 					echo "------------------------"
 					read -e -p "请输入新的主机名（输入0退出）: " new_hostname || return 1
 					if [ -n "$new_hostname" ] && [ "$new_hostname" != "0" ]; then
-						if [ -f /etc/alpine-release ]; then
-							echo "$new_hostname" > /etc/hostname
-							hostname "$new_hostname"
-						else
-							hostnamectl set-hostname "$new_hostname"
-							echo "$new_hostname" > /etc/hostname
-							systemctl restart systemd-hostnamed 2>/dev/null || true
-						fi
-						if grep -q "127.0.0.1" /etc/hosts; then
-							sed -i "s/^127.0.0.1 .*/127.0.0.1       $new_hostname localhost localhost.localdomain/g" /etc/hosts
-						else
-							echo "127.0.0.1       $new_hostname localhost localhost.localdomain" >> /etc/hosts
-						fi
-						if grep -q "^::1" /etc/hosts; then
-							sed -i "s/^::1 .*/::1             $new_hostname localhost localhost.localdomain ipv6-localhost ipv6-loopback/g" /etc/hosts
-						else
-							echo "::1             $new_hostname localhost localhost.localdomain ipv6-localhost ipv6-loopback" >> /etc/hosts
-						fi
-						echo "主机名已更改为: $new_hostname"
-						send_stats "主机名已更改"
+						daimon_set_hostname "$new_hostname" && send_stats "主机名已更改" || echo "主机名修改失败，请检查上方错误。"
 						break_end
 					else
 						break
@@ -11151,8 +11279,8 @@ linux_Settings() {
 					echo "------------------------"
 					read -e -p "请输入你的选择: " host_dns || return 1
 					case "$host_dns" in
-						1) read -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost || return 1; [ -n "$addhost" ] && echo "$addhost" >> /etc/hosts; send_stats "本地host解析新增" ;;
-						2) read -e -p "请输入需要删除的解析内容关键字: " delhost || return 1; [ -n "$delhost" ] && sed -i "/$delhost/d" /etc/hosts; send_stats "本地host解析删除" ;;
+						1) read -r -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost || return 1; [ -n "$addhost" ] && daimon_hosts_edit add "$addhost" && send_stats "本地host解析新增" ;;
+						2) read -r -e -p "请输入需要删除的解析内容关键字（按字面匹配）: " delhost || return 1; [ -n "$delhost" ] && daimon_hosts_edit delete "$delhost" && send_stats "本地host解析删除" ;;
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
