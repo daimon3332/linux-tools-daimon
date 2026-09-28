@@ -10623,27 +10623,89 @@ daimon_user_sudo() (
 	fi
 )
 
-create_user_with_sshkey() {
-	local new_username="${1:-}" is_sudo="${2:-false}" sshkey_vl user_home
+create_user_with_sshkey() (
+	local new_username="${1:-}" is_sudo="${2:-false}" sshkey_vl user_home home_base key_content work=""
+	local creating=0 committed=0 uid="" status name password current_uid gid comment current_home shell
+	local sudo_file="/etc/sudoers.d/$new_username"
 	[[ "$new_username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "用户名格式无效"; return 1; }
+	[[ "$is_sudo" = true || "$is_sudo" = false ]] || return 1
+	mkdir -p "${DAIMON_ROOT_DIR:-/root/linux-daimon}" || return 1
+	exec {user_lock}>"${DAIMON_ROOT_DIR:-/root/linux-daimon}/.users.lock" || return 1
+	flock -n "$user_lock" || { echo "其他用户管理任务正在运行。"; return 1; }
 	if id "$new_username" >/dev/null 2>&1; then
 		daimon_regular_user_valid "$new_username" || { echo "不能修改系统账号。"; return 1; }
+		user_home=$(daimon_user_home "$new_username") || return 1
 		echo "用户已存在: $new_username"
 	else
-		useradd -m -s /bin/bash "$new_username" || return 1
-		echo "已创建用户: $new_username"
+		home_base=$(useradd -D) || return 1
+		home_base=$(printf '%s\n' "$home_base" | sed -n 's/^HOME=//p')
+		[[ "$home_base" = /* && "$home_base" != / ]] && [ -d "$home_base" ] || return 1
+		home_base=$(realpath -e -- "$home_base") || return 1
+		user_home="$home_base/$new_username"
+		[ ! -e "$user_home" ] && [ ! -L "$user_home" ] || { echo "主目录已存在，拒绝接管或删除原有数据。"; return 1; }
+		[ "$is_sudo" != true ] || { [ ! -e "$sudo_file" ] && [ ! -L "$sudo_file" ]; } || {
+			echo "存在同名 sudo 规则，请先核查原有授权。"; return 1
+		}
 	fi
-	user_home=$(daimon_user_home "$new_username") || return 1
 	echo "公钥可输入 URL 或完整 SSH 公钥；留空跳过。"
 	read -r -e -p "请输入 ${new_username} 的公钥（可留空跳过）: " sshkey_vl || return 1
+	trap '
+		status=$?
+		trap "" INT TERM HUP
+		if [ "$creating" = 1 ] && [ "$committed" = 0 ] && id "$new_username" >/dev/null 2>&1; then
+			IFS=: read -r name password current_uid gid comment current_home shell < <(getent passwd "$new_username")
+			if [ "$name" = "$new_username" ] && [ "$current_home" = "$user_home" ] &&
+				{ [ -z "$uid" ] || [ "$uid" = "$current_uid" ]; } && daimon_regular_user_valid "$new_username"; then
+				if [ "$is_sudo" = true ] && [ ! -L "$sudo_file" ] && [ -f "$sudo_file" ] &&
+					cmp -s "$sudo_file" <(printf "%s ALL=(ALL) NOPASSWD:ALL\n" "$new_username"); then
+					rm -f -- "$sudo_file" || { echo "创建失败，sudo 规则未能清理: $sudo_file"; status=1; }
+				fi
+				if [ ! -e "$user_home" ] && [ ! -L "$user_home" ]; then
+					userdel "$new_username" || status=1
+				elif [ "$(daimon_user_home "$new_username")" = "$user_home" ]; then
+					userdel -r "$new_username" || status=1
+				fi
+			fi
+			if id "$new_username" >/dev/null 2>&1; then echo "创建失败，账号未能安全清理，请手动核查: $new_username"; status=1; fi
+		fi
+		if [ -n "$work" ]; then
+			rm -f -- "$work/.ssh/authorized_keys"
+			[ ! -d "$work/.ssh" ] || rmdir -- "$work/.ssh"
+			rmdir -- "$work"
+		fi
+		exit "$status"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	if [ -n "$sshkey_vl" ]; then
+		work=$(mktemp -d) || return 1
+		(
+			sshkey_on() { :; }
+			case "$sshkey_vl" in
+				http://*|https://*) fetch_remote_ssh_keys "$sshkey_vl" "$work" ;;
+				*) import_sshkey "$sshkey_vl" "$work" ;;
+			esac
+		) >/dev/null || { echo "公钥读取或校验失败，未修改用户。"; return 1; }
+		key_content=$(cat "$work/.ssh/authorized_keys") || return 1
+	fi
+	if ! id "$new_username" >/dev/null 2>&1; then
+		creating=1
+		useradd -m -d "$user_home" -s /bin/bash "$new_username" || return 1
+		uid=$(id -u "$new_username") || return 1
+		[ "$(daimon_user_home "$new_username")" = "$user_home" ] || return 1
+	fi
 	if [ -n "$sshkey_vl" ]; then
 		{
-			declare -f ssh_public_key_valid ssh_import_key_file import_sshkey fetch_remote_ssh_keys
-			printf '%s\n' 'sshkey_on() { :; }' 'case "$1" in http://*|https://*) fetch_remote_ssh_keys "$1" "$2" ;; *) import_sshkey "$1" "$2" ;; esac'
-		} | runuser -u "$new_username" -- bash --noprofile --norc -s -- "$sshkey_vl" "$user_home" || return 1
+			declare -f ssh_public_key_valid ssh_import_key_file
+			printf '%s\n' 'sshkey_on() { :; }' 'ssh_import_key_file <(printf "%s\n" "$1") "$2"'
+		} | runuser -u "$new_username" -- bash --noprofile --norc -s -- "$key_content" "$user_home" || return 1
 	fi
-	[ "$is_sudo" != true ] || daimon_user_sudo grant "$new_username" || return 1
-}
+	[ "$is_sudo" != true ] || daimon_user_sudo grant "$new_username" || {
+		[ "$creating" = 1 ] || echo "sudo 授权失败；已导入的用户公钥保留。"
+		return 1
+	}
+	committed=1
+	[ "$creating" = 0 ] || echo "已创建用户: $new_username"
+)
 
 daimon_env_name_valid() {
 	local declaration

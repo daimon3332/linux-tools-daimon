@@ -47,15 +47,27 @@ id() {
         -g) echo 100 ;;
         -gn) echo users ;;
         -nG) cat "$WORK/groups" ;;
-        *) [ "$user" = alice ] || [ "$user" = root ] ;;
+        *) [ "$user" = alice ] || [ "$user" = root ] || grep -q "^$user:" "$WORK/etc/passwd" ;;
     esac
 }
 getent() {
     case "$1:$2" in
         passwd:alice) printf 'alice:x:1000:100::%s:/bin/bash\\n' "$(cd "$WORK/srv/alice" && pwd)" ;;
         group:sudo) echo sudo:x:27: ;;
+        passwd:*) grep "^$2:" "$WORK/etc/passwd" ;;
         *) return 1 ;;
     esac
+}
+useradd() {
+    if [ "$1" = -D ]; then echo "HOME=$(cd "$WORK/home" && pwd)"; return; fi
+    local user="${@: -1}"
+    printf '%s:x:1000:100::%s/home/%s:/bin/bash\\n' "$user" "$(cd "$WORK" && pwd)" "$user" >> "$WORK/etc/passwd"
+    mkdir -p "$WORK/home/$user"
+}
+userdel() {
+    local user="${@: -1}"
+    sed -i "/^$user:/d" "$WORK/etc/passwd"
+    [ "$1" != -r ] || rmdir "$WORK/home/$user"
 }
 stat() {
     if [ "$1" = -c ] && [ "$2" = %u ]; then echo 1000; else command stat "$@"; fi
@@ -70,7 +82,13 @@ sudo() {
 }
 visudo() { [ "$FAILURE" != syntax ]; }
 ssh_public_key_valid() { [ "$1" = 'ecdsa-sha2-nistp256 VALID' ]; }
-import_sshkey() { ssh_public_key_valid "$1" || return 1; echo "$2" > "$WORK/import-home"; }
+ssh_import_key_file() {
+    local key content=""
+    while IFS= read -r key; do ssh_public_key_valid "$key" || return 1; content+="$key"$'\\n'; done < "$1"
+    mkdir -p "$2/.ssh" && printf %s "$content" > "$2/.ssh/authorized_keys" || return 1
+    echo "$2" > "$WORK/import-home"
+}
+import_sshkey() { ssh_import_key_file <(printf '%s\\n' "$1") "$2"; }
 fetch_remote_ssh_keys() { return 1; }
 runuser() {
     shift 3
@@ -82,6 +100,41 @@ runuser() {
         script=self.work/'entry.sh';script.write_bytes(body.encode())
         return subprocess.run([BASH,'--noprofile','--norc',script.as_posix()],input=inputs.encode(),capture_output=True,timeout=15,
                               env=dict(os.environ,WORK=self.work.as_posix(),DAIMON_ROOT_DIR=(self.work/'managed').as_posix(),FAILURE=failure))
+
+    def test_creation_eof_does_not_create_account(self):
+        result=self.shell('create_user_with_sshkey newuser false')
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn(b'newuser:',(self.work/'etc/passwd').read_bytes())
+        self.assertFalse((self.work/'home/newuser').exists())
+
+    def test_creation_invalid_key_does_not_create_account(self):
+        result=self.shell('create_user_with_sshkey newuser false','ssh-ed25519 invalid-key\n')
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn(b'newuser:',(self.work/'etc/passwd').read_bytes())
+
+    def test_creation_failed_url_does_not_create_account(self):
+        result=self.shell('create_user_with_sshkey newuser false','http://127.0.0.1:1/missing\n')
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn(b'newuser:',(self.work/'etc/passwd').read_bytes())
+
+    def test_creation_sudo_failure_removes_new_account(self):
+        result=self.shell('create_user_with_sshkey newuser true','\n','install')
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn(b'newuser:',(self.work/'etc/passwd').read_bytes())
+        self.assertFalse((self.work/'home/newuser').exists())
+
+    def test_creation_without_key_succeeds(self):
+        result=self.shell('create_user_with_sshkey newuser false','\n')
+        self.assertEqual(result.returncode,0,result.stderr.decode())
+        self.assertIn(b'newuser:',(self.work/'etc/passwd').read_bytes())
+        self.assertTrue((self.work/'home/newuser').is_dir())
+
+    def test_creation_preserves_preexisting_home(self):
+        home=self.work/'home/newuser';home.mkdir();(home/'keep').write_bytes(b'preserve')
+        result=self.shell('create_user_with_sshkey newuser false','\n')
+        self.assertNotEqual(result.returncode,0)
+        self.assertNotIn(b'newuser:',(self.work/'etc/passwd').read_bytes())
+        self.assertEqual((home/'keep').read_bytes(),b'preserve')
 
     def test_create_existing_system_account_is_rejected(self):
         result=self.shell('create_user_with_sshkey root true','\n')
