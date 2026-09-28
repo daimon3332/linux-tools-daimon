@@ -15,13 +15,13 @@ SOURCE = pathlib.Path(os.environ.get('DAIMON_TEST_SOURCE', pathlib.Path(__file__
 
 
 def function(name):
-    match = re.search(r'(?m)^([ \t]*)' + re.escape(name) + r'\(\) \{\n', SOURCE)
+    match = re.search(r'(?m)^([ \t]*)' + re.escape(name) + r'\(\) ([{(])\n', SOURCE)
     if not match:
         raise AssertionError('Missing function: ' + name)
     following = {'linux_tools':'linux_bbr', 'one_click_install_docker_auto':'daimon_network_cleanup_old_qdisc_service'}
     if name in following:
         return SOURCE[match.start():SOURCE.index('\n'+following[name]+'() {',match.end())].rstrip()
-    end = SOURCE.index('\n' + match[1] + '}', match.end())
+    end = SOURCE.index('\n' + match[1] + ('}' if match[2] == '{' else ')'), match.end())
     return SOURCE[match.start():end + len(match[1]) + 2]
 
 
@@ -209,12 +209,14 @@ one_click_network_auto_optimize() { echo NETWORK; }
         os_release=self.work/'os-release';os_release.write_text('ID=ubuntu\n')
         default=self.work/'locale';default.write_text('LANG=original\n')
         generated=self.work/'locale.gen';generated.write_text('# en_US.UTF-8 UTF-8\n')
-        script=function('update_locale').replace('/etc/os-release',str(os_release)).replace('/etc/default/locale',str(default)).replace('/etc/locale.gen',str(generated))
+        script='\n'.join(function(n) for n in ['update_locale','daimon_debian_locale','daimon_config_commit']).replace('/etc/os-release',str(os_release)).replace('/etc/default/locale',str(default)).replace('/etc/locale.gen',str(generated)).replace('/etc/.daimon-locale.',str(self.work/'.daimon-locale.'))
+        script+='\nDAIMON_ROOT_DIR='+str(self.work/'managed')+'\n'
         for install_rc,generate_rc in ((42,0),(0,42)):
             setup='install() { return '+str(install_rc)+'; }; locale-gen() { return '+str(generate_rc)+'; }; '
             result=subprocess.run(['/bin/bash','-c',script+'\n'+setup+'update_locale en_US.UTF-8 en_US.UTF-8 false'],capture_output=True,text=True)
             self.assertNotEqual(result.returncode,0,result.stdout)
             self.assertEqual(default.read_text(),'LANG=original\n')
+            self.assertEqual(generated.read_text(),'# en_US.UTF-8 UTF-8\n')
             self.assertNotIn('系统语言已经修改',result.stdout)
         os_release.write_text('ID=unsupported\n')
         result=subprocess.run(['/bin/bash','-c',script+'\nupdate_locale en_US.UTF-8 en_US.UTF-8 false'],capture_output=True,text=True)

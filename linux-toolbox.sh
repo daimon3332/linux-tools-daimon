@@ -7207,25 +7207,70 @@ Kernel_optimize() {
 
 
 
+daimon_debian_locale() (
+	local lang="$1" selection="$2" config work lockfd had_config=0 mutating=0 committed=0 status
+	[[ "$lang" =~ ^[a-z]{2,3}_[A-Z]{2}\.UTF-8$ ]] && [ "$lang" = "$selection" ] || return 1
+	install locales || return 1
+	[ -f /etc/locale.gen ] && [ ! -L /etc/locale.gen ] || return 1
+	config=$(realpath -m -- /etc/default/locale) || return 1
+	case "$config" in /etc/default/locale|/etc/locale.conf) ;; *) echo "语言配置链接目标不安全。"; return 1 ;; esac
+	[ ! -e "$config" ] || [ -f "$config" ] || return 1
+	mkdir -p "$DAIMON_ROOT_DIR" || return 1
+	[ ! -L "$DAIMON_ROOT_DIR/.locale.lock" ] || return 1
+	exec {lockfd}> "$DAIMON_ROOT_DIR/.locale.lock" || return 1
+	flock -n "$lockfd" || return 1
+	work=$(mktemp -d /etc/.daimon-locale.XXXXXX) || return 1
+	trap '
+		status=$?
+		trap "" INT TERM HUP
+		if [ "$mutating" = 1 ] && [ "$committed" = 0 ]; then
+			if ! cmp -s "$work/original-gen" /etc/locale.gen; then
+				cp -p -- "$work/original-gen" "$work/restore" && mv -Tf -- "$work/restore" /etc/locale.gen || { echo "语言生成配置恢复失败: $work"; exit 1; }
+			fi
+			if [ "$had_config" = 1 ]; then
+				if ! cmp -s "$work/original-config" "$config"; then
+					cp -p -- "$work/original-config" "$work/restore" && mv -Tf -- "$work/restore" "$config" || { echo "语言配置恢复失败: $work"; exit 1; }
+				fi
+			else
+				rm -f -- "$config" || { echo "语言配置恢复失败: $work"; exit 1; }
+			fi
+		fi
+		rm -f -- "$work/original-gen" "$work/original-config" "$work/selection" "$work/config" "$work/restore"
+		rmdir -- "$work"
+		exit "$status"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	cp -p -- /etc/locale.gen "$work/original-gen" || return 1
+	if [ -f "$config" ]; then
+		had_config=1
+		cp -p -- "$config" "$work/original-config" && cp -p -- "$config" "$work/config" || return 1
+	else
+		: > "$work/config" || return 1
+	fi
+	awk -v wanted="$selection" '
+		{ line=$0; sub(/^[[:space:]]*#[[:space:]]*/, "", line); sub(/^[[:space:]]*/, "", line); split(line, fields, /[[:space:]]+/)
+		  if (fields[1] == wanted) {if (!found++) print wanted " UTF-8"; next} print }
+		END {if (!found) print wanted " UTF-8"}
+	' /etc/locale.gen > "$work/selection" || return 1
+	mutating=1
+	daimon_config_commit /etc/locale.gen "$work/selection" || return 1
+	locale-gen || return 1
+	LC_ALL=C locale -a | awk -v wanted="$lang" 'BEGIN {gsub(/[-.]/,"",wanted); wanted=tolower(wanted)} {gsub(/[-.]/,""); if(tolower($0)==wanted) found=1} END {exit !found}' || return 1
+	update-locale --locale-file "$work/config" "LANG=$lang" || return 1
+	daimon_config_commit "$config" "$work/config" || return 1
+	committed=1
+)
+
 update_locale() {
 	local lang=$1
 	local locale_file=$2
 	local pause_after="${3:-true}"
-	local locale_pattern="${locale_file//./\\.}"
 
 	if [ -f /etc/os-release ]; then
 		. /etc/os-release
 		case $ID in
 			debian|ubuntu|kali)
-				install locales || return 1
-				if grep -Eq "^[[:space:]]*#?[[:space:]]*${locale_pattern}([[:space:]]|$)" /etc/locale.gen; then
-					sed -i "s/^\s*#\?\s*${locale_pattern}/${locale_file}/" /etc/locale.gen || return 1
-				else
-					echo "${locale_file} UTF-8" >> /etc/locale.gen || return 1
-				fi
-				locale-gen || return 1
-				LC_ALL=C locale -a | awk -v wanted="$lang" 'BEGIN {gsub(/[-.]/,"",wanted); wanted=tolower(wanted)} {gsub(/[-.]/,""); if(tolower($0)==wanted) found=1} END {exit !found}' || return 1
-				echo "LANG=${lang}" > /etc/default/locale || return 1
+				daimon_debian_locale "$lang" "$locale_file" || return 1
 				export LANG=${lang}
 				echo -e "${gl_lv}系统语言已经修改为: $lang 重新连接SSH生效。${gl_bai}"
 				hash -r

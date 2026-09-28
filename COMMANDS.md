@@ -590,12 +590,9 @@ ip -6 addr show scope global
 ### 5.18 设置本地语言
 
 ```bash
-apt install -y locales
-sed -i 's/^[[:space:]]*#\?[[:space:]]*en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
-locale-gen
-echo "LANG=en_US.UTF-8" > /etc/default/locale
+update_locale en_US.UTF-8 en_US.UTF-8
 ```
-解释：设置本地语言。菜单中 `1` 是 `en_US.UTF-8`，`2` 是 `zh_CN.UTF-8`，并包含中文繁体、日文、韩文、德文、法文、西班牙文、俄文等常用 UTF-8 locale。
+解释：菜单 `1`–`9` 分别设置英文、简体中文、繁体中文、日文、韩文、德文、法文、西班牙文、俄文 UTF-8 locale。Debian/Ubuntu 使用互斥锁、原子更新 `/etc/locale.gen`、运行 `locale-gen` 并校验实际生成结果，再以原生 `update-locale` 在临时文件中修改 LANG，保留 LC_TIME 等其他设置。兼容 Debian 的 `/etc/default/locale` → `/etc/locale.conf` 链接；失败恢复配置。已经生成但未启用的 locale 数据不回删，不为此备份整个系统 locale 库。
 
 ### 5.19 Docker 镜像源测速
 
