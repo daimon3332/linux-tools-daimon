@@ -7788,21 +7788,25 @@ list_mounted_partitions() {
 }
 
 # 格式化分区
+disk_partition_unmounted() {
+	local partition="$1" mounts
+	[[ "$partition" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] && [ -b "/dev/$partition" ] || {
+		echo "分区名称无效或设备不存在！" >&2; return 1
+	}
+	mounts=$(lsblk -nr -o MOUNTPOINT -- "/dev/$partition") || {
+		echo "无法确认分区挂载状态，已取消操作。" >&2; return 1
+	}
+	if [[ "$mounts" =~ [^[:space:]] ]]; then
+		echo "分区或其子设备正在使用，请先卸载！" >&2
+		return 1
+	fi
+}
+
 format_partition() {
+	local PARTITION FS_CHOICE FS_TYPE CONFIRM
 	send_stats "格式化分区"
 	read -e -p "请输入要格式化的分区名称（例如 sda1）: " PARTITION || return 1
-
-	# 检查分区是否存在
-	if ! lsblk -o NAME | grep -w "$PARTITION" > /dev/null; then
-		echo "分区不存在！"
-		return
-	fi
-
-	# 检查分区是否已经挂载
-	if lsblk -o MOUNTPOINT | grep -w "$PARTITION" > /dev/null; then
-		echo "分区已经挂载，请先卸载！"
-		return
-	fi
+	disk_partition_unmounted "$PARTITION" || return 1
 
 	# 选择文件系统类型
 	echo "请选择文件系统类型："
@@ -7817,7 +7821,7 @@ format_partition() {
 		2) FS_TYPE="xfs" ;;
 		3) FS_TYPE="ntfs" ;;
 		4) FS_TYPE="vfat" ;;
-		*) echo "无效的选择！"; return ;;
+		*) echo "无效的选择！"; return 1 ;;
 	esac
 
 	# 确认格式化
@@ -7828,30 +7832,26 @@ format_partition() {
 	fi
 
 	# 格式化分区
+	disk_partition_unmounted "$PARTITION" || return 1
 	echo "正在格式化分区 /dev/$PARTITION 为 $FS_TYPE ..."
-	mkfs.$FS_TYPE "/dev/$PARTITION"
-
-	if [ $? -eq 0 ]; then
+	if "mkfs.$FS_TYPE" "/dev/$PARTITION"; then
 		echo "分区格式化成功！"
 	else
 		echo "分区格式化失败！"
+		return 1
 	fi
 }
 
 # 检查分区状态
 check_partition() {
+	local PARTITION
 	send_stats "检查分区状态"
 	read -e -p "请输入要检查的分区名称（例如 sda1）: " PARTITION || return 1
-
-	# 检查分区是否存在
-	if ! lsblk -o NAME | grep -w "$PARTITION" > /dev/null; then
-		echo "分区不存在！"
-		return
-	fi
+	disk_partition_unmounted "$PARTITION" || return 1
 
 	# 检查分区状态
 	echo "检查分区 /dev/$PARTITION 的状态："
-	fsck "/dev/$PARTITION"
+	fsck -n "/dev/$PARTITION"
 }
 
 # 主菜单
