@@ -72,7 +72,10 @@ visudo() { [ "$FAILURE" != syntax ]; }
 ssh_public_key_valid() { [ "$1" = 'ecdsa-sha2-nistp256 VALID' ]; }
 import_sshkey() { ssh_public_key_valid "$1" || return 1; echo "$2" > "$WORK/import-home"; }
 fetch_remote_ssh_keys() { return 1; }
-runuser() { shift 3; command "$@"; }
+runuser() {
+    shift 3
+    if [ "$1" = sudo ]; then [ "$FAILURE" != effective-denied ] || return 1; echo 0; else command "$@"; fi
+}
 '''
         if os.name=='nt': body+='flock() { :; }\n'
         body+=action+'\n'
@@ -139,6 +142,12 @@ runuser() { shift 3; command "$@"; }
         result=self.shell('daimon_user_sudo grant alice',failure='syntax')
         self.assertNotEqual(result.returncode,0)
         self.assertEqual((self.work/'etc/sudoers').read_bytes(),before)
+        self.assertFalse((self.work/'etc/sudoers.d/alice').exists())
+        self.assertEqual((self.work/'groups').read_bytes(),b'users\n')
+
+    def test_ineffective_sudo_grant_is_not_reported_as_success(self):
+        result=self.shell('daimon_user_sudo grant alice',failure='effective-denied')
+        self.assertNotEqual(result.returncode,0)
         self.assertFalse((self.work/'etc/sudoers.d/alice').exists())
         self.assertEqual((self.work/'groups').read_bytes(),b'users\n')
 

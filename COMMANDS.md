@@ -364,7 +364,7 @@ create_user_with_sshkey 用户名 true
 daimon_user_sudo grant 用户名
 daimon_user_sudo revoke 用户名
 ```
-解释：按需检查 sudo，以互斥锁串行处理；拒绝符号链接及含其他用户/Include 规则的同名授权文件。暂存并用 `visudo -cf` 验证，原子提交配置，失败恢复原配置及 sudo 组成员状态。授权使用 `用户名 ALL=(ALL) NOPASSWD:ALL` 并加入 sudo 组；撤销删除该用户直接规则（包含 `ALL:ALL`）、同名授权文件和 sudo 组成员资格。若仍有别名、其他组或 Include 文件中的 sudo 权限，会明确报错提示手动核查，不声称完全撤权。
+解释：按需检查 sudo，以互斥锁串行处理；拒绝符号链接及含其他用户/Include 规则的同名授权文件。暂存并用 `visudo -cf` 验证，原子提交配置，失败恢复原配置及 sudo 组成员状态。授权使用 `用户名 ALL=(ALL) NOPASSWD:ALL` 并加入 sudo 组，再以该用户实际执行免密 `sudo -u root /usr/bin/id -u`，确认生效才报告成功；撤销删除该用户直接规则（包含 `ALL:ALL`）、同名授权文件和 sudo 组成员资格。若仍有别名、其他组或 Include 文件中的 sudo 权限，会明确报错提示手动核查，不声称完全撤权。
 
 删除账号：
 

@@ -10547,7 +10547,7 @@ daimon_user_has_sudo_rules() {
 }
 
 daimon_user_sudo() (
-	local action="$1" username="$2" file work main_tmp="" lockfd had_group=0 had_file=0 mutating=0 committed=0
+	local action="$1" username="$2" file work main_tmp="" lockfd effective_uid had_group=0 had_file=0 mutating=0 committed=0
 	daimon_regular_user_valid "$username" || return 1
 	case "$action" in grant|revoke) ;; *) return 1 ;; esac
 	install sudo || return 1
@@ -10606,6 +10606,11 @@ daimon_user_sudo() (
 		[ "$had_group" = 0 ] || gpasswd -d "$username" sudo || return 1
 	fi
 	visudo -cf /etc/sudoers || return 1
+	if [ "$action" = grant ]; then
+		effective_uid=$(runuser -u "$username" -- sudo -n -u root /usr/bin/id -u) && [ "$effective_uid" = 0 ] || {
+			echo "sudo 授权未生效，将尝试恢复原配置。"; return 1
+		}
+	fi
 	committed=1
 	if [ "$action" = revoke ]; then
 		if daimon_user_has_sudo_rules "$username"; then
