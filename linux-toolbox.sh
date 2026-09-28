@@ -10586,9 +10586,11 @@ daimon_user_home() {
 }
 
 daimon_user_has_sudo_rules() {
-	local rules
-	rules=$(LC_ALL=C sudo -n -lU "$1" 2>/dev/null) || return 1
-	LC_ALL=C grep -Eq '^[[:space:]]*\([^)]*\)[[:space:]]+[^[:space:]]' <<< "$rules"
+	local rules status
+	rules=$(LC_ALL=C sudo -n -lU "$1" 2>&1); status=$?
+	if [ "$status" = 0 ] && LC_ALL=C grep -Eq '^[[:space:]]*\([^)]*\)[[:space:]]+[^[:space:]]' <<< "$rules"; then return 0; fi
+	if [ "$status" -le 1 ] && grep -Fq "User $1 is not allowed to run sudo on " <<< "$rules"; then return 1; fi
+	return 2
 }
 
 daimon_user_delete_home() {
@@ -10692,6 +10694,8 @@ daimon_user_sudo() (
 	elif [ "$action" = delete ]; then
 		if daimon_user_has_sudo_rules "$username"; then
 			echo "仍存在其他 sudo 规则，请先处理后再删除账号。"; return 1
+		elif [ "$?" != 1 ]; then
+			echo "无法核查 sudo 规则，已取消删除账号。"; return 1
 		fi
 		[ "$(daimon_user_delete_home "$username")" = "$delete_home" ] || return 1
 		deleting=1
@@ -10702,6 +10706,9 @@ daimon_user_sudo() (
 	if [ "$action" = revoke ]; then
 		if daimon_user_has_sudo_rules "$username"; then
 			echo "已移除该用户的直接授权和 sudo 组；仍检测到其他 sudo 规则，请手动核查。"
+			return 1
+		elif [ "$?" != 1 ]; then
+			echo "已移除直接授权，但无法核查剩余 sudo 规则，请手动核查。"
 			return 1
 		fi
 		echo "已取消用户 sudo 权限: $username"
@@ -11501,6 +11508,8 @@ linux_Settings() {
 							sudo_status="Unknown"
 						elif daimon_user_has_sudo_rules "$username"; then
 							sudo_status="Yes"
+						elif [ "$?" != 1 ]; then
+							sudo_status="Unknown"
 						else
 							sudo_status="No"
 						fi

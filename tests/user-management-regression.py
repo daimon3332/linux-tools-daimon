@@ -82,8 +82,9 @@ groups() { echo "$1 : users"; }
 usermod() { [ "$FAILURE" != usermod ] || return 1; echo 'users sudo' > "$WORK/groups"; }
 gpasswd() { echo users > "$WORK/groups"; }
 sudo() {
+    if [ "$FAILURE" = list-error ]; then echo "sudo: no valid sudoers sources found" >&2; return 1; fi
     if [ "$FAILURE" = not-allowed ]; then echo 'User alice is not allowed to run sudo on audit-host.'; return 0; fi
-    if grep -q '^alice ' "$WORK/etc/sudoers" || [ -f "$WORK/etc/sudoers.d/alice" ]; then echo '(ALL : ALL) NOPASSWD: ALL'; else return 1; fi
+    if grep -q '^alice ' "$WORK/etc/sudoers" || [ -f "$WORK/etc/sudoers.d/alice" ]; then echo '(ALL : ALL) NOPASSWD: ALL'; else echo 'User alice is not allowed to run sudo on audit-host.'; return 1; fi
 }
 visudo() { [ "$FAILURE" != syntax ]; }
 ssh_public_key_valid() { [ "$1" = 'ecdsa-sha2-nistp256 VALID' ]; }
@@ -230,6 +231,15 @@ runuser() {
     def test_user_list_does_not_treat_zero_exit_denial_as_permission(self):
         result=self.shell('linux_Settings','6\n0\n0\n','not-allowed')
         self.assertRegex(result.stdout.decode(),r'(?m)^alice[^\n]+No\s*$')
+
+    def test_user_list_reports_query_failure_as_unknown(self):
+        result=self.shell('linux_Settings','6\n0\n0\n','list-error')
+        self.assertRegex(result.stdout.decode(),r'(?m)^alice[^\n]+Unknown\s*$')
+
+    def test_delete_refuses_unknown_sudo_policy(self):
+        result=self.shell('daimon_user_sudo delete alice',failure='list-error')
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.work/'userdel-called').exists())
 
     def test_revoke_does_not_report_remaining_rules_for_zero_exit_denial(self):
         result=self.shell('daimon_user_sudo revoke alice',failure='not-allowed')
