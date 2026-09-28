@@ -149,6 +149,34 @@ systemctl() { echo unexpected-service-change; return 99; }
         self.assertIn('export SECOND=two', text)
         self.assertFalse((self.work / 'sourced').exists())
 
+    def test_env_edit_does_not_break_the_running_toolbox_environment(self):
+        result = self.shell(['env_menu'], 'before=$PATH; env_menu; test "$PATH" = "$before"',
+                            '2\nPATH\n/not-an-executable-path\n1\n0\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("export PATH='/not-an-executable-path'", (self.home / '.bashrc').read_text())
+        result = self.shell(['env_menu'], 'export AUDIT_DELETE=kept; env_menu; test "$AUDIT_DELETE" = kept',
+                            '3\nAUDIT_DELETE\n0\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_env_special_shell_attributes_are_rejected_without_side_effects(self):
+        for setup in ['declare -i AUDIT_TYPED=7', 'declare -n AUDIT_TYPED=AUDIT_OTHER', 'declare -l AUDIT_TYPED=lower']:
+            with self.subTest(setup=setup):
+                (self.work / 'arithmetic-executed').unlink(missing_ok=True)
+                before = (self.home / '.bashrc').read_bytes()
+                value = 'a[$(touch "$WORK/arithmetic-executed")]'
+                result = self.shell(['env_menu'], 'env_menu; test "$AUDIT_OTHER" = untouched',
+                                    '2\nAUDIT_TYPED\n' + value + '\n1\n0\n',
+                                    setup='AUDIT_OTHER=untouched; ' + setup)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertFalse((self.work / 'arithmetic-executed').exists())
+                self.assertEqual(before, (self.home / '.bashrc').read_bytes())
+
+    def test_env_internal_local_name_does_not_hide_readonly_variable(self):
+        before = (self.home / '.bashrc').read_bytes()
+        result = self.shell(['env_menu'], 'env_menu', '2\nname\nchanged\n1\n0\n', setup='readonly name=keep')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(before, (self.home / '.bashrc').read_bytes())
+
     def test_proxy_name_is_not_a_regex(self):
         path = self.work / 'github_proxy_sources.txt'
         path.write_text('business|https://example.test/one\n', encoding='utf-8', newline='')

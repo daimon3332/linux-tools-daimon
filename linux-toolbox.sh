@@ -10480,7 +10480,7 @@ daimon_env_name_valid() {
 	local declaration
 	[[ "$1" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || return 1
 	declaration=$(declare -p "$1" 2>/dev/null) || return 0
-	[[ ! "$declaration" =~ ^declare\ -[^\ ]*[raA] ]]
+	[[ ! "$declaration" =~ ^declare\ -[^\ ]*[raAinlu] ]]
 }
 
 daimon_env_write() {
@@ -10535,8 +10535,7 @@ env_menu() {
 			*) echo "写入位置无效，未修改配置。"; return 1 ;;
 		esac
 		daimon_env_write "$file" "$name" "$value" || { echo "环境变量写入失败"; return 1; }
-		declare -gx -- "$name=$value" || return 1
-		echo "已写入配置并设置当前变量: $file（未执行其他 Shell 配置）"
+		echo "已写入配置: $file；新的 Shell 生效，当前工具箱环境保持不变。"
 	}
 
 	delete_env_var() {
@@ -10545,8 +10544,7 @@ env_menu() {
 		[ -z "$name" ] && return
 		daimon_env_name_valid "$name" || { echo "变量名无效、只读或不是标量。"; return 1; }
 		daimon_env_write "$bashrc_file" "$name" && daimon_env_write "$profile_file" "$name" || { echo "环境变量配置删除失败"; return 1; }
-		unset -v "$name" || return 1
-		echo "已删除变量配置: $name（未执行其他 Shell 配置）"
+		echo "已删除变量配置: $name；重新登录后生效，当前工具箱环境保持不变。"
 	}
 
 	while true; do
