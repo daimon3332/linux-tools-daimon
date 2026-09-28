@@ -42,7 +42,8 @@ class Uninstall(unittest.TestCase):
         body = body.replace('/usr/local/bin', (self.work / 'local-bin').as_posix())
         body = body.replace('/usr/bin', (self.work / 'system-bin').as_posix())
         body += r'''
-root_use() { :; }; clear() { :; }; send_stats() { :; }; break_end() { :; }
+root_use() { return 1; }; clear() { :; }; send_stats() { :; }; break_end() { :; }
+id() { if [ "$1" = -u ]; then if [ "$FAILURE" = nonroot ]; then echo 1000; else echo 0; fi; else command id "$@"; fi; }
 crontab() {
     echo "$*" >> "$WORK/cron-calls"
     if [ "$1" = -l ]; then [ "$FAILURE" != cron-read ] || return 1; cat "$WORK/cron"; else cat > "$WORK/cron.new"; mv "$WORK/cron.new" "$WORK/cron"; fi
@@ -106,6 +107,11 @@ linux_Settings
         result = self.menu()
         self.assertNotIn('脚本已卸载', result.stdout.decode())
         self.assertTrue(path.is_dir())
+        self.assertEqual((self.work / 'local-bin/d').read_bytes(), OWNED)
+
+    def test_nonroot_is_refused_before_delete(self):
+        result = self.menu(failure='nonroot')
+        self.assertNotIn('脚本已卸载', result.stdout.decode())
         self.assertEqual((self.work / 'local-bin/d').read_bytes(), OWNED)
 
     @unittest.skipIf(os.name == 'nt', 'POSIX symlink fixture')

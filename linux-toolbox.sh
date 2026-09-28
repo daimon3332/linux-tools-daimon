@@ -11508,7 +11508,7 @@ daimon_regular_user_valid() {
 }
 
 daimon_uninstall_toolbox() {
-	root_use || return 1
+	[ "$(id -u)" = 0 ] || { echo "请以 root 身份卸载工具箱。"; return 1; }
 	local path target
 	local -a files=() links=()
 	for path in "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" /usr/local/bin/d /usr/bin/d; do
