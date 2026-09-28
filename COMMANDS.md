@@ -601,9 +601,9 @@ docker image prune -f
 ### 5.20 卸载 daimon 脚本
 
 ```bash
-rm -f /usr/local/bin/d /usr/bin/d ~/daimon.sh
+daimon_uninstall_toolbox
 ```
-解释：删除脚本和快捷命令，不影响其他已安装服务。
+解释：核查文件归属后，删除工具箱主脚本、旧版主脚本以及解析到这些文件的快捷链接。保留其他命令、服务、辅助脚本、数据和全部定时任务；不再按 `kejilion.sh` 字符串过滤 crontab。删除失败不报告成功，可处理权限问题后重试；多文件删除并非原子操作。
 
 ## 6. 第三方工具
 

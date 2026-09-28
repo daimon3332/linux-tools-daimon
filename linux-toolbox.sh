@@ -11507,6 +11507,31 @@ daimon_regular_user_valid() {
 	[[ "$uid" =~ ^[0-9]+$ ]] && [ "$uid" -ge 1000 ] && [ "$uid" -ne 65534 ]
 }
 
+daimon_uninstall_toolbox() {
+	root_use || return 1
+	local path target
+	local -a files=() links=()
+	for path in "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" /usr/local/bin/d /usr/bin/d; do
+		if [ -L "$path" ]; then
+			target=$(readlink -m -- "$path") || return 1
+			case "$target" in /usr/local/bin/d|"$DAIMON_LOCAL_SCRIPT"|"$DAIMON_OLD_LOCAL_SCRIPT") ;; *) echo "拒绝删除非工具箱链接: $path"; return 1 ;; esac
+		elif [ -e "$path" ]; then
+			[ -f "$path" ] && grep -qxF 'DAIMON_NAME="linux-tools-daimon"' "$path" || { echo "拒绝删除无法确认归属的文件: $path"; return 1; }
+		fi
+	done
+	for path in /usr/local/bin/* /usr/bin/*; do
+		[ -L "$path" ] || continue
+		target=$(readlink -m -- "$path") || return 1
+		case "$target" in /usr/local/bin/d|"$DAIMON_LOCAL_SCRIPT"|"$DAIMON_OLD_LOCAL_SCRIPT") links+=("$path") ;; esac
+	done
+	for path in "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" /usr/bin/d /usr/local/bin/d; do
+		[ ! -e "$path" ] && [ ! -L "$path" ] || files+=("$path")
+	done
+	for path in "${links[@]}" "${files[@]}"; do
+		rm -f -- "$path" && [ ! -e "$path" ] && [ ! -L "$path" ] || { echo "脚本卸载未完成，请处理错误后重试；未删除其他服务或定时任务。"; return 1; }
+	done
+}
+
 linux_Settings() {
 	while true; do
 		clear
@@ -11795,14 +11820,12 @@ linux_Settings() {
 				send_stats "卸载daimon脚本"
 				echo "卸载daimon脚本"
 				echo "------------------------------------------------"
-				echo "将彻底卸载daimon脚本，不影响你其他功能"
+				echo "删除工具箱主脚本及其快捷键；保留已安装服务、辅助脚本和定时任务。"
 				read -e -p "确定继续吗？(Y/N): " choice || return 1
 				case "$choice" in
 					[Yy])
 						clear
-						(crontab -l 2>/dev/null | grep -v "kejilion.sh") | crontab - 2>/dev/null || true
-						rm -f /usr/local/bin/d /usr/bin/d
-						rm -f "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT"
+						daimon_uninstall_toolbox || { break_end; continue; }
 						echo "脚本已卸载，再见！"
 						break_end
 						clear
