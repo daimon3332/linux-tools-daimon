@@ -5695,17 +5695,36 @@ set_dns() {
 }
 
 
-restore_dns_config() {
-	chattr -i /etc/resolv.conf >/dev/null 2>&1 || true
-cat > /etc/resolv.conf <<'EOF'
-nameserver 127.0.0.53
-options edns0 trust-ad
-search .
-EOF
-	echo "已恢复为 Ubuntu/systemd-resolved 常见本地 DNS: 127.0.0.53"
-
-	chattr -i /etc/resolv.conf >/dev/null 2>&1 || true
-}
+restore_dns_config() (
+	local target service source="" work attrs locked=0 committed=0
+	for target in /run/systemd/resolve/resolv.conf /run/NetworkManager/resolv.conf /run/resolvconf/resolv.conf; do
+		case "$target" in
+			/run/systemd/resolve/*) service=systemd-resolved ;;
+			/run/NetworkManager/*) service=NetworkManager ;;
+			/run/resolvconf/*) service=resolvconf ;;
+		esac
+		if systemctl is-active --quiet "$service" && [ -s "$target" ] && grep -Eq '^[[:space:]]*nameserver[[:space:]]+[^[:space:]#]+' "$target"; then
+			source="$target"; break
+		fi
+	done
+	[ -n "$source" ] || { echo "未找到运行中的系统 DNS 管理器及有效配置；保留当前 DNS，不猜测 127.0.0.53。"; return 1; }
+	[ ! -e /etc/resolv.conf ] || [ -f /etc/resolv.conf ] || return 1
+	work=$(mktemp -d /etc/.daimon-resolv.XXXXXX) || return 1
+	trap '
+		[ "$committed" = 1 ] || [ "$locked" = 0 ] || chattr +i /etc/resolv.conf
+		rm -f -- "$work/link"; rmdir -- "$work"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	ln -s -- "$source" "$work/link" || return 1
+	if [ -f /etc/resolv.conf ] && [ ! -L /etc/resolv.conf ]; then
+		attrs=$(lsattr -d /etc/resolv.conf 2>/dev/null || true); attrs=${attrs%% *}
+		[[ "$attrs" != *i* ]] || locked=1
+		chattr -i /etc/resolv.conf 2>/dev/null || { [ "$locked" = 0 ] || return 1; }
+	fi
+	mv -Tf -- "$work/link" /etc/resolv.conf || return 1
+	committed=1
+	echo "已恢复系统 DNS 管理器提供的上游配置: $source（不启动或重启服务）"
+)
 
 
 set_dns_ui() {
@@ -5726,7 +5745,7 @@ while true; do
 	echo " v4: 223.5.5.5 119.29.29.29"
 	echo " v6: 2400:3200::1 2402:4e00::"
 	echo "3. 手动编辑DNS配置"
-	echo "4. 恢复之前的DNS配置（没有备份则恢复为 127.0.0.53）"
+	echo "4. 恢复系统DNS管理器的配置（不可用时保留当前DNS）"
 	echo "------------------------"
 	echo "0. 返回上一级选单"
 	echo "------------------------"

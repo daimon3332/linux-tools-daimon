@@ -279,69 +279,20 @@ daimon_run_cached_script https://linuxmirrors.cn/main.sh linuxmirrors-main.sh
 
 ### 5.3 优化 DNS 地址
 
-默认展示：
+菜单先显示 `/etc/resolv.conf`。国外 DNS 为 `1.1.1.1`、`8.8.8.8`，IPv6 为 `2606:4700:4700::1111`、`2001:4860:4860::8888`；国内为 `223.5.5.5`、`119.29.29.29`，IPv6 为 `2400:3200::1`、`2402:4e00::`。
 
 ```bash
-cat /etc/resolv.conf
+set_dns_ui
+# 1 国外；2 国内；3 vim 手动编辑；4 恢复系统管理；0 返回
 ```
-解释：显示当前 DNS 配置。
 
-国外 DNS：
+选择地址后写入 resolv.conf 并尝试锁定；不创建持久备份。手动编辑使用 vim。
 
 ```bash
-cp -L /etc/resolv.conf /etc/resolv.conf.daimon.bak
-chattr -i /etc/resolv.conf
-cat > /etc/resolv.conf <<EOF
-nameserver 1.1.1.1
-nameserver 8.8.8.8
-nameserver 2606:4700:4700::1111
-nameserver 2001:4860:4860::8888
-EOF
-chattr +i /etc/resolv.conf
+restore_dns_config
 ```
-解释：写入 Cloudflare/Google DNS。
 
-国内 DNS：
-
-```bash
-cp -L /etc/resolv.conf /etc/resolv.conf.daimon.bak
-chattr -i /etc/resolv.conf
-cat > /etc/resolv.conf <<EOF
-nameserver 223.5.5.5
-nameserver 119.29.29.29
-nameserver 2400:3200::1
-nameserver 2402:4e00::
-EOF
-chattr +i /etc/resolv.conf
-```
-解释：写入国内常用 DNS。
-
-手动编辑：
-
-```bash
-apt install -y vim
-cp -L /etc/resolv.conf /etc/resolv.conf.daimon.bak
-chattr -i /etc/resolv.conf
-vim /etc/resolv.conf
-chattr +i /etc/resolv.conf
-```
-解释：用 vim 手动编辑 DNS。
-
-恢复之前的 DNS 配置：
-
-```bash
-chattr -i /etc/resolv.conf
-cat /etc/resolv.conf.daimon.bak > /etc/resolv.conf
-```
-解释：恢复脚本第一次修改 DNS 前备份的配置。如果没有备份，则写入 Ubuntu/systemd-resolved 常见本地 DNS：
-
-```bash
-cat > /etc/resolv.conf <<EOF
-nameserver 127.0.0.53
-options edns0 trust-ad
-search .
-EOF
-```
+恢复仅在 systemd-resolved、NetworkManager 或 resolvconf 处于活动状态，且对应 `/run` 配置包含 nameserver 时进行：原子链接到管理器提供的上游配置，不启动或重启服务，不冒充恢复历史内容。没有有效管理器、配置无效或写入失败时保留当前 DNS；不会在未运行 resolved 的 Debian 上写死 `127.0.0.53`。此恢复使用上游列表，不等同于 resolved 的按接口分流功能。
 
 ### 5.4 切换优先 IPv4/IPv6
 

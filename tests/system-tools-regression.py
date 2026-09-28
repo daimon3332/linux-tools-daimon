@@ -33,6 +33,8 @@ class SystemTools(unittest.TestCase):
         (self.etc / 'gai.conf').write_text('# owned policy\nlabel 2002::/16 2\nprecedence ::/0 40\nprecedence ::ffff:0:0/96 100\n', encoding='utf-8', newline='')
         (self.etc / 'hosts').write_text('127.0.0.1 localhost local-alias\n127.0.1.1 old-host kept-alias\n192.0.2.1 a.example other-alias\n192.0.2.2 unrelated\n', encoding='utf-8', newline='')
         (self.etc / 'hostname').write_text('old-host\n', encoding='utf-8', newline='')
+        (self.etc / 'resolv.conf').write_bytes(b'nameserver 192.0.2.53\nsearch kept.test\n')
+        (self.work / 'run/systemd/resolve').mkdir(parents=True)
         (self.home / '.bashrc').write_text('# user shell configuration\n', encoding='utf-8', newline='')
         (self.home / '.profile').write_text('# user login configuration\n', encoding='utf-8', newline='')
 
@@ -49,6 +51,11 @@ class SystemTools(unittest.TestCase):
         body = body.replace('/etc/gai.conf', str(self.etc / 'gai.conf').replace('\\', '/'))
         body = body.replace('/etc/hosts', str(self.etc / 'hosts').replace('\\', '/'))
         body = body.replace('/etc/hostname', str(self.etc / 'hostname').replace('\\', '/'))
+        body = body.replace('/etc/resolv.conf', (self.etc / 'resolv.conf').as_posix())
+        body = body.replace('/etc/.daimon-resolv', (self.etc / '.daimon-resolv').as_posix())
+        body = body.replace('/run/systemd/resolve', (self.work / 'run/systemd/resolve').as_posix())
+        body = body.replace('/run/NetworkManager', (self.work / 'run/NetworkManager').as_posix())
+        body = body.replace('/run/resolvconf', (self.work / 'run/resolvconf').as_posix())
         body = body.replace('/usr/local/bin', (self.work / 'local-bin').as_posix())
         body = body.replace('/usr/bin', (self.work / 'system-bin').as_posix())
         body += '''
@@ -339,6 +346,38 @@ mv() { case "${@: -1}" in "$WORK/system-bin/audit") return 1 ;; esac; command mv
         for directory in ['local-bin', 'system-bin']:
             self.assertTrue((self.work / directory / 'old').is_symlink())
             self.assertFalse(list((self.work / directory).glob('audit.*')))
+
+    def test_dns_restore_without_running_manager_preserves_working_config(self):
+        before = (self.etc / 'resolv.conf').read_bytes()
+        result = self.shell(['restore_dns_config'], 'restore_dns_config', setup='chattr() { :; }')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(before, (self.etc / 'resolv.conf').read_bytes())
+        self.assertNotIn('已恢复', result.stdout)
+
+    def test_dns_restore_rejects_missing_or_empty_manager_config(self):
+        before = (self.etc / 'resolv.conf').read_bytes()
+        (self.work / 'run/systemd/resolve/resolv.conf').write_bytes(b'# not configured\n')
+        result = self.shell(['restore_dns_config'], 'restore_dns_config', setup='systemctl() { return 0; }; chattr() { :; }')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(before, (self.etc / 'resolv.conf').read_bytes())
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX resolver symlink fixture')
+    def test_dns_restore_relinks_manager_config_without_overwriting_it(self):
+        target = self.work / 'run/systemd/resolve/resolv.conf'
+        expected = b'nameserver 192.0.2.54\nsearch managed.test\n'
+        target.write_bytes(expected)
+        result = self.shell(['restore_dns_config'], 'restore_dns_config', setup='systemctl() { [ "$*" = "is-active --quiet systemd-resolved" ]; }; chattr() { :; }')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue((self.etc / 'resolv.conf').is_symlink())
+        self.assertEqual((self.etc / 'resolv.conf').resolve(), target)
+        self.assertEqual(target.read_bytes(), expected)
+
+    def test_dns_restore_replace_failure_preserves_working_config(self):
+        before = (self.etc / 'resolv.conf').read_bytes()
+        (self.work / 'run/systemd/resolve/resolv.conf').write_bytes(b'nameserver 192.0.2.54\n')
+        result = self.shell(['restore_dns_config'], 'restore_dns_config', setup='systemctl() { return 0; }; chattr() { :; }; mv() { return 1; }')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(before, (self.etc / 'resolv.conf').read_bytes())
 
 
 if __name__ == '__main__':
