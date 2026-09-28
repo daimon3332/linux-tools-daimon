@@ -12715,6 +12715,20 @@ linux_bbr() {
 
 docker_ssh_migration() {
 
+	docker_migration_backup_dir() {
+		local path="${1%/}" resolved root
+		root=$(realpath -e -- /tmp) || return 1
+		[[ "$path" == /tmp/docker_backup_* && "${path##*/}" =~ ^docker_backup_[A-Za-z0-9][A-Za-z0-9._-]*$ ]] &&
+			[ -d "$path" ] && [ ! -L "$path" ] || {
+			echo -e "${gl_hong}备份目录不存在或路径不受支持${gl_bai}" >&2; return 1
+		}
+		resolved=$(realpath -e -- "$path") || return 1
+		[[ "$resolved" == "$root/${path##*/}" && "$path" == "/tmp/${path##*/}" ]] || {
+			echo -e "${gl_hong}备份必须是 /tmp 下的直接目录，不允许路径跳转${gl_bai}" >&2; return 1
+		}
+		printf '%s\n' "$path"
+	}
+
 	is_compose_container() {
 		local container=$1
 		docker inspect "$container" | jq -e '.[0].Config.Labels["com.docker.compose.project"]' >/dev/null 2>&1
@@ -12847,8 +12861,9 @@ docker_ssh_migration() {
 	docker_migration_restore() {
 
 		send_stats "Docker还原"
+		local BACKUP_DIR
 		read -e -p  "请输入要还原的备份目录: " BACKUP_DIR || return 1
-		[[ ! -d "$BACKUP_DIR" || "$BACKUP_DIR" != /tmp/docker_backup_* ]] && { echo -e "${gl_hong}备份目录不存在或路径不受支持${gl_bai}"; return; }
+		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
 
 		echo -e "${gl_kjlan}开始执行还原操作...${gl_bai}"
 
@@ -12986,25 +13001,22 @@ docker_ssh_migration() {
 	# ----------------------------
 	docker_migration_migrate() {
 		send_stats "Docker迁移"
-		install jq
+		local BACKUP_DIR TARGET_IP TARGET_USER TARGET_PORT
 		read -e -p  "请输入要迁移的备份目录: " BACKUP_DIR || return 1
-			[[ ! -d "$BACKUP_DIR" || "$BACKUP_DIR" != /tmp/docker_backup_* ]] && { echo -e "${gl_hong}备份目录不存在或路径不受支持${gl_bai}"; return; }
+		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
 
-		kj_ssh_read_host_user_port "目标服务器IP: " "目标服务器SSH用户名 [默认root]: " "目标服务器SSH端口 [默认22]: " "root" "22"
-		local TARGET_IP="$KJ_SSH_HOST"
-		local TARGET_USER="$KJ_SSH_USER"
-		local TARGET_PORT="$KJ_SSH_PORT"
-
-		local LATEST_TAR="$BACKUP_DIR"
+		kj_ssh_read_host_user_port "目标服务器IP: " "目标服务器SSH用户名 [默认root]: " "目标服务器SSH端口 [默认22]: " "root" "22" || return 1
+		TARGET_IP="$KJ_SSH_HOST"
+		TARGET_USER="$KJ_SSH_USER"
+		TARGET_PORT="$KJ_SSH_PORT"
+		[[ "$TARGET_IP" == *:* ]] && TARGET_IP="[$TARGET_IP]"
+		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
 
 		echo -e "${gl_huang}传输备份中...${gl_bai}"
-		if [[ -z "$TARGET_PASS" ]]; then
-			# 使用密钥登录
-			if ! scp -P "$TARGET_PORT" -o StrictHostKeyChecking=no -r "$LATEST_TAR" "$TARGET_USER@$TARGET_IP:/tmp/"; then
-				echo -e "${gl_hong}迁移失败，请检查 SSH 连接${gl_bai}"; return 1
-			fi
-			echo -e "${gl_lv}迁移完成${gl_bai}"
+		if ! scp -P "$TARGET_PORT" -o StrictHostKeyChecking=no -r "$BACKUP_DIR" "$TARGET_USER@$TARGET_IP:/tmp/"; then
+			echo -e "${gl_hong}迁移失败，请检查 SSH 连接${gl_bai}"; return 1
 		fi
+		echo -e "${gl_lv}迁移完成${gl_bai}"
 
 	}
 
@@ -13013,11 +13025,15 @@ docker_ssh_migration() {
 	# ----------------------------
 	docker_migration_delete_backup() {
 		send_stats "Docker备份文件删除"
+		local BACKUP_DIR confirm
 		read -e -p  "请输入要删除的备份目录: " BACKUP_DIR || return 1
-		[[ ! -d "$BACKUP_DIR" || "$BACKUP_DIR" != /tmp/docker_backup_* ]] && { echo -e "${gl_hong}备份目录不存在或路径不受支持${gl_bai}"; return; }
+		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
 		read -e -p "确认删除 $BACKUP_DIR？[y/N]: " confirm || return 1
 		[[ "$confirm" != "y" && "$confirm" != "Y" ]] && return 0
-		rm -rf "$BACKUP_DIR"
+		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
+		rm -rf -- "$BACKUP_DIR" || {
+			echo -e "${gl_hong}删除备份失败: ${BACKUP_DIR}${gl_bai}" >&2; return 1
+		}
 		echo -e "${gl_lv}已删除备份: ${BACKUP_DIR}${gl_bai}"
 	}
 

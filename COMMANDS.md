@@ -34,7 +34,7 @@ mkdir -p /root/linux-daimon/daimon
 - Nginx/域名菜单统一使用宿主机 Nginx + acme.sh webroot；挑战目录为 `/var/www/acme-challenge`，证书目录为 `/root/domain/<完整域名>`，证书续期会自动 reload Nginx。
 - 申请证书不会杀死未知进程，若 80 端口被占用会提示处理；域名、配置名、端口输入非法时停留在当前菜单。
 - SSH/UFW 操作会先放行现有 sshd 端口；一键 SSH 配置必须粘贴有效公钥。
-- Docker 备份删除需确认，备份目录仅接受 `/tmp/docker_backup_*`。
+- Docker 备份删除需确认；迁移、恢复、删除仅接受 `/tmp/docker_backup_*` 直接目录，拒绝符号链接、子路径和 `..` 跳转。
 
 进入主菜单主要是 `echo/read/case` 交互，不会主动修改系统。主菜单选项为：
 
@@ -1192,8 +1192,7 @@ tar -czpf /tmp/docker_backup_时间/容器名_卷名.tar.gz -C / 卷路径
 解释：备份容器 inspect、compose 目录、挂载卷。
 
 ```bash
-tar -czf /tmp/docker_backup_xxx.tar.gz /tmp/docker_backup_xxx
-scp -P SSH端口 -o StrictHostKeyChecking=no -r /tmp/docker_backup_xxx.tar.gz 用户@目标IP:/tmp/
+scp -P SSH端口 -o StrictHostKeyChecking=no -r /tmp/docker_backup_xxx 用户@目标IP:/tmp/
 ```
 解释：迁移备份到目标服务器。
 
@@ -1205,7 +1204,7 @@ docker run -d --name 容器名 -p 主机端口:容器端口 -v 主机路径:容�
 解释：还原 compose 项目或普通容器。
 
 ```bash
-rm -rf /tmp/docker_backup_时间
+rm -rf -- /tmp/docker_backup_时间
 ```
 解释：删除备份目录。
 
