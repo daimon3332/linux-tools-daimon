@@ -348,7 +348,7 @@ cat /etc/passwd
 groups 用户名
 sudo -n -lU 用户名
 ```
-解释：列出用户、用户组、sudo 状态。
+解释：列出用户、用户组及是否存在 sudo 规则；不把组成员或 sudo 命令退出 0 等同于有效授权，具体允许/拒绝范围仍以规则内容为准。
 
 创建普通/高级用户：
 
@@ -356,7 +356,7 @@ sudo -n -lU 用户名
 create_user_with_sshkey 用户名 false
 create_user_with_sshkey 用户名 true
 ```
-解释：使用 `useradd -m -s /bin/bash` 创建账号；已存在时只允许普通用户。通过 `getent passwd` 查询并检查真实主目录及归属。公钥交给共享校验/原子导入函数，支持合法 ECDSA、Ed25519、RSA 等格式及 URL，不递归改写已有 `.ssh` 内容，不修改全局 SSH 策略。留空跳过；失败返回错误，不继续授予 sudo。
+解释：使用 `useradd -m -s /bin/bash` 创建账号；已存在时只允许普通用户。通过 `getent passwd` 查询并检查真实主目录及归属。以目标用户身份执行共享校验/原子导入函数，支持合法 ECDSA、Ed25519、RSA 等格式及 URL，不递归改写已有 `.ssh` 内容，不修改全局 SSH 策略。留空跳过；失败返回错误，不继续授予 sudo。
 
 赋予/取消最高权限：
 

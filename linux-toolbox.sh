@@ -10540,6 +10540,12 @@ daimon_user_home() {
 	printf '%s\n' "$home"
 }
 
+daimon_user_has_sudo_rules() {
+	local rules
+	rules=$(LC_ALL=C sudo -n -lU "$1" 2>/dev/null) || return 1
+	LC_ALL=C grep -Eq '^[[:space:]]*\([^)]*\)[[:space:]]+[^[:space:]]' <<< "$rules"
+}
+
 daimon_user_sudo() (
 	local action="$1" username="$2" file work main_tmp="" lockfd had_group=0 had_file=0 mutating=0 committed=0
 	daimon_regular_user_valid "$username" || return 1
@@ -10602,7 +10608,7 @@ daimon_user_sudo() (
 	visudo -cf /etc/sudoers || return 1
 	committed=1
 	if [ "$action" = revoke ]; then
-		if sudo -n -lU "$username" >/dev/null 2>&1; then
+		if daimon_user_has_sudo_rules "$username"; then
 			echo "已移除该用户的直接授权和 sudo 组；仍检测到其他 sudo 规则，请手动核查。"
 			return 1
 		fi
@@ -11329,14 +11335,14 @@ linux_Settings() {
 					clear
 					echo "用户列表"
 					echo "----------------------------------------------------------------------------"
-					printf "%-24s %-34s %-20s %-10s\n" "用户名" "用户目录" "用户组" "sudo权限"
+					printf "%-24s %-34s %-20s %-10s\n" "用户名" "用户目录" "用户组" "sudo规则"
 					while IFS=: read -r username _ userid groupid _ homedir shell; do
 						[ "$userid" -lt 1000 ] && [ "$username" != "root" ] && continue
 						local groups sudo_status
 						groups=$(groups "$username" 2>/dev/null | cut -d : -f 2)
 						if ! command -v sudo >/dev/null 2>&1; then
 							sudo_status="Unknown"
-						elif sudo -n -lU "$username" >/dev/null 2>&1; then
+						elif daimon_user_has_sudo_rules "$username"; then
 							sudo_status="Yes"
 						else
 							sudo_status="No"

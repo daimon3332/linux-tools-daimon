@@ -32,7 +32,7 @@ class Users(unittest.TestCase):
 
     def shell(self, action, inputs='', failure=''):
         names=['create_user_with_sshkey', 'linux_Settings', 'daimon_regular_user_valid']
-        for name in ['daimon_user_sudo', 'daimon_user_home', 'daimon_config_commit']:
+        for name in ['daimon_user_sudo', 'daimon_user_home', 'daimon_user_has_sudo_rules', 'daimon_config_commit']:
             if re.search(r'(?m)^'+name+r'\(\)', SOURCE): names.append(name)
         body='\n'.join(function(n) for n in names)
         for prefix in ['/etc/', '/home/']:
@@ -65,6 +65,7 @@ groups() { echo "$1 : users"; }
 usermod() { [ "$FAILURE" != usermod ] || return 1; echo 'users sudo' > "$WORK/groups"; }
 gpasswd() { echo users > "$WORK/groups"; }
 sudo() {
+    if [ "$FAILURE" = not-allowed ]; then echo 'User alice is not allowed to run sudo on audit-host.'; return 0; fi
     if grep -q '^alice ' "$WORK/etc/sudoers" || [ -f "$WORK/etc/sudoers.d/alice" ]; then echo '(ALL : ALL) NOPASSWD: ALL'; else return 1; fi
 }
 visudo() { [ "$FAILURE" != syntax ]; }
@@ -115,6 +116,14 @@ runuser() { shift 3; command "$@"; }
         path.write_bytes(path.read_bytes()+b'alice ALL=(ALL:ALL) NOPASSWD:ALL\n')
         result=self.shell('linux_Settings','6\n0\n0\n')
         self.assertRegex(result.stdout.decode(),r'(?m)^alice[^\n]+Yes\s*$')
+
+    def test_user_list_does_not_treat_zero_exit_denial_as_permission(self):
+        result=self.shell('linux_Settings','6\n0\n0\n','not-allowed')
+        self.assertRegex(result.stdout.decode(),r'(?m)^alice[^\n]+No\s*$')
+
+    def test_revoke_does_not_report_remaining_rules_for_zero_exit_denial(self):
+        result=self.shell('daimon_user_sudo revoke alice',failure='not-allowed')
+        self.assertEqual(result.returncode,0,result.stdout.decode())
 
     def test_sudo_group_failure_restores_existing_grant(self):
         path=self.work/'etc/sudoers.d/alice'
