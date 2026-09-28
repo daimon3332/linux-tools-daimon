@@ -10546,10 +10546,38 @@ daimon_user_has_sudo_rules() {
 	LC_ALL=C grep -Eq '^[[:space:]]*\([^)]*\)[[:space:]]+[^[:space:]]' <<< "$rules"
 }
 
+daimon_user_delete_home() {
+	local username="$1" home users name password uid gid comment other_home shell mounts target
+	daimon_regular_user_valid "$username" && [ "$username" != "${SUDO_USER:-${USER:-}}" ] || return 1
+	IFS=: read -r name password uid gid comment home shell < <(getent passwd "$username")
+	[ "$name" = "$username" ] && [[ "$home" = /*/* ]] && [ ! -L "$home" ] &&
+		[ "$(realpath -m -- "$home")" = "$home" ] || return 1
+	[ ! -e "$home" ] || { [ -d "$home" ] && [ "$(stat -c %u -- "$home")" = "$uid" ]; } || return 1
+	users=$(getent passwd) && mounts=$(findmnt -rn -o TARGET) || return 1
+	while IFS=: read -r name password uid gid comment other_home shell; do
+		[ "$name" != "$username" ] && [[ "$other_home" = /* ]] || continue
+		other_home=$(realpath -m -- "$other_home") || return 1
+		[[ "$other_home" != "$home" && "$other_home" != "$home/"* ]] || {
+			echo "主目录与其他账号共用，拒绝删除。" >&2; return 1
+		}
+	done <<< "$users"
+	while IFS= read -r target; do
+		target=$(printf '%b' "$target")
+		[[ "$target" != "$home" && "$target" != "$home/"* ]] || {
+			echo "主目录包含挂载点，请先卸载。" >&2; return 1
+		}
+	done <<< "$mounts"
+	printf '%s\n' "$home"
+}
+
 daimon_user_sudo() (
 	local action="$1" username="$2" file work main_tmp="" lockfd effective_uid had_group=0 had_file=0 mutating=0 committed=0
+	local delete_home="" deleting=0 create_lock
 	daimon_regular_user_valid "$username" || return 1
-	case "$action" in grant|revoke) ;; *) return 1 ;; esac
+	case "$action" in grant|revoke|delete) ;; *) return 1 ;; esac
+	if [ "$action" = delete ]; then
+		delete_home=$(daimon_user_delete_home "$username") || return 1
+	fi
 	install sudo || return 1
 	command -v visudo >/dev/null || return 1
 	file="/etc/sudoers.d/$username"
@@ -10557,6 +10585,11 @@ daimon_user_sudo() (
 		{ [ ! -e "$file" ] || [ -f "$file" ]; } || { echo "sudo 配置路径不安全，未修改。"; return 1; }
 	mkdir -p "$DAIMON_ROOT_DIR" || return 1
 	[ ! -L "$DAIMON_ROOT_DIR/.users.lock" ] || return 1
+	if [ "$action" = delete ]; then
+		[ ! -L "$DAIMON_ROOT_DIR/.user-create.lock" ] || return 1
+		exec {create_lock}> "$DAIMON_ROOT_DIR/.user-create.lock" || return 1
+		flock -n "$create_lock" || return 1
+	fi
 	exec {lockfd}> "$DAIMON_ROOT_DIR/.users.lock" || return 1
 	flock -n "$lockfd" || { echo "另一个用户权限操作正在进行。"; return 1; }
 	if [ -f "$file" ]; then
@@ -10568,6 +10601,7 @@ daimon_user_sudo() (
 	trap '
 		status=$?
 		trap "" INT TERM HUP
+		if [ "$deleting" = 1 ] && ! id "$username" >/dev/null 2>&1; then committed=1; fi
 		if [ "$mutating" = 1 ] && [ "$committed" = 0 ]; then
 			if ! cmp -s "$work/original-main" /etc/sudoers || [ "$(stat -c %a:%u:%g "$work/original-main")" != "$(stat -c %a:%u:%g /etc/sudoers)" ]; then
 				cp -p -- "$work/original-main" "$main_tmp" && mv -Tf -- "$main_tmp" /etc/sudoers || { echo "sudo 配置恢复失败: $work"; exit 1; }
@@ -10610,6 +10644,14 @@ daimon_user_sudo() (
 		effective_uid=$(runuser -u "$username" -- sudo -n -u root /usr/bin/id -u) && [ "$effective_uid" = 0 ] || {
 			echo "sudo 授权未生效，将尝试恢复原配置。"; return 1
 		}
+	elif [ "$action" = delete ]; then
+		if daimon_user_has_sudo_rules "$username"; then
+			echo "仍存在其他 sudo 规则，请先处理后再删除账号。"; return 1
+		fi
+		[ "$(daimon_user_delete_home "$username")" = "$delete_home" ] || return 1
+		deleting=1
+		userdel -r "$username" || { echo "账号或主目录删除未完成，请核查实际状态。"; return 1; }
+		! id "$username" >/dev/null 2>&1 && [ ! -e "$delete_home" ] && [ ! -L "$delete_home" ] || return 1
 	fi
 	committed=1
 	if [ "$action" = revoke ]; then
@@ -10618,6 +10660,8 @@ daimon_user_sudo() (
 			return 1
 		fi
 		echo "已取消用户 sudo 权限: $username"
+	elif [ "$action" = delete ]; then
+		echo "已删除账号及主目录: $username"
 	else
 		echo "已赋予 sudo 免密权限: $username"
 	fi
@@ -11440,7 +11484,7 @@ linux_Settings() {
 								echo "不能删除系统账号、不存在的账号或当前登录账号。"
 							else
 								read -e -p "再次输入用户名确认删除账号及其主目录: " confirm_user || return 1
-								[ "$confirm_user" = "$username" ] && userdel -r "$username"
+								[ "$confirm_user" = "$username" ] && daimon_user_sudo delete "$username"
 							fi
 							;;
 						0) break ;;

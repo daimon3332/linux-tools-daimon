@@ -32,7 +32,7 @@ class Users(unittest.TestCase):
 
     def shell(self, action, inputs='', failure=''):
         names=['create_user_with_sshkey', 'linux_Settings', 'daimon_regular_user_valid']
-        for name in ['daimon_user_sudo', 'daimon_user_home', 'daimon_user_has_sudo_rules', 'daimon_config_commit']:
+        for name in ['daimon_user_sudo', 'daimon_user_home', 'daimon_user_has_sudo_rules', 'daimon_user_delete_home', 'daimon_config_commit']:
             if re.search(r'(?m)^'+name+r'\(\)', SOURCE): names.append(name)
         body='\n'.join(function(n) for n in names)
         for prefix in ['/etc/', '/home/']:
@@ -47,13 +47,14 @@ id() {
         -g) echo 100 ;;
         -gn) echo users ;;
         -nG) cat "$WORK/groups" ;;
-        *) [ "$user" = alice ] || [ "$user" = root ] || grep -q "^$user:" "$WORK/etc/passwd" ;;
+        *) grep -q "^$user:" "$WORK/etc/passwd" ;;
     esac
 }
 getent() {
     case "$1:$2" in
-        passwd:alice) printf 'alice:x:1000:100::%s:/bin/bash\\n' "$(cd "$WORK/srv/alice" && pwd)" ;;
+        passwd:alice) printf 'alice:x:1000:100::%s:/bin/bash\\n' "$(cd "$WORK" && pwd)/srv/alice" ;;
         group:sudo) echo sudo:x:27: ;;
+        passwd:) cat "$WORK/etc/passwd" ;;
         passwd:*) grep "^$2:" "$WORK/etc/passwd" ;;
         *) return 1 ;;
     esac
@@ -65,10 +66,14 @@ useradd() {
     mkdir -p "$WORK/home/$user"
 }
 userdel() {
-    local user="${@: -1}"
+    local user="${@: -1}" home
+    touch "$WORK/userdel-called"
+    [ "$FAILURE" != userdel ] || return 1
+    if [ "$user" = alice ]; then home="$WORK/srv/alice"; else home="$WORK/home/$user"; fi
     sed -i "/^$user:/d" "$WORK/etc/passwd"
-    [ "$1" != -r ] || rmdir "$WORK/home/$user"
+    [ "$1" != -r ] || [ ! -d "$home" ] || rmdir "$home"
 }
+findmnt() { echo /; }
 stat() {
     if [ "$1" = -c ] && [ "$2" = %u ]; then echo 1000; else command stat "$@"; fi
 }
@@ -135,6 +140,49 @@ runuser() {
         self.assertNotEqual(result.returncode,0)
         self.assertNotIn(b'newuser:',(self.work/'etc/passwd').read_bytes())
         self.assertEqual((home/'keep').read_bytes(),b'preserve')
+
+    def test_delete_removes_sudo_rule(self):
+        path=self.work/'etc/sudoers.d/alice';path.write_bytes(b'alice ALL=(ALL) NOPASSWD:ALL\n')
+        result=self.shell('linux_Settings','6\n5\nalice\nalice\n0\n0\n')
+        self.assertEqual(result.returncode,0,result.stderr.decode())
+        self.assertNotIn(b'alice:',(self.work/'etc/passwd').read_bytes())
+        self.assertFalse(path.exists())
+
+    def test_delete_userdel_failure_restores_sudo_rule(self):
+        path=self.work/'etc/sudoers.d/alice';path.write_bytes(b'alice ALL=(ALL) NOPASSWD:ALL\n')
+        result=self.shell('daimon_user_sudo delete alice',failure='userdel')
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn(b'alice:',(self.work/'etc/passwd').read_bytes())
+        self.assertEqual(path.read_bytes(),b'alice ALL=(ALL) NOPASSWD:ALL\n')
+        self.assertTrue((self.work/'userdel-called').exists())
+
+    def test_delete_confirmation_mismatch_preserves_account(self):
+        self.shell('linux_Settings','6\n5\nalice\nwrong\n0\n0\n')
+        self.assertIn(b'alice:',(self.work/'etc/passwd').read_bytes())
+        self.assertTrue((self.work/'srv/alice').is_dir())
+
+    def test_delete_missing_home_succeeds(self):
+        (self.work/'srv/alice').rmdir()
+        result=self.shell('daimon_user_sudo delete alice')
+        self.assertEqual(result.returncode,0,result.stderr.decode())
+        self.assertNotIn(b'alice:',(self.work/'etc/passwd').read_bytes())
+
+    def test_delete_current_user_is_rejected(self):
+        result=self.shell('SUDO_USER=alice daimon_user_sudo delete alice')
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.work/'userdel-called').exists())
+
+    def test_delete_nested_mount_is_rejected(self):
+        result=self.shell('findmnt() { printf "%s/nested\\n" "$(cd "$WORK/srv/alice" && pwd)"; }; daimon_user_sudo delete alice')
+        self.assertNotEqual(result.returncode,0)
+        self.assertFalse((self.work/'userdel-called').exists())
+
+    def test_delete_shared_home_is_rejected(self):
+        with (self.work/'etc/passwd').open('ab') as stream:
+            stream.write(('bob:x:1001:100::'+subprocess.check_output([BASH,'-c','cd "$1" && pwd','bash',(self.work/'srv/alice').as_posix()],text=True).strip()+':/bin/bash\n').encode())
+        self.shell('linux_Settings','6\n5\nalice\nalice\n0\n0\n')
+        self.assertIn(b'alice:',(self.work/'etc/passwd').read_bytes())
+        self.assertTrue((self.work/'srv/alice').is_dir())
 
     def test_create_existing_system_account_is_rejected(self):
         result=self.shell('create_user_with_sshkey root true','\n')
