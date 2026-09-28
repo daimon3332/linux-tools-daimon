@@ -11211,40 +11211,102 @@ system_network_auto_optimize() {
 }
 system_ipv6_status() {
 	echo "------------------------------------------------"
-	echo "IPv6 当前状态："
-	sysctl net.ipv6.conf.all.disable_ipv6 net.ipv6.conf.default.disable_ipv6 net.ipv6.conf.lo.disable_ipv6 2>/dev/null || true
-	ip -6 addr show scope global 2>/dev/null | awk '/inet6/{print "  "$2" "$NF}' || true
+	echo "IPv6 当前状态（disable_ipv6: 0=允许，1=禁用；不代表公网连通性）："
+	local path value found=0
+	for path in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
+		[ -e "$path" ] || continue
+		found=1
+		if read -r value < "$path"; then printf '%s = %s\n' "$path" "$value"; else echo "无法读取: $path"; return 1; fi
+	done
+	[ "$found" = 1 ] || { echo "内核未提供 IPv6 控制接口。"; return 1; }
+	ip -6 addr show scope global
 }
+
+daimon_ipv6_configure() (
+	local value="$1" file=/etc/sysctl.d/99-daimon-ipv6.conf work lockfd path current status
+	local had_file=0 mutating=0 runtime_started=0 committed=0 restore_failed=0
+	local -a paths=()
+	local -A original=()
+	[[ "$value" = 0 || "$value" = 1 ]] || return 1
+	if [ "$value" = 1 ] && [[ "${SSH_CONNECTION:-} ${SSH_CLIENT:-}" = *:* ]]; then
+		echo "拒绝在 IPv6 SSH 连接中禁用 IPv6，请改用 IPv4 SSH 或控制台。"; return 1
+	fi
+	command -v sysctl >/dev/null && command -v ip >/dev/null && command -v flock >/dev/null || return 1
+	for path in all default lo; do
+		[ -f "/proc/sys/net/ipv6/conf/$path/disable_ipv6" ] || { echo "内核未提供 IPv6 控制接口。"; return 1; }
+	done
+	[ ! -L "${file%/*}" ] && [ ! -L "$file" ] && { [ ! -e "$file" ] || [ -f "$file" ]; } || return 1
+	mkdir -p "${file%/*}" "$DAIMON_ROOT_DIR" || return 1
+	[ ! -L "$DAIMON_ROOT_DIR/.ipv6.lock" ] || return 1
+	exec {lockfd}> "$DAIMON_ROOT_DIR/.ipv6.lock" || return 1
+	flock -n "$lockfd" || return 1
+	for path in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
+		read -r current < "$path" && [[ "$current" = 0 || "$current" = 1 ]] && [ -w "$path" ] || return 1
+		paths+=("$path"); original["$path"]=$current
+	done
+	work=$(mktemp -d "${file%/*}/.daimon-ipv6.XXXXXX") || return 1
+	trap '
+		status=$?
+		trap "" INT TERM HUP
+		if [ "$mutating" = 1 ] && [ "$committed" = 0 ]; then
+			if [ "$had_file" = 1 ]; then
+				if ! cmp -s "$work/original" "$file"; then
+					cp -p -- "$work/original" "$work/restore" && mv -Tf -- "$work/restore" "$file" || restore_failed=1
+				fi
+			else
+				rm -f -- "$file" || restore_failed=1
+			fi
+			if [ "$runtime_started" = 1 ]; then
+				for path in "${paths[@]}"; do
+					if read -r current < "$path" && [ "$current" != "${original[$path]}" ]; then
+						printf "%s\n" "${original[$path]}" > "$path" || restore_failed=1
+					fi
+					read -r current < "$path" && [ "$current" = "${original[$path]}" ] || restore_failed=1
+				done
+				ip -6 address restore < "$work/addresses" || restore_failed=1
+				ip -6 route restore < "$work/routes" || restore_failed=1
+				echo "IPv6 修改失败，已尝试恢复配置、开关、地址和路由；连接中断及动态网络状态无法保证恢复，请核查网络。"
+			fi
+		fi
+		if [ "$restore_failed" = 1 ]; then echo "IPv6 恢复失败，请核查临时恢复文件: $work"; exit 1; fi
+		rm -f -- "$work/original" "$work/config" "$work/apply" "$work/restore" "$work/addresses" "$work/routes" && rmdir -- "$work" || status=1
+		exit "$status"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	if [ -f "$file" ]; then had_file=1; cp -p -- "$file" "$work/original" || return 1; else : > "$work/original" || return 1; fi
+	awk '
+		/^[[:space:]]*($|[#;])/ {print; next}
+		/^[[:space:]]*net\.ipv6\.conf\.(all|default|lo)\.disable_ipv6[[:space:]]*=/ {next}
+		{exit 1}
+	' "$work/original" > "$work/config" || { echo "IPv6 配置包含非工具箱设置，未修改。"; return 1; }
+	printf "net.ipv6.conf.all.disable_ipv6 = %s\nnet.ipv6.conf.default.disable_ipv6 = %s\nnet.ipv6.conf.lo.disable_ipv6 = %s\n" "$value" "$value" "$value" > "$work/apply" || return 1
+	cat "$work/apply" >> "$work/config" || return 1
+	ip -6 address save > "$work/addresses" && ip -6 route save table all > "$work/routes" || return 1
+	mutating=1
+	daimon_config_commit "$file" "$work/config" || return 1
+	runtime_started=1
+	sysctl -p "$work/apply" || return 1
+	for path in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
+		read -r current < "$path" && [ "$current" = "$value" ] || { echo "IPv6 状态校验失败: $path"; return 1; }
+	done
+	committed=1
+)
 
 system_disable_ipv6() {
 	root_use
-	local CONF="/etc/sysctl.d/99-daimon-ipv6.conf"
-	cat > "$CONF" <<'EOF'
-# linux-tools-daimon IPv6 配置：禁用 IPv6
-net.ipv6.conf.all.disable_ipv6 = 1
-net.ipv6.conf.default.disable_ipv6 = 1
-net.ipv6.conf.lo.disable_ipv6 = 1
-EOF
-	sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
-	for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do [ -e "$f" ] && echo 1 > "$f" 2>/dev/null || true; done
-	echo -e "${gl_lv}IPv6 已禁用。配置文件: $CONF${gl_bai}"
-	system_ipv6_status
+	echo "禁用 IPv6 会删除接口上的 IPv6 地址和路由，并中断相关连接。"
+	daimon_ipv6_configure 1 || { echo "IPv6 禁用未完成，请检查上方错误。"; return 1; }
+	echo -e "${gl_lv}IPv6 已禁用。配置文件: /etc/sysctl.d/99-daimon-ipv6.conf${gl_bai}"
+	system_ipv6_status || return 1
 	send_stats "禁用IPv6"
 }
 
 system_enable_ipv6() {
 	root_use
-	local CONF="/etc/sysctl.d/99-daimon-ipv6.conf"
-	cat > "$CONF" <<'EOF'
-# linux-tools-daimon IPv6 配置：开启 IPv6
-net.ipv6.conf.all.disable_ipv6 = 0
-net.ipv6.conf.default.disable_ipv6 = 0
-net.ipv6.conf.lo.disable_ipv6 = 0
-EOF
-	sysctl -p "$CONF" >/dev/null 2>&1 || sysctl --system >/dev/null 2>&1
-	for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do [ -e "$f" ] && echo 0 > "$f" 2>/dev/null || true; done
-	echo -e "${gl_lv}IPv6 已开启。配置文件: $CONF${gl_bai}"
-	system_ipv6_status
+	daimon_ipv6_configure 0 || { echo "IPv6 开启未完成，请检查上方错误。"; return 1; }
+	echo -e "${gl_lv}IPv6 已开启。配置文件: /etc/sysctl.d/99-daimon-ipv6.conf${gl_bai}"
+	echo "允许 IPv6 不等于恢复静态地址、路由或公网连通性；请核查网络管理器配置。"
+	system_ipv6_status || return 1
 	send_stats "开启IPv6"
 }
 

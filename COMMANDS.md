@@ -554,30 +554,21 @@ sed -n '1,40p' /root/linux-daimon/tcp-tuning/runtime-snapshot.conf   # 调优前
 ### 5.16 禁用 IPv6
 
 ```bash
-cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
-net.ipv6.conf.all.disable_ipv6 = 1
-net.ipv6.conf.default.disable_ipv6 = 1
-net.ipv6.conf.lo.disable_ipv6 = 1
-EOF
-sysctl -p /etc/sysctl.d/99-daimon-ipv6.conf
-for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do echo 1 > "$f"; done
+system_disable_ipv6
+# 校验并原子保存 /etc/sysctl.d/99-daimon-ipv6.conf
+# 仅加载 all/default/lo 的 disable_ipv6=1，并逐接口核查
 ip -6 addr show scope global
 ```
-解释：通过 sysctl 配置禁用 IPv6，并同步当前所有网卡的 IPv6 状态。
+解释：拒绝从 IPv6 SSH 连接禁用，需改用 IPv4 SSH 或控制台。禁用会删除接口上的 IPv6 地址和路由、中断相关连接。拒绝符号链接、不可写配置及缺失的内核接口；文件写入失败不改变运行态。仅加载本次开关，不回退到全局 `sysctl --system`。失败时尝试恢复原配置、开关及临时保存的地址/路由，但不能保证连接和动态网络状态恢复；失败必须人工核查，不创建持久备份。
 
 ### 5.17 开启 IPv6
 
 ```bash
-cat > /etc/sysctl.d/99-daimon-ipv6.conf <<EOF
-net.ipv6.conf.all.disable_ipv6 = 0
-net.ipv6.conf.default.disable_ipv6 = 0
-net.ipv6.conf.lo.disable_ipv6 = 0
-EOF
-sysctl -p /etc/sysctl.d/99-daimon-ipv6.conf
-for f in /proc/sys/net/ipv6/conf/*/disable_ipv6; do echo 0 > "$f"; done
+system_enable_ipv6
+# 与禁用共用锁和失败保护，设置 disable_ipv6=0
 ip -6 addr show scope global
 ```
-解释：通过 sysctl 配置开启 IPv6，并同步当前所有网卡的 IPv6 状态。
+解释：允许现有接口及后续新接口使用 IPv6；逐接口校验，不只读取 `conf/all`。开启不等于恢复先前的静态地址、路由或公网连通性，仍需检查网络管理器。内核启动参数彻底关闭 IPv6 时不会假报成功。其他网络管理器或后加载的 sysctl 配置可能覆盖本设置。
 
 ### 5.18 设置本地语言
 
