@@ -744,3 +744,38 @@ APT 测试使用 Docker 官方 Ubuntu 22.04 ARM64/x86_64、Debian 13 slim x86_64
 最终六台 `state_changes=[]`、hash 匹配、测试文件/进程/loop 残留为空。当前清单 962 行，80 行登记有限真实证据，882 行仍为 `not-run`；新增行包含内部判断，不代表新增用户功能。菜单静态审计 669 patterns / 83 case blocks / 9 内嵌脚本，不能代替功能测试。
 
 后续仍需逐项处理：DNS 写入/手动编辑的符号链接与失败保护、Swap（swapon 不受普通命名空间隔离）、用户和 sudo 管理、journal、IPv6 开关、locale、工具卸载，以及此前未完成的 Docker/现代 SSH/业务工具与备份管理。当前源码精确检索显示 `new_ssh_port` 和 `correct_ssh_config` 没有菜单/CLI 调用方，属于遗留未调用函数；前文将其列作待查危险路径，不应解读为已经证实的现行菜单故障。完整重启、换内核、退役仍需要可重建整机，不能为凑覆盖破坏现有业务机。
+
+### DNS、两台临时虚拟机与用户管理（2026-09-29，任务仍未完成）
+
+- **DNS `83f02b2`**：六台在原生官方临时 rootfs 中以真实 PTY/Vim 操作 `5 → 3 → 3`，验证合法编辑、无效 IP、保存后 `:cq` 失败、`:q!` 不保存。失败保留原配置。优化选项 1、2 使用私有 UDP DNS/getent，验证 search/options 和管理器链接目标保留；仅覆盖离线 IPv4 回退，不代表 IPv6-only 或全部公网 DNS 通过。
+- **Swap `38629fc`**：旧版在真实 immutable fstab 下失败后仍改变 Swap；新事务统一调整/删除，失败恢复文件、激活状态、fstab 和归属标记，处理互斥、TERM/INT/HUP 及 rename 后信号窗口。17 个回归在六台 Linux 通过。
+- 用户新授权仅创建**一个 Ubuntu 22.04 ARM64 VM（西班牙宿主）、一个 Debian 13 AMD64 VM（日本宿主）**。QEMU/依赖仅在自有 runtime rootfs，TCG、各 1 vCPU/1536 MiB/16 GiB sparse 磁盘、降权运行、loopback SSH；未安装宿主包或改宿主服务。官方镜像通过 TLS 下载并校验发布 checksum，未验证 GPG 签名。
+- 两 VM 均通过内置更新器安装 `38629fc`，归一化 SHA256 为 `c2137332b845152aa8f9e7b74dee9f398661b72681291657bbb4edb4557880e8`。各完成 27 项 Swap 检查：1024/2048/4096 MiB、自定义 64 MiB、CLI、取消/EOF/非法值、锁冲突、真实 swapoff 能力限制、immutable fstab/marker、未归属文件拒绝、删除/重复及其他 Swap 保留。实际重启后核对两份 Swap 自动激活，随后正常关机。**不是六台业务宿主真实 swapon 测试。**
+- Ubuntu VM 的外层 SSH 控制器发生超时/卡住，不能记为通过；独立取回 guest 报告、核验 hash/Swap 和 serial 重启记录后才确认实际检查完成，再停止已核对身份的卡住本地传输。Swap 阶段结束时两 VM 均已关机；自有目录保留并复用于后续隔离测试，整体任务结束后清理，不能写成全部夹具已删除。
+
+用户管理 `5 → 6` 逐项结果：
+
+| 选项 | 修复与真实验证 | 限制 |
+|---|---|---|
+| 1、2 创建/导入 | 合法 ECDSA 曾被拒绝、坏公钥可写入、自定义 home 被忽略；改为校验真实 home、以目标用户身份原子导入，不修改全局 SSH 策略。进一步修复 EOF/坏 key/下载失败遗留账号、既有 home 被接管和新账号后续失败清理 | 已有账号的 key 导入成功但 sudo 授权失败时，保留 key 并明确提示；不声称跨两个操作完全原子 |
+| 2、3 sudo 授权 | 拒绝同名 symlink/无关策略；校验配置并恢复失败。真实 `runuser → sudo -u root id -u` 确认权限，后置 `!ALL` 不再被误报成功 | 只检查本机已测试 sudo 策略，不能代表所有 LDAP/第三方插件 |
+| 4 撤权 | 处理标准 `ALL:ALL`、直接规则与 sudo 组；剩余其他规则明确提示。Debian 的 `sudo -lU` 拒绝可能退出 0，不再只看退出码 | 不自动改写其他组、别名或 Include 文件中的规则 |
+| 5 删除 | 旧版删除后遗留 sudo 授权；新增共用/不安全 home、挂载点、当前用户保护，先清理并核查 sudo，再执行不带强制参数的 userdel。真实占用进程导致删除失败时恢复 sudo；支持缺失 home 的账号 | 删除数据不可逆；账号已删而 home 清理失败时报告实际错误，不恢复遗留授权，不承诺无备份还原数据 |
+
+`a37ed79` 六台各 20 项真实检查通过。创建修复 `a48cf67` 曾引入嵌套同文件 flock 冲突，实际 Ubuntu/Debian 与 Linux 回归均捕获，**该版本不算通过**；`2be356a` 分离锁后六台各 39 项通过。`5c979ee` 六台各 **52 项检查**通过，包括真实 useradd/userdel/usermod/sudo、HTTP 重定向/多 key/CRLF/截断/503/空文件、三次独立 sshd 公钥登录、共享/挂载/符号链接/占用 home、取消/EOF/重复。检查数包含准备、验证和预期拒绝，不等于独立功能数。
+
+`5c979ee` 六台另各通过通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 27 个隔离回归。宿主前后采集状态无变化；所有用户、sudo、SSH 和 HTTP 操作在自有原生 rootfs/命名空间，不操作生产账号。后续状态采集增加账号数据库、locale、hostname、hosts、gai 及 root shell 配置哈希；旧基线未采集的新字段单独标明，没有伪造历史对照。
+
+本地证据位于 `.tmp/audit-20260928/` 的版本化 `dns-editor`、`vm-*-swap/final/reboot`、`user-real`、部署与 suites JSON；真实 rootfs 退出后清理。尚未完成的 journal、IPv6 开关、工具卸载、Docker 完整恢复、现代 SSH、全部第三方/编程工具、业务/备份管理、内核和退役等仍须继续，不能把本节当作全项目验收。
+
+#### locale 九个选项与 sudo 查询错误
+
+`c5ef2b5` 修复语言设置直接覆盖文件、丢失 LC_TIME 等其他类别，以及生成失败仍遗留 locale.gen 改动。先在暂存文件中更新选择，真实 `locale-gen` 及可用性校验后，用原生 `update-locale` 修改 LANG 并原子提交；失败/信号恢复配置。保留 Debian 13 的 `/etc/default/locale` → `/etc/locale.conf` 链接，Ubuntu 22.04 使用 `/etc/default/locale`。生成的额外未启用 locale 数据不回删，不备份整个 locale 库。
+
+日本、DMIT 在 `c5ef2b5`，其余四台在 `f6c1d2c`，分别在原生官方 rootfs 实际操作 `5 → 18` 的九个语言选项，每次检查持久 LANG、保留 LC_TIME、真实 locale 的 UTF-8 字符集。各 26 项检查还覆盖重复、EOF、immutable 配置/选择文件、真实只读 locale 库导致的生成失败和 flock 冲突。均通过且宿主采集状态无变化；不等同于 SSH/PAM 登录后语言、所有应用翻译或其他发行版验收。
+
+真实 sudo 配置权限错误曾被列表误报为 No。`f6c1d2c` 区分有规则、明确拒绝和查询失败；查询失败显示 Unknown，阻止无法核查授权时删除账号，撤权不误报完全成功。Kulai/Wawo 的原生 sudo 复现该问题；Debian 的报错为 audit plugin 初始化失败，夹具修正了只匹配 Ubuntu 报错的限制后重跑，原失败没有计为通过。
+
+`f6c1d2c` 六台各通过 54 项用户真实检查，包含错误策略显示 Unknown 和拒绝删除；另各通过通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 29、locale 10 个隔离回归。Windows 的 POSIX/PTY 跳过项以 Linux 执行为准。六台通过现有内置更新器安装，归一化 SHA256 为 `37db0450d1a93034888c4d26a64e4d08646668737b874db72ecd9f5656ab2738`，仍跳过任务迁移和证书辅助更新。
+
+此检查点六台宿主状态比较均无变化，hash 匹配，无测试 loop 或原生 rootfs 残留。日本、西班牙仅保留并运行已授权的两个 VM 及其自有 supervisor/QEMU 进程，用于继续 journal 等测试；没有创建更多 VM。静态清单现为 965 行，106 行有有限真实证据，859 行仍为 not-run；669 个 case pattern 的静态通过不能代替这些未执行功能。
