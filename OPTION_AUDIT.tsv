@@ -401,523 +401,529 @@ net_menu	11083	"$choice"	3	read -e -p "请输入网卡名: " nic || return 1; [ 
 net_menu	11083	"$choice"	4	continue	handler-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; net_menu only; real private loopback up/down/inspect/refresh; no physical interface changes
 net_menu	11083	"$choice"	0	return	not-run	-
 net_menu	11083	"$choice"	*	echo "无效的输入!"	not-run	-
-journalctl_log_manager	11110	"$choice"	1	local system_max_use system_keep_free system_max_file_size max_retention_sec read -e -p "SystemMaxUse 最大总占用（默认 500M）: " system_max_use || return 1 system_max_use=${system_max_use:-500M} read -e -p "SystemKeepFree 系统至少保留空闲空间（默认 1G）: " system	not-run	-
-journalctl_log_manager	11110	"$choice"	2	journalctl --disk-usage	not-run	-
-journalctl_log_manager	11110	"$choice"	3	read -e -p "请输入服务名（可不带 .service）: " svc || return 1; [ -z "$svc" ] && continue; [[ "$svc" != *.service ]] && svc="$svc.service"; journalctl -u "$svc" -n 200 --no-pager	not-run	-
-journalctl_log_manager	11110	"$choice"	4	read -e -p "保留时间（默认 7d）: " t || return 1; journalctl --vacuum-time="${t:-7d}"	not-run	-
-journalctl_log_manager	11110	"$choice"	5	read -e -p "保留大小（默认 500M）: " z || return 1; journalctl --vacuum-size="${z:-500M}"	not-run	-
-journalctl_log_manager	11110	"$choice"	0	return	not-run	-
-journalctl_log_manager	11110	"$choice"	*	echo "无效的输入!"	not-run	-
-cpcat_manager	11204	"$cpcat_choice"	1	local tmp_file touch "$bashrc_file" tmp_file=$(mktemp) awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' "$bashrc_file" > "$	not-run	-
-cpcat_manager	11204	"$cpcat_choice"	2	[ -f "$bashrc_file" ] || { echo "~/.bashrc 不存在"; break_end; continue; } local tmp_file tmp_file=$(mktemp) awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$	not-run	-
-cpcat_manager	11204	"$cpcat_choice"	0	return	not-run	-
-cpcat_manager	11204	"$cpcat_choice"	*	echo "无效的输入!"	not-run	-
-daimon_set_hostname/cleanup_hostname	11301	"$staged"	"${host_file%/*}"/.daimon-hostname.*	rm -rf -- "$staged"	not-run	-
-daimon_set_shortcut	11372	"$path"	/usr/local/bin/d|/usr/bin/d|"/usr/local/bin/$name"|"/usr/bin/$name"	continue	not-run	-
-linux_Settings	11406	"$sub_choice"	1	while true; do clear read -e -p "请输入你的快捷按键（默认 d，输入0退出）: " kuaijiejian || return 1 kuaijiejian=${kuaijiejian:-d} [ "$kuaijiejian" = "0" ] && break if ! daimon_shortcut_available "$kuaijiejian"; then echo "快捷键无效或与现有命令冲突，未修改任何文件。" break_end; c	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; shortcut create/repeat/cancel/conflict; real read-only second target failure preserves old aliases
-linux_Settings	11406	"$sub_choice"	2	root_use send_stats "更换系统软件包镜像源" clear echo "更换系统软件包镜像源" echo "下载并校验后执行 LinuxMirrors 脚本；下载失败时不会执行部分内容。" daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh"	menu-real/partial	de698a1/mirror-real.py; six native official disposable rootfs; actual main 5/2 LinuxMirrors download/cache/source rewrite/index verification/repeat; no backup or package upgrade; official HTTPS only
-linux_Settings	11406	"$sub_choice"	3	set_dns_ui	menu-real/partial	83f02b2/system-tools-real.py + dns-editor-real.py; all six; actual optimized IPv4 fallback, manual Vim editing and system manager restore; IPv6-only/public DNS not fully verified
-linux_Settings	11406	"$sub_choice"	4	root_use send_stats "设置v4/v6优先级" while true; do clear echo "设置v4/v6优先级" echo "------------------------" if grep -Eq '^\s*precedence\s+::ffff:0:0/96\s+100\s*$' /etc/gai.conf 2>/dev/null; then echo -e "当前网络优先级设置: ${gl_huang}IPv4${gl_bai} 优先" 	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; preference 1/2, preserved custom policy; real dual-stack glibc ordering; external repair tool not run
-linux_Settings	11406	"$sub_choice"	5	root_use send_stats "设置虚拟内存" while true; do clear echo "设置虚拟内存" local swap_used swap_total swap_info swap_used=$(free -m | awk 'NR==3{print $3}') swap_total=$(free -m | awk 'NR==3{print $2}') swap_info=$(free -m | awk 'NR==3{used=$3; total=	menu-real/partial	38629fc; Ubuntu22.04 ARM64/Debian13 AMD64 two VMs, actual swap submenu1-5 and reboot; no production swap mutation
-linux_Settings	11406	"$sub_choice"	6	while true; do root_use send_stats "用户管理" clear echo "用户列表" echo "----------------------------------------------------------------------------" printf "%-24s %-34s %-20s %-10s\n" "用户名" "用户目录" "用户组" "sudo规则" while IFS=: read -r username _ us	menu-real/partial	f6c1d2c/user-management-real.py; six native rootfs; actual user submenu1-5 with guarded homes, true key logins, sudo and deletion; unknown-policy handling verified separately; native policy-read error displays Unknown and blocks deletion
-linux_Settings	11406	"$sub_choice"	7	root_use send_stats "换时区" while true; do clear echo "系统时间信息" local timezone current_time timezone=$(current_timezone) current_time=$(date +"%Y-%m-%d %H:%M:%S") echo "当前系统时区：$timezone" echo "当前系统时间：$current_time" echo "" echo "时区切换" echo "--	menu-real/partial	2575b93/timezone-real.py; all 22 choices on six hosts; private D-Bus and native timedated, CAP_SYS_TIME removed; real config and libc offset; no host timezone/service changes
-linux_Settings	11406	"$sub_choice"	8	root_use send_stats "修改主机名" while true; do clear local current_hostname new_hostname current_hostname=$(uname -n) echo -e "当前主机名: ${gl_huang}$current_hostname${gl_bai}" echo "------------------------" read -e -p "请输入新的主机名（输入0退出）: " new_host	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; native UTS hostname update/aliases, invalid/cancel; no live host rename
-linux_Settings	11406	"$sub_choice"	9	root_use send_stats "本地host解析" while true; do clear echo "本机host解析列表" echo "如果你在这里添加解析匹配，将不再使用动态解析了" cat /etc/hosts echo "" echo "操作" echo "------------------------" echo "1. 添加新的解析 2. 删除解析地址" echo "------------------------" echo "0. 返回上一级选	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; hosts add/repeat/literal delete/resolve
-linux_Settings	11406	"$sub_choice"	10	clear; env_menu	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; literal env values, separate Bash/POSIX shells, show/delete/repeat; typed-variable failure cases are regressions
-linux_Settings	11406	"$sub_choice"	11	github_proxy_manager	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; proxy source add/repeat/delete/invalid; real complete and truncated loopback HTTP
-linux_Settings	11406	"$sub_choice"	12	show_ssh_ip_info; break_end	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; actual SSH connection info
-linux_Settings	11406	"$sub_choice"	13	clear; net_menu	not-run	-
-linux_Settings	11406	"$sub_choice"	14	journalctl_log_manager	not-run	-
-linux_Settings	11406	"$sub_choice"	15	system_network_auto_optimize	not-run	-
-linux_Settings	11406	"$sub_choice"	16	clear; system_disable_ipv6; break_end	not-run	-
-linux_Settings	11406	"$sub_choice"	17	clear; system_enable_ipv6; break_end	not-run	-
-linux_Settings	11406	"$sub_choice"	18	clear; linux_language	menu-real/partial	c5ef2b5 Japan/DMIT + f6c1d2c other four; actual native locale submenu1-9 with generation and config preservation; no host locale changes
-linux_Settings	11406	"$sub_choice"	19	docker_mirror_speed_test_menu	not-run	-
-linux_Settings	11406	"$sub_choice"	20	clear send_stats "卸载daimon脚本" echo "卸载daimon脚本" echo "------------------------------------------------" echo "将彻底卸载daimon脚本，不影响你其他功能" read -e -p "确定继续吗？(Y/N): " choice || return 1 case "$choice" in [Yy]) clear (crontab -l 2>/dev/null | grep	not-run	-
-linux_Settings	11406	"$sub_choice"	0	return	not-run	-
-linux_Settings	11406	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-linux_Settings	11455	"$choice"	1	prefer_ipv4	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real glibc address ordering with reachable private dual-stack routes
-linux_Settings	11455	"$choice"	2	prefer_ipv6	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real glibc address ordering with reachable private dual-stack routes
-linux_Settings	11455	"$choice"	3	clear; daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"; echo "该功能由jhb大神提供，感谢他！"; send_stats "ipv6修复"	not-run	-
-linux_Settings	11455	"$choice"	0	break	not-run	-
-linux_Settings	11455	"$choice"	*	echo "无效的输入!"	not-run	-
-linux_Settings	11483	"$choice"	1	send_stats "已设置1G虚拟内存"; add_swap 1024	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
-linux_Settings	11483	"$choice"	2	send_stats "已设置2G虚拟内存"; add_swap 2048	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
-linux_Settings	11483	"$choice"	3	send_stats "已设置4G虚拟内存"; add_swap 4096	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
-linux_Settings	11483	"$choice"	4	read -e -p "请输入虚拟内存大小（单位M）: " new_swap || return 1; [ -n "$new_swap" ] && add_swap "$new_swap"; send_stats "已设置自定义虚拟内存"	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
-linux_Settings	11483	"$choice"	5	send_stats "删除虚拟内存"; delete_swap	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
-linux_Settings	11483	"$choice"	0	break	not-run	-
-linux_Settings	11483	"$choice"	*	echo "无效的输入!"	not-run	-
-linux_Settings	11530	"$choice"	1	read -e -p "请输入新用户名: " new_username || return 1; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" false	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
-linux_Settings	11530	"$choice"	2	read -e -p "请输入新用户名: " new_username || return 1; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" true	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
-linux_Settings	11530	"$choice"	3	read -e -p "请输入用户名: " username || return 1; daimon_user_sudo grant "$username"	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
-linux_Settings	11530	"$choice"	4	read -e -p "请输入用户名: " username || return 1; daimon_user_sudo revoke "$username"	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
-linux_Settings	11530	"$choice"	5	read -e -p "请输入要删除的用户名: " username || return 1 if ! daimon_regular_user_valid "$username" || [ "$username" = "${SUDO_USER:-${USER:-}}" ]; then echo "不能删除系统账号、不存在的账号或当前登录账号。" else read -e -p "再次输入用户名确认删除账号及其主目录: " confirm_user || return 1 [ 	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
-linux_Settings	11530	"$choice"	0	break	not-run	-
-linux_Settings	11530	"$choice"	*	echo "无效的输入!"	not-run	-
-linux_Settings	11586	"$choice"	1	set_timedate Asia/Shanghai	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/1; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	2	set_timedate Asia/Hong_Kong	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/2; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	3	set_timedate Asia/Tokyo	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/3; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	4	set_timedate Asia/Seoul	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/4; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	5	set_timedate Asia/Singapore	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/5; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	6	set_timedate Asia/Kolkata	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/6; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	7	set_timedate Asia/Dubai	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/7; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	8	set_timedate Australia/Sydney	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/8; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	9	set_timedate Asia/Bangkok	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/9; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	11	set_timedate Europe/London	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/11; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	12	set_timedate Europe/Paris	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/12; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	13	set_timedate Europe/Berlin	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/13; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	14	set_timedate Europe/Moscow	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/14; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	15	set_timedate Europe/Amsterdam	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/15; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	16	set_timedate Europe/Madrid	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/16; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	21	set_timedate America/Los_Angeles	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/21; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	22	set_timedate America/New_York	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/22; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	23	set_timedate America/Vancouver	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/23; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	24	set_timedate America/Mexico_City	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/24; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	25	set_timedate America/Sao_Paulo	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/25; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	26	set_timedate America/Argentina/Buenos_Aires	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/26; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	31	set_timedate UTC	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/31; native timedatectl/timedated private D-Bus; symlink and libc offset matched
-linux_Settings	11586	"$choice"	0	break	not-run	-
-linux_Settings	11586	"$choice"	*	echo "无效的输入!"	not-run	-
-linux_Settings	11649	"$host_dns"	1	read -r -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost || return 1; [ -n "$addhost" ] && daimon_hosts_edit add "$addhost" && send_stats "本地host解析新增"	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real hosts edit/getent, duplicate and literal-regex rejection
-linux_Settings	11649	"$host_dns"	2	read -r -e -p "请输入需要删除的解析内容关键字（按字面匹配）: " delhost || return 1; [ -n "$delhost" ] && daimon_hosts_edit delete "$delhost" && send_stats "本地host解析删除"	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real hosts edit/getent, duplicate and literal-regex rejection
-linux_Settings	11649	"$host_dns"	0	break	not-run	-
-linux_Settings	11649	"$host_dns"	*	echo "无效的输入!"	not-run	-
-linux_Settings	11675	"$choice"	[Yy]	clear (crontab -l 2>/dev/null | grep -v "kejilion.sh") | crontab - 2>/dev/null || true rm -f /usr/local/bin/d /usr/bin/d rm -f "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" echo "脚本已卸载，再见！" break_end clear exit	not-run	-
-linux_Settings	11675	"$choice"	[Nn]	echo "已取消"	not-run	-
-linux_Settings	11675	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
-linux_tools/install_fzf_release	11917	"$(uname -m)"	x86_64|amd64	arch=amd64	not-run	-
-linux_tools/install_fzf_release	11917	"$(uname -m)"	aarch64|arm64	arch=arm64	not-run	-
-linux_tools/install_fzf_release	11917	"$(uname -m)"	*	echo "不支持的 fzf 架构: $(uname -m)"; return 1	not-run	-
-linux_tools/configure_starship	12068	"$(uname -m)"	x86_64|amd64	starship_arch="x86_64"	not-run	-
-linux_tools/configure_starship	12068	"$(uname -m)"	aarch64|arm64	starship_arch="aarch64"	not-run	-
-linux_tools/configure_starship	12068	"$(uname -m)"	i686|i386	starship_arch="i686"	not-run	-
-linux_tools/configure_starship	12068	"$(uname -m)"	*	starship_arch=""	not-run	-
-linux_tools/tool_installed	12928	"$id"	vim	command -v vim >/dev/null 2>&1 && grep -qxF 'export EDITOR=vim' "$HOME/.bashrc" 2>/dev/null && grep -qxF 'export VISUAL=vim' "$HOME/.bashrc" 2>/dev/null	not-run	-
-linux_tools/tool_installed	12928	"$id"	cpcat	grep -q '^# ========== cpcat clipboard setup ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
-linux_tools/tool_installed	12928	"$id"	ctrld	grep -q '^# ==================== Ctrl+D 改为删除下一个单词 ====================$' "$HOME/.bashrc" 2>/dev/null || grep -q '^bind '\''"\\C-d": kill-word'\''$' "$HOME/.bashrc" 2>/dev/null	not-run	-
-linux_tools/tool_installed	12928	"$id"	starship	command -v starship >/dev/null 2>&1 && [ -f "$HOME/.config/starship.toml" ]	not-run	-
-linux_tools/tool_installed	12928	"$id"	bat	(command -v batcat >/dev/null 2>&1 || command -v bat >/dev/null 2>&1) && [ -f "$HOME/.bat.sh" ] && grep -q '^# ========== bat 终端着色增强 ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
-linux_tools/tool_installed	12928	"$id"	ripgrep	command -v rg >/dev/null 2>&1	not-run	-
-linux_tools/tool_installed	12928	"$id"	fd	command -v fd >/dev/null 2>&1 || (command -v fdfind >/dev/null 2>&1 && grep -Eq "^alias fd=('fdfind'|\"fdfind\"|fdfind)$" "$HOME/.bashrc" 2>/dev/null)	not-run	-
-linux_tools/tool_installed	12928	"$id"	fzf	[ -x "$DAIMON_FZF_DIR/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
-linux_tools/tool_installed	12928	"$id"	blesh	[ -f "$HOME/.local/share/blesh/ble.sh" ] && grep -q '^# ========== ble.sh setup ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
-linux_tools/tool_installed	12928	"$id"	python	python_312_is_default	not-run	-
-linux_tools/tool_installed	12928	"$id"	npm	command -v npm >/dev/null 2>&1	not-run	-
-linux_tools/tool_installed	12928	"$id"	nodejs	command -v node >/dev/null 2>&1	not-run	-
-linux_tools/tool_installed	12928	"$id"	iptables-persistent	command -v netfilter-persistent >/dev/null 2>&1 || dpkg -s iptables-persistent >/dev/null 2>&1	not-run	-
-linux_tools/tool_installed	12928	"$id"	firewalld	command -v firewall-cmd >/dev/null 2>&1	not-run	-
-linux_tools/tool_installed	12928	"$id"	claude	command -v claude >/dev/null 2>&1 && [ -f "$HOME/.claude/settings.json" ]	not-run	-
-linux_tools/tool_installed	12928	"$id"	codex	command -v codex >/dev/null 2>&1 && [ -f "$HOME/.codex/config.toml" ]	not-run	-
-linux_tools/tool_installed	12928	"$id"	*	command -v "$id" >/dev/null 2>&1	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	vim	if tool_installed vim || command -v vim >/dev/null 2>&1; then echo "vim 已安装，正在检查并设置默认编辑器..." else install vim || return 1 fi configure_vim_editor vim --version 2>/dev/null | head -n 1 || true	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	cpcat	configure_cpcat	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	ctrld	configure_ctrld	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	starship	configure_starship	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	bat	configure_bat_terminal	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	ripgrep	install ripgrep || return 1 rg --version 2>/dev/null | head -n 1 || true	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	fd	install fd-find || return 1 configure_fd_alias fd --version 2>/dev/null || fdfind --version 2>/dev/null || true	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	fzf	configure_fzf	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	blesh	configure_blesh	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	python	install_python_312	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	npm|nodejs	install_nvm_lts_auto	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	bun	if tool_installed bun; then bun --version else install curl unzip || return 1 daimon_run_cached_script "https://bun.sh/install" "bun-install.sh" || return 1 export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}" export PATH="$BUN_INSTALL/bin:$PATH	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	uv	if tool_installed uv; then uv --version else install curl || return 1 daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh" || return 1 export PATH="$HOME/.local/bin:$PATH" reload_shell_configs_safely uv --version 2>/de	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	iptables-persistent	if command -v apt >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y iptables-persistent elif command -v dnf >/dev/null 2>&1; then dnf install -y iptables-services elif comman	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	ufw	install ufw ufw status 2>/dev/null || true	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	firewalld	install firewalld systemctl enable firewalld >/dev/null 2>&1 || true systemctl start firewalld >/dev/null 2>&1 || true firewall-cmd --state 2>/dev/null || true	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	yazi	install_yazi_griffo	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	nexttrace	install_nexttrace	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	git|curl|tree|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu|iperf3	install "$id" || return 1 command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	fail2ban	install fail2ban systemctl enable fail2ban >/dev/null 2>&1 || true systemctl start fail2ban >/dev/null 2>&1 || true fail2ban-client status 2>/dev/null || true	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	claude	install_claude_code_auto	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	codex	install_codex_cli	not-run	-
-linux_tools/install_tool_by_id	12965	"$id"	*	echo "未知工具: $id"	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	vim	remove_vim_editor_config; remove vim	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	cpcat	remove_cpcat_config; reload_bashrc_safely; echo "已删除 cpcat 配置"	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	ctrld	remove_ctrld_config; reload_bashrc_safely; echo "已删除 Ctrl+D 绑定"	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	starship	remove_starship_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	bat	remove_bat_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	btop	remove btop; rm -rf "$HOME/.config/btop"	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	yazi	remove_yazi_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	htop	remove htop; rm -rf "$HOME/.config/htop" "$HOME/.htoprc"	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	ripgrep	remove ripgrep	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	fd	remove_fd_alias; remove fd-find	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	fzf	remove_fzf_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	blesh	remove_blesh_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	nexttrace	remove_nexttrace_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	python	remove_python_312_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	npm|nodejs	remove_nvm_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	iptables-persistent	remove_iptables_persistent_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	ufw	remove_ufw_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	firewalld	remove_firewalld_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	fail2ban	remove_fail2ban_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	claude	remove_claude_code_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	codex	remove_codex_all	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	bun	rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true; reload_shell_configs_safely	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	uv	rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"; reload_shell_configs_safely	not-run	-
-linux_tools/remove_tool_by_id	13080	"$id"	*	remove "$id"	not-run	-
-linux_tools/tool_category_menu	13142	"$category_key"	thirdparty	tool_ids=("${thirdparty_ids[@]}") tool_names=("${thirdparty_names[@]}") tool_desc=("${thirdparty_desc[@]}")	not-run	-
-linux_tools/tool_category_menu	13142	"$category_key"	programming	tool_ids=("${programming_ids[@]}") tool_names=("${programming_names[@]}") tool_desc=("${programming_desc[@]}")	not-run	-
-linux_tools/tool_category_menu	13142	"$category_key"	*	echo "未知分类: $category_key" break_end return	not-run	-
-linux_tools/tool_category_menu	13171	$sub_choice	1	read -e -p "请输入要安装的工具编号（支持多选，空格分隔）: " nums || return 1 handle_tool_numbers install "$nums" && [ -n "$nums" ] && restart_shell_after_tool_install	not-run	-
-linux_tools/tool_category_menu	13171	$sub_choice	2	read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums || return 1 handle_tool_numbers remove "$nums"	not-run	-
-linux_tools/tool_category_menu	13171	$sub_choice	3	nums="$(all_tool_numbers)" read -e -i "$nums" -p "请确认/修改要安装的工具编号（默认全选，空格分隔）: " nums || return 1 handle_tool_numbers install "$nums" && [ -n "$nums" ] && restart_shell_after_tool_install	not-run	-
-linux_tools/tool_category_menu	13171	$sub_choice	4	nums="$(all_tool_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的工具编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应工具？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then handle_tool_numbers remove "$nums" e	not-run	-
-linux_tools/tool_category_menu	13171	$sub_choice	0	return	not-run	-
-linux_tools/tool_category_menu	13171	$sub_choice	*	echo "无效的输入!"	not-run	-
-linux_tools	13202	"${1:-}"	thirdparty	tool_category_menu thirdparty "第三方工具" return	not-run	-
-linux_tools	13202	"${1:-}"	thirdparty-install-all	local tool_ids=("${thirdparty_ids[@]}") handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '\n' ' ')" || return 1 restart_shell_after_tool_install return	not-run	-
-linux_tools	13202	"${1:-}"	programming|basic	tool_category_menu programming "编程工具" return	not-run	-
-linux_tools	13202	"${1:-}"	programming-install-all	local tool_ids=("${programming_ids[@]}") handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '\n' ' ')" || return 1 restart_shell_after_tool_install return	not-run	-
-linux_tools	13233	$sub_choice	1	tool_category_menu thirdparty "第三方工具"	not-run	-
-linux_tools	13233	$sub_choice	2	tool_category_menu programming "编程工具"	not-run	-
-linux_tools	13233	$sub_choice	0	return	not-run	-
-linux_tools	13233	$sub_choice	*	echo "无效的输入!"; break_end	not-run	-
-docker_ssh_migration/docker_migration_restore	13527	"$restart_policy"	""|no		not-run	-
-docker_ssh_migration/docker_migration_restore	13527	"$restart_policy"	*	run_args+=(--restart "$restart_policy")	not-run	-
-docker_ssh_migration/main_menu	13620	$choice	1	docker_migration_backup	not-run	-
-docker_ssh_migration/main_menu	13620	$choice	2	docker_migration_migrate	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13620	$choice	3	docker_migration_restore	rejection-real/restore-not-run	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13620	$choice	4	docker_migration_delete_backup	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13620	$choice	0	return	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13620	$choice	*	echo -e "${gl_hong}无效选项${gl_bai}"	not-run	-
-docker_compose_update_cleanup_orphans	14150	"$file"	"${script_dir}"compose_update_*.sh		not-run	-
-docker_compose_update_cleanup_orphans	14150	"$file"	*	echo -e "${gl_hong}跳过非托管路径: $file${gl_bai}"; continue	not-run	-
-docker_compose_auto_update_manager	14204	"$sub_choice"	1	read -e -p "请输入要安装自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
-docker_compose_auto_update_manager	14204	"$sub_choice"	2	read -e -p "请输入要卸载自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers remove "$nums"	not-run	-
-docker_compose_auto_update_manager	14204	"$sub_choice"	3	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的项目编号（默认全选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
-docker_compose_auto_update_manager	14204	"$sub_choice"	4	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的项目编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应自动更新？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then docker	not-run	-
-docker_compose_auto_update_manager	14204	"$sub_choice"	5	docker_compose_update_cleanup_orphans	not-run	-
-docker_compose_auto_update_manager	14204	"$sub_choice"	0	return	not-run	-
-docker_compose_auto_update_manager	14204	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-linux_docker	14273	$sub_choice	1	clear send_stats "安装docker环境" install_add_docker	not-run	-
-linux_docker	14273	$sub_choice	2	clear if ! command -v docker >/dev/null 2>&1; then echo "Docker 未安装，请先选择 1 安装 Docker 环境。" elif ! docker info >/dev/null 2>&1; then echo "Docker 服务不可用，请检查 Docker 状态后重试。" else local container_count=$(docker ps -a -q 2>/dev/null | wc -l) local	not-run	-
-linux_docker	14273	$sub_choice	3	docker_ps [ "$?" -eq 90 ] && continue	not-run	-
-linux_docker	14273	$sub_choice	4	docker_image [ "$?" -eq 90 ] && continue	not-run	-
-linux_docker	14273	$sub_choice	5	while true; do clear send_stats "Docker网络管理" echo "Docker网络列表" echo "------------------------------------------------------------" docker network ls echo "" echo "------------------------------------------------------------" container_ids=$	not-run	-
-linux_docker	14273	$sub_choice	6	while true; do clear send_stats "Docker卷管理" echo "Docker卷列表" docker volume ls echo "" echo "卷操作" echo "------------------------" echo "1. 创建新卷" echo "2. 删除指定卷" echo "3. 删除所有卷" echo "------------------------" echo "0. 返回上一级选单" echo "--------	not-run	-
-linux_docker	14273	$sub_choice	7	clear send_stats "Docker清理" read -e -p "$(echo -e "${gl_huang}提示: ${gl_bai}将清理无用的镜像容器网络，包括停止的容器，确定清理吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker system prune -af --volumes ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
-linux_docker	14273	$sub_choice	8	clear send_stats "Docker源" docker_mirror_menu [ "$?" -eq 90 ] && continue	not-run	-
-linux_docker	14273	$sub_choice	9	clear install vim mkdir -p /etc/docker && vim /etc/docker/daemon.json restart docker	not-run	-
-linux_docker	14273	$sub_choice	10	docker_compose_auto_update_manager continue	not-run	-
-linux_docker	14273	$sub_choice	11	clear send_stats "Docker v6 开" docker_ipv6_on	not-run	-
-linux_docker	14273	$sub_choice	12	clear send_stats "Docker v6 关" docker_ipv6_off	not-run	-
-linux_docker	14273	$sub_choice	19	docker_ssh_migration continue	not-run	-
-linux_docker	14273	$sub_choice	20	clear send_stats "Docker卸载" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定卸载docker环境吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker_uninstall_environment || return 1 ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
-linux_docker	14273	$sub_choice	0	return	not-run	-
-linux_docker	14273	$sub_choice	*	echo "无效的输入!"	not-run	-
-linux_docker	14361	$sub_choice	1	send_stats "创建网络" read -e -p "设置新网络名: " dockernetwork || return 1 docker network create $dockernetwork	not-run	-
-linux_docker	14361	$sub_choice	2	send_stats "加入网络" read -e -p "加入网络名: " dockernetwork || return 1 read -e -p "那些容器加入该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network connect $dockernetwork $dockername done	not-run	-
-linux_docker	14361	$sub_choice	3	send_stats "加入网络" read -e -p "退出网络名: " dockernetwork || return 1 read -e -p "那些容器退出该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network disconnect $dockernetwork $dockername done	not-run	-
-linux_docker	14361	$sub_choice	4	send_stats "删除网络" read -e -p "请输入要删除的网络名: " dockernetwork || return 1 docker network rm $dockernetwork	not-run	-
-linux_docker	14361	$sub_choice	0	continue 2	not-run	-
-linux_docker	14361	$sub_choice	*	break	not-run	-
-linux_docker	14420	$sub_choice	1	send_stats "新建卷" read -e -p "设置新卷名: " dockerjuan || return 1 docker volume create $dockerjuan	not-run	-
-linux_docker	14420	$sub_choice	2	read -e -p "输入删除卷名（多个卷名请用空格分隔）: " dockerjuans || return 1 for dockerjuan in $dockerjuans; do docker volume rm $dockerjuan done	not-run	-
-linux_docker	14420	$sub_choice	3	send_stats "删除所有卷" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有未使用的卷吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker volume prune -f ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
-linux_docker	14420	$sub_choice	0	continue 2	not-run	-
-linux_docker	14420	$sub_choice	*	break	not-run	-
-linux_docker	14439	"$choice"	[Yy]	docker volume prune -f	not-run	-
-linux_docker	14439	"$choice"	[Nn]		not-run	-
-linux_docker	14439	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
-linux_docker	14464	"$choice"	[Yy]	docker system prune -af --volumes	not-run	-
-linux_docker	14464	"$choice"	[Nn]		not-run	-
-linux_docker	14464	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
-linux_docker	14519	"$choice"	[Yy]	docker_uninstall_environment || return 1	not-run	-
-linux_docker	14519	"$choice"	[Nn]		not-run	-
-linux_docker	14519	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
-ssh_private_key_name_valid	14644	"$1"	authorized_keys|known_hosts|known_hosts.old|config|*.pub	return 1	not-run	-
-ssh_config_manager/ssh_key_manager	14724	"$sub_choice"	1	read -e -p "请粘贴公钥: " public_key || return 1; ssh_add_public_key "$public_key"	not-run	-
-ssh_config_manager/ssh_key_manager	14724	"$sub_choice"	2	read -e -p "请输入要删除的公钥行号: " line_no || return 1; [[ "$line_no" =~ ^[0-9]+$ ]] && sed -i "${line_no}d" /root/.ssh/authorized_keys	not-run	-
-ssh_config_manager/ssh_key_manager	14724	"$sub_choice"	3	read -e -p "请输入私钥文件名（默认 id_ed25519）: " key_name || return 0 key_name=${key_name:-id_ed25519} if ! ssh_private_key_name_valid "$key_name" || [ -e "/root/.ssh/$key_name" ] || [ -L "/root/.ssh/$key_name" ]; then echo "文件名无效或文件已存在，未覆盖任何文件。" els	not-run	-
-ssh_config_manager/ssh_key_manager	14724	"$sub_choice"	4	read -e -p "请输入要删除的私钥文件名: " key_name || return 0 if ssh_private_key_name_valid "$key_name" && [ -f "/root/.ssh/$key_name" ] && [ ! -L "/root/.ssh/$key_name" ]; then rm -f -- "/root/.ssh/$key_name" else echo "文件名无效或不是私钥文件，未删除。" fi	not-run	-
-ssh_config_manager/ssh_key_manager	14724	"$sub_choice"	0	return	not-run	-
-ssh_config_manager/ssh_key_manager	14724	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-ssh_config_manager	14769	"$sub_choice"	1	read -e -p "请输入新 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1 ] && [ "$new_port" -le 65535 ]; then if command -v ufw >/dev/null 2>&1 && 	not-run	-
-ssh_config_manager	14769	"$sub_choice"	2	echo "1. 禁用密码登录 2. 开启密码登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then ssh_set_option PasswordAuthentication no ssh_set_option KbdInteractiveAuthentication no ssh_set_option ChallengeResponseAuthentication no ssh_set_opti	not-run	-
-ssh_config_manager	14769	"$sub_choice"	3	echo "1. 开启密钥登录 2. 禁用密钥登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then read -e -p "请粘贴公钥（可直接回车跳过）: " public_key || return 1 ssh_add_public_key "$public_key" ssh_set_option PubkeyAuthentication yes ssh_set_option Authorize	not-run	-
-ssh_config_manager	14769	"$sub_choice"	4	read -e -p "请粘贴公钥: " public_key || return 1 ssh_add_public_key "$public_key" || { break_end; continue; } read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if ! validate_tcp_port "$n	not-run	-
-ssh_config_manager	14769	"$sub_choice"	5	ssh_key_manager; continue	not-run	-
-ssh_config_manager	14769	"$sub_choice"	6	install vim; vim "$SSH_CONFIG"; ssh_restart_safe	not-run	-
-ssh_config_manager	14769	"$sub_choice"	0	return	not-run	-
-ssh_config_manager	14769	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-ufw_manager	14863	"$sub_choice"	1	root_use if install ufw && ufw_allow_current_ssh; then ufw --force enable && ufw status fi	not-run	-
-ufw_manager	14863	"$sub_choice"	2	root_use; ufw disable 2>/dev/null || true; remove ufw; rm -rf /etc/ufw /var/lib/ufw	not-run	-
-ufw_manager	14863	"$sub_choice"	3	root_use; read -e -p "请输入要开放的端口/协议: " port_rule || return 1; [ -n "$port_rule" ] && ufw allow "$port_rule"; ufw status numbered	not-run	-
-ufw_manager	14863	"$sub_choice"	4	root_use; read -e -p "请输入要删除的端口/协议: " port_rule || return 1; [ -n "$port_rule" ] && ufw delete allow "$port_rule"; ufw status numbered	not-run	-
-ufw_manager	14863	"$sub_choice"	0	return	not-run	-
-ufw_manager	14863	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-fail2ban_manager/fail2ban_service	14910	"$action"	status	/bin/systemctl --no-pager --full status fail2ban	not-run	-
-fail2ban_manager/fail2ban_service	14910	"$action"	*	/bin/systemctl "$action" fail2ban	not-run	-
-fail2ban_manager	15065	"$sub_choice"	1	fail2ban_install_sshd	not-run	-
-fail2ban_manager	15065	"$sub_choice"	2	fail2ban_uninstall_all	not-run	-
-fail2ban_manager	15065	"$sub_choice"	3	fail2ban_check_sshd_jail	not-run	-
-fail2ban_manager	15065	"$sub_choice"	0	return	not-run	-
-fail2ban_manager	15065	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-embedded@15093/nginx_domain_cert_dir_for_domain	390	"$cert_path"	/root/domain/*/fullchain.pem	dirname "$cert_path"; return 0	not-run	-
-embedded@15093/remove_cert	443	"$cert_dir"	/root/domain/*	[ -d "$cert_dir" ] && rm -rf "$cert_dir"	not-run	-
-embedded@15093/remove_nginx_and_cert	531	"$CERT_DIR"	/root/domain/*|/etc/letsencrypt/live/*	[ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"	not-run	-
-embedded@15093/CLI	1065	$ACTION	1	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
-embedded@15093/CLI	1065	$ACTION	2	remove_nginx_and_cert	not-run	-
-embedded@15093/CLI	1065	$ACTION	3	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } issue_cert "$DOMAIN" restart_nginx_if_needed	not-run	-
-embedded@15093/CLI	1065	$ACTION	4	remove_cert	not-run	-
-embedded@15093/CLI	1065	$ACTION	5	show_cert_list	not-run	-
-embedded@15093/CLI	1065	$ACTION	6	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
-embedded@15093/CLI	1065	$ACTION	7	remove_nginx_config	not-run	-
-embedded@15093/CLI	1065	$ACTION	8	create_test_page	not-run	-
-embedded@15093/CLI	1065	$ACTION	9	remove_test_page	not-run	-
-embedded@15093/CLI	1065	$ACTION	10	install_nginx nginx -v 2>&1 || true systemctl status nginx --no-pager 2>/dev/null || true	not-run	-
-embedded@15093/CLI	1065	$ACTION	11	backup_nginx_domain	not-run	-
-embedded@15093/CLI	1065	$ACTION	12	restore_nginx_domain	not-run	-
-embedded@15093/CLI	1065	$ACTION	13	nginx_domain_migrate_existing_certs	not-run	-
-embedded@15093/CLI	1065	$ACTION	0	echo -e "${GREEN}返回上一级菜单${NC}" exit 0	not-run	-
-embedded@15093/CLI	1065	$ACTION	*	echo -e "${RED}无效选择${NC}"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	1	daimon_exec_cached_script "https://run.NodeQuality.com" "NodeQuality.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	2	daimon_exec_cached_script "https://IP.Check.Place" "IPQuality.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	3	daimon_exec_cached_script "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" "ecs.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	4	daimon_exec_cached_script "https://Net.Check.Place" "NetQuality.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	5	daimon_exec_cached_script "https://check.unlock.media" "RegionRestrictionCheck.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	6	daimon_exec_cached_script "https://bench.sh" "bench.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	7	daimon_exec_cached_script "https://yabs.sh" "yabs.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	8	daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	9	daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	10	exec bash -c 'bash <(curl -sL kejilion.sh)'	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	11	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh" "sing-box-daimon.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	12	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh" "runTcpQuality.sh"	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	0	return	not-run	-
-common_one_click_scripts	16268	"$sub_choice"	*	echo "无效的输入!"; break_end	not-run	-
-rclone_install_cn_release	16306	"$(uname -m)"	x86_64|amd64	arch=amd64	not-run	-
-rclone_install_cn_release	16306	"$(uname -m)"	aarch64|arm64	arch=arm64	not-run	-
-rclone_install_cn_release	16306	"$(uname -m)"	i?86	arch=386	not-run	-
-rclone_install_cn_release	16306	"$(uname -m)"	armv7*	arch=arm-v7	not-run	-
-rclone_install_cn_release	16306	"$(uname -m)"	armv6*	arch=arm-v6	not-run	-
-rclone_install_cn_release	16306	"$(uname -m)"	*	echo "不支持的 rclone 架构: $(uname -m)"; return 1	not-run	-
-rclone_restore_name_valid	16408	"$name"	*/*|*\\*|*[[:cntrl:]]*	return 1	not-run	-
-rclone_state_text	16450	"$1"	valid	echo "有效（读取验证）"	not-run	-
-rclone_state_text	16450	"$1"	invalid	echo "无效（认证失败）"	not-run	-
-rclone_state_text	16450	"$1"	*	echo "无法检测（网络、权限或配置）"	not-run	-
-rclone_restore_remote_folder	16746	"$policy"	1	policy=keep	not-run	-
-rclone_restore_remote_folder	16746	"$policy"	2	policy=replace	not-run	-
-rclone_restore_remote_folder	16746	"$policy"	*	return 0	not-run	-
-rclone_nginx_allow_ports	16803	"$status"	*'Status: active'*|*'Status: inactive'*		not-run	-
-rclone_nginx_allow_ports	16803	"$status"	*	echo "UFW 状态未知，未修改规则。"; return 1	not-run	-
-rclone_nginx_target_for_key	16832	"$key"	sites-available|sites-enabled|conf.d|stream.d|nginx.conf|mime.types	printf '%s/%s\n' "$nginx_dir" "$key"	not-run	-
-rclone_nginx_target_for_key	16832	"$key"	home-web-conf.d	printf '%s/conf.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
-rclone_nginx_target_for_key	16832	"$key"	home-web-stream.d	printf '%s/stream.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
-rclone_nginx_target_for_key	16832	"$key"	domain	printf '%s\n' "${DAIMON_DOMAIN_DIR:-${DAIMON_RESTORE_ROOT:-/root}/domain}"	not-run	-
-rclone_nginx_target_for_key	16832	"$key"	*	return 1	not-run	-
-rclone_nginx_apply	16921	"$policy"	keep|replace		not-run	-
-rclone_nginx_apply	16921	"$policy"	*	return 1	not-run	-
-rclone_nginx_apply	16922	"$mode"	sites	keys=(sites-available)	not-run	-
-rclone_nginx_apply	16922	"$mode"	links	keys=(sites-enabled)	not-run	-
-rclone_nginx_apply	16922	"$mode"	domain	keys=(domain)	not-run	-
-rclone_nginx_apply	16922	"$mode"	all	for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types; do [ ! -e "$backup/$key" ] || keys+=("$key") done [ ! -s "$backup/enabled_sites.txt" ] || keys+=(sites-enabled) [ "${#keys[@]}" -gt 0	not-run	-
-rclone_nginx_apply	16922	"$mode"	*	return 1	not-run	-
-rclone_nginx_apply	16946	"$key"	nginx.conf|mime.types	[ -f "$backup/$key" ] && { [ ! -e "$dst" ] || [ -f "$dst" ]; } || return 1	not-run	-
-rclone_nginx_apply	16946	"$key"	*	[ "$key" = sites-enabled ] || rclone_tree_safe "$dst" || return 1	not-run	-
-rclone_nginx_apply	16983	"$key"	nginx.conf|mime.types		not-run	-
-rclone_nginx_apply	16983	"$key"	*	mkdir "$work/new/$key" || return 1	not-run	-
-rclone_nginx_apply	16986	"$key"	nginx.conf|mime.types	if [ "$policy" = replace ] || [ ! -f "$work/new/$key" ]; then cp -a -- "$backup/$key" "$work/new/$key" || return 1; fi continue	not-run	-
-rclone_restore_nginx_domain_remote	17090	"$choice"	1	mode=sites	not-run	-
-rclone_restore_nginx_domain_remote	17090	"$choice"	2	mode=links	not-run	-
-rclone_restore_nginx_domain_remote	17090	"$choice"	3	mode=domain	not-run	-
-rclone_restore_nginx_domain_remote	17090	"$choice"	4	mode=all	not-run	-
-rclone_restore_nginx_domain_remote	17090	"$choice"	0	return	not-run	-
-rclone_restore_nginx_domain_remote	17090	"$choice"	*	echo "无效的输入!"; continue	not-run	-
-rclone_restore_nginx_domain_remote	17099	"$policy"	1	policy=keep	not-run	-
-rclone_restore_nginx_domain_remote	17099	"$policy"	2	policy=replace	not-run	-
-rclone_restore_nginx_domain_remote	17099	"$policy"	*	continue	not-run	-
-rclone_restore_named_volumes	17647	"$choice"	1	rclone_show_named_volume_inventory; return $?	not-run	-
-rclone_restore_named_volumes	17647	"$choice"	2	rclone_export_named_volumes; return $?	not-run	-
-rclone_restore_named_volumes	17647	"$choice"	3		not-run	-
-rclone_restore_named_volumes	17647	"$choice"	*	return 0	not-run	-
-rclone_migration_verify	17710	",$dns,"	*",$expected,"*		not-run	-
-rclone_migration_verify	17710	",$dns,"	*	echo "DNS 尚未指向指定 IP，或使用了 CDN；请按你的 DNS 配置核对。"	not-run	-
-rclone_migration_verify	17713	"$output"	2??|3??|401|403	code=0	not-run	-
-rclone_migration_verify	17713	"$output"	*	code=1	not-run	-
-rclone_migration_verify	17717	"$output"	2??|3??|401|403		not-run	-
-rclone_migration_verify	17717	"$output"	*	rc=1	not-run	-
-rclone_migration_verify	17728	"$output"	2??|3??|401|403		not-run	-
-rclone_migration_verify	17728	"$output"	*	rc=1	not-run	-
-rclone_restore_docker_compose_projects	17776	"$?"	1	start_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" pending "awaiting startup confirmation" || return 1	not-run	-
-rclone_restore_docker_compose_projects	17776	"$?"	*	check_failed_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" failed "status query/health failed" || return 1	not-run	-
-rclone_manager	17851	$sub_choice	1	rclone_install_tool; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
-rclone_manager	17851	$sub_choice	2	rclone_edit_config; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
-rclone_manager	17851	$sub_choice	3	rclone_uninstall_tool	not-run	-
-rclone_manager	17851	$sub_choice	4	rclone_restore_remote_folder	not-run	-
-rclone_manager	17851	$sub_choice	5	rclone_restore_nginx_domain_remote	not-run	-
-rclone_manager	17851	$sub_choice	6	rclone_restore_docker_compose_projects	not-run	-
-rclone_manager	17851	$sub_choice	7	crontab_sync_log_manager	not-run	-
-rclone_manager	17851	$sub_choice	0	return	not-run	-
-rclone_manager	17851	$sub_choice	*	echo "无效的输入!"	not-run	-
-bitwarden_manager	18274	$sub_choice	1	bitwarden_configure_rclone_conf	not-run	-
-bitwarden_manager	18274	$sub_choice	2	bitwarden_backup_data	not-run	-
-bitwarden_manager	18274	$sub_choice	3	bitwarden_restore_data	not-run	-
-bitwarden_manager	18274	$sub_choice	4	bitwarden_configure_sync_script	not-run	-
-bitwarden_manager	18274	$sub_choice	0	return	not-run	-
-bitwarden_manager	18274	$sub_choice	*	echo "无效的输入!"	not-run	-
-crontab_sync_log_manager	18546	"$choice"	1	filter=""	not-run	-
-crontab_sync_log_manager	18546	"$choice"	2	read -e -p "任务名（如 root、emby、bitwarden）: " filter || return 1	not-run	-
-crontab_sync_log_manager	18546	"$choice"	3|4|5	read -e -p "请输入记录编号（1-15）: " number || return 1 record=$(crontab_sync_log_pick "$number" "$filter") || { echo "记录不存在"; break_end; continue; } IFS=$'\t' read -r _ _ _ _ _ _ _ _ _ _ log _ <<< "$record" [ -f "$log" ] || { echo "日志文件不存在: $log";	not-run	-
-crontab_sync_log_manager	18546	"$choice"	0	return	not-run	-
-crontab_sync_log_manager	18546	"$choice"	*	echo "无效的输入!"; break_end	not-run	-
-crontab_sync_log_manager	18554	"$choice"	3	crontab_sync_log_sanitize "$log"	not-run	-
-crontab_sync_log_manager	18554	"$choice"	4	crontab_sync_log_copy "$log"	not-run	-
-crontab_sync_log_manager	18554	"$choice"	5	crontab_sync_log_export "$log"	not-run	-
-crontab_sync_legacy_script_file_by_id	18585	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Infini.sh"	not-run	-
-crontab_sync_legacy_script_file_by_id	18585	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_Infini_to_OneDrive.sh"	not-run	-
-crontab_sync_script_file_by_id	18767	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Kissska1.sh"	not-run	-
-crontab_sync_script_file_by_id	18767	"$1"	imagebed	echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh"	not-run	-
-crontab_sync_script_file_by_id	18767	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_OneDrive_to_Kissska1.sh"	not-run	-
-crontab_sync_script_file_by_id	18767	"$1"	nginxdomain	echo "$(crontab_sync_backup_dir)/Nginx_Domain_Local_Backup.sh"	not-run	-
-crontab_sync_script_file_by_id	18767	"$1"	root	local name; name=$(crontab_sync_root_name) || return 1; echo "$(crontab_sync_backup_dir)/$name.sh"	not-run	-
-crontab_sync_script_file_by_id	18767	"$1"	emby	echo "$(crontab_sync_backup_dir)/Emby_Root_Backup.sh"	not-run	-
-crontab_sync_script_file_by_id	18767	"$1"	custom	echo "$(crontab_sync_backup_dir)/$2"	not-run	-
-crontab_sync_cron_line_by_id	18784	"$id"	bitwarden	echo "5 5 * * * /bin/bash $runner bitwarden $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	18784	"$id"	imagebed	echo "10 4 * * * /bin/bash $runner imagebed $script_file >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	18784	"$id"	via	echo "15 4 * * * /bin/bash $runner via $script_file >> /var/log/rclone/cron_Via_OneDrive_to_Kissska1.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	18784	"$id"	nginxdomain	echo "0 4 * * * /bin/bash $runner nginxdomain $script_file >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	18784	"$id"	root	echo "25 4 * * * /bin/bash $runner root $script_file >> /var/log/rclone/cron_Root_Backup.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	18784	"$id"	emby	echo "45 5 * * 0 /bin/bash $runner emby $script_file >> /var/log/rclone/cron_Emby_Root_Backup.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	18784	"$id"	custom	local script_base script_base=$(basename "$script_file" .sh) echo "45 4 * * * /bin/bash $runner custom:$script_base $script_file >> /var/log/rclone/cron_${script_base}.log 2>&1"	not-run	-
-crontab_sync_script_content_ok	18804	"$id"	bitwarden	grep -q 'SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'DEST_REMOTE="kissska1:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
-crontab_sync_script_content_ok	18804	"$id"	imagebed	grep -q 'qq3303338052@cloudflare:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'qq3303338052@outlook:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
-crontab_sync_script_content_ok	18804	"$id"	via	grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \ && grep -q '"kissska1:Via"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
-crontab_sync_script_content_ok	18804	"$id"	nginxdomain	if grep -q 'BACKUP_DIR="\$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null && grep -Eq 'rclone_nginx_write_bundle|copy_backup_item' "$script_file" 2>/dev/null && grep -q 'manifest.txt' "$script_file" 2>/dev/null; then return 0 fi return	not-run	-
-crontab_sync_script_content_ok	18804	"$id"	root|emby|custom	local stage expected result=1 stage=$(mktemp -d) || return 1 expected="$stage/$(basename "$script_file")" if DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script "$id" "$expected" && cmp -s "$expected" "$script_file"; then result=0; fi rm -	not-run	-
-crontab_sync_builtin_name_by_id	18873	"$1"	bitwarden	echo "bitwarden同步脚本"	not-run	-
-crontab_sync_builtin_name_by_id	18873	"$1"	imagebed	echo "图床同步脚本"	not-run	-
-crontab_sync_builtin_name_by_id	18873	"$1"	via	echo "via同步脚本"	not-run	-
-crontab_sync_builtin_name_by_id	18873	"$1"	nginxdomain	echo "域名和nginx配置备份脚本"	not-run	-
-crontab_sync_builtin_name_by_id	18873	"$1"	root	echo "/root Docker一致性备份脚本"	not-run	-
-crontab_sync_builtin_name_by_id	18873	"$1"	emby	echo "Emby目录备份脚本"	not-run	-
-crontab_sync_builtin_id_by_number	18884	"$1"	1	echo "bitwarden"	not-run	-
-crontab_sync_builtin_id_by_number	18884	"$1"	2	echo "imagebed"	not-run	-
-crontab_sync_builtin_id_by_number	18884	"$1"	3	echo "via"	not-run	-
-crontab_sync_builtin_id_by_number	18884	"$1"	4	echo "nginxdomain"	not-run	-
-crontab_sync_builtin_id_by_number	18884	"$1"	5	echo "emby"	not-run	-
-crontab_sync_builtin_id_by_number	18884	"$1"	6	echo "root"	not-run	-
-crontab_sync_write_script	18923	"$id"	bitwarden	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail # ========= 源与目标 ========= SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup" DEST_REMOTE="kissska1:/BitwardenBackup" # ========= 日志 ========= LOG_DIR="/var/log/rclone" LOG_FILE="${	not-run	-
-crontab_sync_write_script	18923	"$id"	imagebed	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/r2_to_onedrive_imagebed.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
-crontab_sync_write_script	18923	"$id"	via	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/outlook_to_kissska1_via.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
-crontab_sync_write_script	18923	"$id"	nginxdomain	rclone_nginx_write_backup_script "$script_file"	not-run	-
-crontab_sync_write_script	18923	"$id"	root|emby|custom	local backup_name kind source if [ "$id" = emby ]; then backup_name=Emby; kind=emby; source=/root/emby else backup_name=$(basename "$target" .sh) if [ "$backup_name" = Root_Backup ]; then backup_name=$(crontab_sync_root_name) || return 1 fi	not-run	-
-crontab_sync_write_script	18923	"$id"	*	return 1	not-run	-
-crontab_sync_reconcile_legacy	19877	"$custom_file"	"$bit_old"|"$via_old"	continue	not-run	-
-crontab_sync_install_one	19922	"$id"	bitwarden|via|root|emby|custom	if ! crontab_sync_remote_ready; then echo -e "${gl_hong}kissska1 连接检查失败，未修改脚本和定时任务。${gl_bai}" return 1 fi	not-run	-
-crontab_sync_get_item_by_number	19982	"$num"	1|2|3|4|5|6	id=$(crontab_sync_builtin_id_by_number "$num") if [ "$id" = root ]; then if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then [ "$action" = install ] || return 1 crontab_sync_prompt_root_name >/dev/null || return 1 file=$(cro	not-run	-
-crontab_sync_manager	20071	"$sub_choice"	1	read -e -p "请输入要安装的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
-crontab_sync_manager	20071	"$sub_choice"	2	read -e -p "请输入要卸载的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers remove "$nums"	not-run	-
-crontab_sync_manager	20071	"$sub_choice"	3	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的脚本编号（默认全选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
-crontab_sync_manager	20071	"$sub_choice"	4	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的脚本编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应脚本和定时任务？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then crontab_sync	not-run	-
-crontab_sync_manager	20071	"$sub_choice"	5	crontab_sync_run_root_once	not-run	-
-crontab_sync_manager	20071	"$sub_choice"	0	return	not-run	-
-crontab_sync_manager	20071	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-server_retire_nginx_remove	20166	"$file"	/etc/nginx/sites-enabled/*|/etc/nginx/sites-available/*|/home/web/conf.d/*		not-run	-
-server_retire_nginx_remove	20166	"$file"	*	echo -e "${gl_hong}跳过非托管 Nginx 路径: $file${gl_bai}"; return 1	not-run	-
-server_retire_nginx_remove	20178	"$domain"	*.*	rm -rf -- "/root/domain/$domain"	not-run	-
-server_retire_remove_script	20235	"$real"	"$(realpath -m -- "$dir")"/*	allowed=true	not-run	-
-server_retire_remove_script	20237	"$real"	"$(realpath -m -- "$DAIMON_SCRIPT_DIR")/auto_cert_renewal.sh"|"$(realpath -m -- "$DAIMON_ROOT_DIR")/cert-renew.sh"	allowed=true	not-run	-
-server_retire_apply_token	20291	"$token"	C[0-9]*	n="${token#C}"; item=$(server_retire_compose_item "$n") || return 1; IFS=$'\t' read -r idx project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	not-run	-
-server_retire_apply_token	20291	"$token"	N[0-9]*	n="${token#N}"; item=$(server_retire_nginx_item "$n") || return 1; IFS=$'\t' read -r file domains enabled <<< "$item"; server_retire_nginx_remove "$file" "$domains"	not-run	-
-server_retire_apply_token	20291	"$token"	A[0-9]*	n="${token#A}"; file=$(server_retire_script_items | sed -n "${n}p" | cut -f1); [ -n "$file" ] || return 1; server_retire_remove_script "$file"	not-run	-
-server_retire_apply_token	20291	"$token"	U[0-9]*	n="${token#U}"; file=$(server_retire_update_items | sed -n "${n}p" | cut -f1); [ -n "$file" ] || return 1; server_retire_remove_script "$file"	not-run	-
-server_retire_apply_token	20291	"$token"	R1	server_retire_remove_script "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" 2>/dev/null || true server_retire_remove_script "$DAIMON_ROOT_DIR/cert-renew.sh"	not-run	-
-server_retire_apply_token	20291	"$token"	*	return 1	not-run	-
-server_retire_apply_tokens_for_prefix	20307	"$token"	"$prefix"[0-9]*	printf '%s\n' "$token"	not-run	-
-server_retire_bulk	20327	" $nums "	*' R1 '*	server_retire_apply_token R1 || echo -e "${gl_hong}证书续期任务处理失败${gl_bai}"	not-run	-
-server_retire_menu	20393	"$choice"	1	server_retire_bulk	not-run	-
-server_retire_menu	20393	"$choice"	2	server_retire_compose_menu	not-run	-
-server_retire_menu	20393	"$choice"	3	server_retire_nginx_menu	not-run	-
-server_retire_menu	20393	"$choice"	4	server_retire_script_menu sync	not-run	-
-server_retire_menu	20393	"$choice"	5	server_retire_script_menu update	not-run	-
-server_retire_menu	20393	"$choice"	6	server_retire_cert_menu	not-run	-
-server_retire_menu	20393	"$choice"	0	return	not-run	-
-server_retire_menu	20393	"$choice"	*	echo "无效的输入!"	not-run	-
-warp_manager	20429	$sub_choice	1	clear send_stats "warp管理" install wget curl daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"	not-run	-
-warp_manager	20429	$sub_choice	2	clear echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}" read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then send_stats "彻底删除warp" install wget curl 	not-run	-
-warp_manager	20429	$sub_choice	0	return	not-run	-
-warp_manager	20429	$sub_choice	*	echo "无效的输入!"	not-run	-
-debian_basics_install	20561	"$package"	ca-certificates|curl|wget|jq		not-run	-
-debian_basics_install	20561	"$package"	*	echo "无效的 Debian 软件包: $package"; return 1	not-run	-
-debian_basics_menu	20609	"$answer"	''|y|Y		not-run	-
-debian_basics_menu	20609	"$answer"	*	echo "已取消"; return 0	not-run	-
-kejilion_sh	20664	$choice	1	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
-kejilion_sh	20664	$choice	2	clear ; send_stats "系统更新" ; linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-kejilion_sh	20664	$choice	3	clear ; send_stats "系统清理" ; linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-kejilion_sh	20664	$choice	4	one_click_config_manager; pause_after=false	handler-real/partial	2026-09-28; 5ca85df; six hosts; one_click_config_manager handler real apt for items 2/3; main-menu 4 dispatch itself only in guarded regression; other setup items not covered
-kejilion_sh	20664	$choice	5	linux_Settings; pause_after=false	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; selected submenus only
-kejilion_sh	20664	$choice	6	linux_tools thirdparty; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	7	linux_tools programming; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	8	linux_docker; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	9	ssh_config_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	10	ufw_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	11	ssl_nginx_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	12	fail2ban_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	13	linux_bbr; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	14	warp_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	15	rclone_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	16	bitwarden_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	17	crontab_sync_manager; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	18	common_one_click_scripts; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	19	server_retire_menu; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	20	debian_basics_menu; pause_after=false	not-run	-
-kejilion_sh	20664	$choice	00	kejilion_update; pause_after=false	handler-real/scoped	2026-09-28 updater; six hosts; skip backup/helper migration as authorized
-kejilion_sh	20664	$choice	0	clear ; exit	menu-real/partial	2026-09-28; 5ca85df; six hosts; actual menu exits after info/update/clean without a second completion pause
-kejilion_sh	20664	$choice	*	echo "无效的输入!"	not-run	-
-CLI	20727	$1	install|add|安装	shift send_stats "安装软件" install "$@"	not-run	-
-CLI	20727	$1	remove|del|uninstall|卸载	shift send_stats "卸载软件" remove "$@"	not-run	-
-CLI	20727	$1	update|更新	linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-CLI	20727	$1	clean|清理	linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-CLI	20727	$1	bbr3|bbrv3	bbrv3	not-run	-
-CLI	20727	$1	nhyh|内核优化	Kernel_optimize	not-run	-
-CLI	20727	$1	trash|hsz|回收站	linux_trash	not-run	-
-CLI	20727	$1	backup|bf|备份	linux_backup	not-run	-
-CLI	20727	$1	ssh|远程连接	ssh_manager	not-run	-
-CLI	20727	$1	rsync|远程同步	rsync_manager	not-run	-
-CLI	20727	$1	rsync_run	shift send_stats "定时rsync同步" run_task "$@"	not-run	-
-CLI	20727	$1	disk|硬盘管理	disk_manager	not-run	-
-CLI	20727	$1	wp|wordpress	echo "LDNMP建站模块已移除"	not-run	-
-CLI	20727	$1	fd|rp|反代	echo "LDNMP反代模块已移除"	not-run	-
-CLI	20727	$1	loadbalance|负载均衡	echo "LDNMP负载均衡模块已移除"	not-run	-
-CLI	20727	$1	stream|L4负载均衡	echo "LDNMP四层转发模块已移除"	not-run	-
-CLI	20727	$1	swap	shift send_stats "快速设置虚拟内存" add_swap "$@"	cli-real-vm/partial	38629fc; two owned Ubuntu/Debian VMs; actual CLI create/repeat/invalid sizes and reboot activation; not six host swap tests
-CLI	20727	$1	time|时区	shift send_stats "快速设置时区" set_timedate "$@"	not-run	-
-CLI	20727	$1	iptables_open	iptables_open	not-run	-
-CLI	20727	$1	frps	frps_panel	not-run	-
-CLI	20727	$1	frpc	frpc_panel	not-run	-
-CLI	20727	$1	打开端口|dkdk	shift open_port "$@"	not-run	-
-CLI	20727	$1	关闭端口|gbdk	shift close_port "$@"	not-run	-
-CLI	20727	$1	放行IP|fxip	shift allow_ip "$@"	not-run	-
-CLI	20727	$1	阻止IP|zzip	shift block_ip "$@"	not-run	-
-CLI	20727	$1	防火墙|fhq	iptables_panel	not-run	-
-CLI	20727	$1	命令收藏夹|fav	linux_fav	not-run	-
-CLI	20727	$1	status|状态	shift send_stats "软件状态查看" status "$@"	not-run	-
-CLI	20727	$1	start|启动	shift send_stats "软件启动" start "$@"	not-run	-
-CLI	20727	$1	stop|停止	shift send_stats "软件暂停" stop "$@"	not-run	-
-CLI	20727	$1	restart|重启	shift send_stats "软件重启" restart "$@"	not-run	-
-CLI	20727	$1	enable|autostart|开机启动	shift send_stats "软件开机自启" enable "$@"	not-run	-
-CLI	20727	$1	ssl	shift if [ "$1" = "ps" ]; then send_stats "查看证书状态" ssl_ps elif [ -z "$1" ]; then add_ssl send_stats "快速申请证书" elif [ -n "$1" ]; then add_ssl "$1" send_stats "快速申请证书" else k_info fi	not-run	-
-CLI	20727	$1	docker	shift case $1 in install|安装) send_stats "快捷安装docker" install_docker ;; ps|容器) send_stats "快捷容器管理" docker_ps ;; img|镜像) send_stats "快捷镜像管理" docker_image ;; *) linux_docker ;; esac	not-run	-
-CLI	20727	$1	web	echo "LDNMP站点管理模块已移除"	not-run	-
-CLI	20727	$1	info	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
-CLI	20727	$1	fail2ban|f2b	fail2ban_manager	not-run	-
-CLI	20727	$1	rclone|rc	rclone_manager	not-run	-
-CLI	20727	$1	bitwarden|bw	bitwarden_manager	not-run	-
-CLI	20727	$1	cronsync|syncscripts|cron-sync	crontab_sync_manager	not-run	-
-CLI	20727	$1	retire|退役	server_retire_menu	not-run	-
-CLI	20727	$1	sshkey	shift case "$1" in "" ) # sshkey → 交互菜单 send_stats "SSHKey 交互菜单" sshkey_panel ;; github ) shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1" ;; http://*|https://* ) send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1" ;; ss	not-run	-
-CLI	20727	$1	*	k_info	not-run	-
-CLI	20889	$1	install|安装	send_stats "快捷安装docker" install_docker	not-run	-
-CLI	20889	$1	ps|容器	send_stats "快捷容器管理" docker_ps	not-run	-
-CLI	20889	$1	img|镜像	send_stats "快捷镜像管理" docker_image	not-run	-
-CLI	20889	$1	*	linux_docker	not-run	-
-CLI	20943	"$1"	""	send_stats "SSHKey 交互菜单" sshkey_panel	not-run	-
-CLI	20943	"$1"	github	shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1"	not-run	-
-CLI	20943	"$1"	http://*|https://*	send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
-CLI	20943	"$1"	ssh-rsa*|ssh-ed25519*|ssh-ecdsa*	send_stats "公钥直接导入" import_sshkey "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
-CLI	20943	"$1"	*	echo "错误：未知参数 '$1'" echo "用法：" echo " k sshkey 进入交互菜单" echo " k sshkey \"<pubkey>\" 直接导入 SSH 公钥" echo " k sshkey <url> 从 URL 导入 SSH 公钥" echo " k sshkey github <user> 从 GitHub 导入 SSH 公钥"	not-run	-
+daimon_journal_size_valid	11099	"${BASH_REMATCH[2]}"	K	shifts=1	not-run	-
+daimon_journal_size_valid	11099	"${BASH_REMATCH[2]}"	M	shifts=2	not-run	-
+daimon_journal_size_valid	11099	"${BASH_REMATCH[2]}"	G	shifts=3	not-run	-
+daimon_journal_size_valid	11099	"${BASH_REMATCH[2]}"	T	shifts=4	not-run	-
+daimon_journal_size_valid	11099	"${BASH_REMATCH[2]}"	P	shifts=5	not-run	-
+daimon_journal_size_valid	11099	"${BASH_REMATCH[2]}"	E	shifts=6	not-run	-
+journalctl_log_manager	11184	"$choice"	1	local system_max_use system_keep_free system_max_file_size max_retention_sec echo "收紧日志限制可能清理旧日志；恢复配置不能找回已删除的日志。" read -e -p "SystemMaxUse 最大总占用（默认 500M）: " system_max_use || return 1 system_max_use=${system_max_use:-500M} read -e -p "Syste	menu-real-vm/partial	c6c215b; same two Ubuntu22.04ARM64/Debian13AMD64 VMs; actual main5->14 options1-5, native journal configuration/restart/vacuum/log query, repeat/defaults/EOF/invalid/immutable/symlink/mask/lock/inactive handling; no production journald restart
+journalctl_log_manager	11184	"$choice"	2	journalctl --disk-usage	menu-real-vm/partial	c6c215b; same two Ubuntu22.04ARM64/Debian13AMD64 VMs; actual main5->14 options1-5, native journal configuration/restart/vacuum/log query, repeat/defaults/EOF/invalid/immutable/symlink/mask/lock/inactive handling; no production journald restart
+journalctl_log_manager	11184	"$choice"	3	read -e -p "请输入服务名（可不带 .service）: " svc || return 1; [ -z "$svc" ] && continue; [[ "$svc" != *.service ]] && svc="$svc.service"; journalctl -u "$svc" -n 200 --no-pager	menu-real-vm/partial	c6c215b; same two Ubuntu22.04ARM64/Debian13AMD64 VMs; actual main5->14 options1-5, native journal configuration/restart/vacuum/log query, repeat/defaults/EOF/invalid/immutable/symlink/mask/lock/inactive handling; no production journald restart
+journalctl_log_manager	11184	"$choice"	4	read -e -p "保留时间（默认 7d）: " t || return 1; journalctl --vacuum-time="${t:-7d}"	menu-real-vm/partial	c6c215b; same two Ubuntu22.04ARM64/Debian13AMD64 VMs; actual main5->14 options1-5, native journal configuration/restart/vacuum/log query, repeat/defaults/EOF/invalid/immutable/symlink/mask/lock/inactive handling; no production journald restart
+journalctl_log_manager	11184	"$choice"	5	read -e -p "保留大小（默认 500M）: " z || return 1; journalctl --vacuum-size="${z:-500M}"	menu-real-vm/partial	c6c215b; same two Ubuntu22.04ARM64/Debian13AMD64 VMs; actual main5->14 options1-5, native journal configuration/restart/vacuum/log query, repeat/defaults/EOF/invalid/immutable/symlink/mask/lock/inactive handling; no production journald restart
+journalctl_log_manager	11184	"$choice"	0	return	not-run	-
+journalctl_log_manager	11184	"$choice"	*	echo "无效的输入!"	not-run	-
+cpcat_manager	11329	"$cpcat_choice"	1	local tmp_file touch "$bashrc_file" tmp_file=$(mktemp) awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$/ {skip=0; next} !skip {print}' "$bashrc_file" > "$	not-run	-
+cpcat_manager	11329	"$cpcat_choice"	2	[ -f "$bashrc_file" ] || { echo "~/.bashrc 不存在"; break_end; continue; } local tmp_file tmp_file=$(mktemp) awk '/^# ========== cpcat clipboard setup ==========$/ {skip=1; next} /^[[:space:]]*# ========== end cpcat clipboard setup ==========$	not-run	-
+cpcat_manager	11329	"$cpcat_choice"	0	return	not-run	-
+cpcat_manager	11329	"$cpcat_choice"	*	echo "无效的输入!"	not-run	-
+daimon_set_hostname/cleanup_hostname	11426	"$staged"	"${host_file%/*}"/.daimon-hostname.*	rm -rf -- "$staged"	not-run	-
+daimon_set_shortcut	11497	"$path"	/usr/local/bin/d|/usr/bin/d|"/usr/local/bin/$name"|"/usr/bin/$name"	continue	not-run	-
+linux_Settings	11531	"$sub_choice"	1	while true; do clear read -e -p "请输入你的快捷按键（默认 d，输入0退出）: " kuaijiejian || return 1 kuaijiejian=${kuaijiejian:-d} [ "$kuaijiejian" = "0" ] && break if ! daimon_shortcut_available "$kuaijiejian"; then echo "快捷键无效或与现有命令冲突，未修改任何文件。" break_end; c	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; shortcut create/repeat/cancel/conflict; real read-only second target failure preserves old aliases
+linux_Settings	11531	"$sub_choice"	2	root_use send_stats "更换系统软件包镜像源" clear echo "更换系统软件包镜像源" echo "下载并校验后执行 LinuxMirrors 脚本；下载失败时不会执行部分内容。" daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh"	menu-real/partial	de698a1/mirror-real.py; six native official disposable rootfs; actual main 5/2 LinuxMirrors download/cache/source rewrite/index verification/repeat; no backup or package upgrade; official HTTPS only
+linux_Settings	11531	"$sub_choice"	3	set_dns_ui	menu-real/partial	83f02b2/system-tools-real.py + dns-editor-real.py; all six; actual optimized IPv4 fallback, manual Vim editing and system manager restore; IPv6-only/public DNS not fully verified
+linux_Settings	11531	"$sub_choice"	4	root_use send_stats "设置v4/v6优先级" while true; do clear echo "设置v4/v6优先级" echo "------------------------" if grep -Eq '^\s*precedence\s+::ffff:0:0/96\s+100\s*$' /etc/gai.conf 2>/dev/null; then echo -e "当前网络优先级设置: ${gl_huang}IPv4${gl_bai} 优先" 	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; preference 1/2, preserved custom policy; real dual-stack glibc ordering; external repair tool not run
+linux_Settings	11531	"$sub_choice"	5	root_use send_stats "设置虚拟内存" while true; do clear echo "设置虚拟内存" local swap_used swap_total swap_info swap_used=$(free -m | awk 'NR==3{print $3}') swap_total=$(free -m | awk 'NR==3{print $2}') swap_info=$(free -m | awk 'NR==3{used=$3; total=	menu-real/partial	38629fc; Ubuntu22.04 ARM64/Debian13 AMD64 two VMs, actual swap submenu1-5 and reboot; no production swap mutation
+linux_Settings	11531	"$sub_choice"	6	while true; do root_use send_stats "用户管理" clear echo "用户列表" echo "----------------------------------------------------------------------------" printf "%-24s %-34s %-20s %-10s\n" "用户名" "用户目录" "用户组" "sudo规则" while IFS=: read -r username _ us	menu-real/partial	f6c1d2c/user-management-real.py; six native rootfs; actual user submenu1-5 with guarded homes, true key logins, sudo and deletion; unknown-policy handling verified separately; native policy-read error displays Unknown and blocks deletion
+linux_Settings	11531	"$sub_choice"	7	root_use send_stats "换时区" while true; do clear echo "系统时间信息" local timezone current_time timezone=$(current_timezone) current_time=$(date +"%Y-%m-%d %H:%M:%S") echo "当前系统时区：$timezone" echo "当前系统时间：$current_time" echo "" echo "时区切换" echo "--	menu-real/partial	2575b93/timezone-real.py; all 22 choices on six hosts; private D-Bus and native timedated, CAP_SYS_TIME removed; real config and libc offset; no host timezone/service changes
+linux_Settings	11531	"$sub_choice"	8	root_use send_stats "修改主机名" while true; do clear local current_hostname new_hostname current_hostname=$(uname -n) echo -e "当前主机名: ${gl_huang}$current_hostname${gl_bai}" echo "------------------------" read -e -p "请输入新的主机名（输入0退出）: " new_host	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; native UTS hostname update/aliases, invalid/cancel; no live host rename
+linux_Settings	11531	"$sub_choice"	9	root_use send_stats "本地host解析" while true; do clear echo "本机host解析列表" echo "如果你在这里添加解析匹配，将不再使用动态解析了" cat /etc/hosts echo "" echo "操作" echo "------------------------" echo "1. 添加新的解析 2. 删除解析地址" echo "------------------------" echo "0. 返回上一级选	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; hosts add/repeat/literal delete/resolve
+linux_Settings	11531	"$sub_choice"	10	clear; env_menu	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; literal env values, separate Bash/POSIX shells, show/delete/repeat; typed-variable failure cases are regressions
+linux_Settings	11531	"$sub_choice"	11	github_proxy_manager	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; proxy source add/repeat/delete/invalid; real complete and truncated loopback HTTP
+linux_Settings	11531	"$sub_choice"	12	show_ssh_ip_info; break_end	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; actual SSH connection info
+linux_Settings	11531	"$sub_choice"	13	clear; net_menu	not-run	-
+linux_Settings	11531	"$sub_choice"	14	journalctl_log_manager	menu-real-vm/partial	c6c215b; same two Ubuntu22.04ARM64/Debian13AMD64 VMs; actual main5->14 options1-5, native journal configuration/restart/vacuum/log query, repeat/defaults/EOF/invalid/immutable/symlink/mask/lock/inactive handling; no production journald restart
+linux_Settings	11531	"$sub_choice"	15	system_network_auto_optimize	not-run	-
+linux_Settings	11531	"$sub_choice"	16	clear; system_disable_ipv6; break_end	not-run	-
+linux_Settings	11531	"$sub_choice"	17	clear; system_enable_ipv6; break_end	not-run	-
+linux_Settings	11531	"$sub_choice"	18	clear; linux_language	menu-real/partial	c5ef2b5 Japan/DMIT + f6c1d2c other four; actual native locale submenu1-9 with generation and config preservation; no host locale changes
+linux_Settings	11531	"$sub_choice"	19	docker_mirror_speed_test_menu	not-run	-
+linux_Settings	11531	"$sub_choice"	20	clear send_stats "卸载daimon脚本" echo "卸载daimon脚本" echo "------------------------------------------------" echo "将彻底卸载daimon脚本，不影响你其他功能" read -e -p "确定继续吗？(Y/N): " choice || return 1 case "$choice" in [Yy]) clear (crontab -l 2>/dev/null | grep	not-run	-
+linux_Settings	11531	"$sub_choice"	0	return	not-run	-
+linux_Settings	11531	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+linux_Settings	11580	"$choice"	1	prefer_ipv4	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real glibc address ordering with reachable private dual-stack routes
+linux_Settings	11580	"$choice"	2	prefer_ipv6	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real glibc address ordering with reachable private dual-stack routes
+linux_Settings	11580	"$choice"	3	clear; daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"; echo "该功能由jhb大神提供，感谢他！"; send_stats "ipv6修复"	not-run	-
+linux_Settings	11580	"$choice"	0	break	not-run	-
+linux_Settings	11580	"$choice"	*	echo "无效的输入!"	not-run	-
+linux_Settings	11608	"$choice"	1	send_stats "已设置1G虚拟内存"; add_swap 1024	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
+linux_Settings	11608	"$choice"	2	send_stats "已设置2G虚拟内存"; add_swap 2048	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
+linux_Settings	11608	"$choice"	3	send_stats "已设置4G虚拟内存"; add_swap 4096	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
+linux_Settings	11608	"$choice"	4	read -e -p "请输入虚拟内存大小（单位M）: " new_swap || return 1; [ -n "$new_swap" ] && add_swap "$new_swap"; send_stats "已设置自定义虚拟内存"	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
+linux_Settings	11608	"$choice"	5	send_stats "删除虚拟内存"; delete_swap	menu-real-vm/partial	38629fc; exactly Ubuntu22.04 ARM64 and Debian13 AMD64 owned VMs; actual swapon/swapoff, 1024/2048/4096/custom64, cancel/EOF/invalid/repeat, lock/capability/immutable rollback, other swap and reboot persistence; not host swap tests
+linux_Settings	11608	"$choice"	0	break	not-run	-
+linux_Settings	11608	"$choice"	*	echo "无效的输入!"	not-run	-
+linux_Settings	11655	"$choice"	1	read -e -p "请输入新用户名: " new_username || return 1; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" false	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
+linux_Settings	11655	"$choice"	2	read -e -p "请输入新用户名: " new_username || return 1; [ -n "$new_username" ] && create_user_with_sshkey "$new_username" true	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
+linux_Settings	11655	"$choice"	3	read -e -p "请输入用户名: " username || return 1; daimon_user_sudo grant "$username"	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
+linux_Settings	11655	"$choice"	4	read -e -p "请输入用户名: " username || return 1; daimon_user_sudo revoke "$username"	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
+linux_Settings	11655	"$choice"	5	read -e -p "请输入要删除的用户名: " username || return 1 if ! daimon_regular_user_valid "$username" || [ "$username" = "${SUDO_USER:-${USER:-}}" ]; then echo "不能删除系统账号、不存在的账号或当前登录账号。" else read -e -p "再次输入用户名确认删除账号及其主目录: " confirm_user || return 1 [ 	menu-real/partial	f6c1d2c/user-management-real.py; six native official rootfs; actual menu1-5, useradd/userdel/sudo and sshd key logins; URL normal/redirect/partial/503/invalid/empty, custom/shared/symlink/mounted homes, busy deletion rollback, cancel/EOF/repeat; no production accounts changed; native policy-read error displays Unknown and blocks deletion
+linux_Settings	11655	"$choice"	0	break	not-run	-
+linux_Settings	11655	"$choice"	*	echo "无效的输入!"	not-run	-
+linux_Settings	11711	"$choice"	1	set_timedate Asia/Shanghai	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/1; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	2	set_timedate Asia/Hong_Kong	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/2; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	3	set_timedate Asia/Tokyo	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/3; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	4	set_timedate Asia/Seoul	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/4; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	5	set_timedate Asia/Singapore	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/5; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	6	set_timedate Asia/Kolkata	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/6; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	7	set_timedate Asia/Dubai	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/7; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	8	set_timedate Australia/Sydney	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/8; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	9	set_timedate Asia/Bangkok	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/9; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	11	set_timedate Europe/London	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/11; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	12	set_timedate Europe/Paris	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/12; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	13	set_timedate Europe/Berlin	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/13; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	14	set_timedate Europe/Moscow	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/14; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	15	set_timedate Europe/Amsterdam	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/15; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	16	set_timedate Europe/Madrid	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/16; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	21	set_timedate America/Los_Angeles	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/21; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	22	set_timedate America/New_York	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/22; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	23	set_timedate America/Vancouver	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/23; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	24	set_timedate America/Mexico_City	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/24; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	25	set_timedate America/Sao_Paulo	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/25; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	26	set_timedate America/Argentina/Buenos_Aires	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/26; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	31	set_timedate UTC	menu-real/partial	2575b93/timezone-real.py; six hosts; actual 5/7/31; native timedatectl/timedated private D-Bus; symlink and libc offset matched
+linux_Settings	11711	"$choice"	0	break	not-run	-
+linux_Settings	11711	"$choice"	*	echo "无效的输入!"	not-run	-
+linux_Settings	11774	"$host_dns"	1	read -r -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost || return 1; [ -n "$addhost" ] && daimon_hosts_edit add "$addhost" && send_stats "本地host解析新增"	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real hosts edit/getent, duplicate and literal-regex rejection
+linux_Settings	11774	"$host_dns"	2	read -r -e -p "请输入需要删除的解析内容关键字（按字面匹配）: " delhost || return 1; [ -n "$delhost" ] && daimon_hosts_edit delete "$delhost" && send_stats "本地host解析删除"	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; real hosts edit/getent, duplicate and literal-regex rejection
+linux_Settings	11774	"$host_dns"	0	break	not-run	-
+linux_Settings	11774	"$host_dns"	*	echo "无效的输入!"	not-run	-
+linux_Settings	11800	"$choice"	[Yy]	clear (crontab -l 2>/dev/null | grep -v "kejilion.sh") | crontab - 2>/dev/null || true rm -f /usr/local/bin/d /usr/bin/d rm -f "$DAIMON_LOCAL_SCRIPT" "$DAIMON_OLD_LOCAL_SCRIPT" echo "脚本已卸载，再见！" break_end clear exit	not-run	-
+linux_Settings	11800	"$choice"	[Nn]	echo "已取消"	not-run	-
+linux_Settings	11800	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
+linux_tools/install_fzf_release	12042	"$(uname -m)"	x86_64|amd64	arch=amd64	not-run	-
+linux_tools/install_fzf_release	12042	"$(uname -m)"	aarch64|arm64	arch=arm64	not-run	-
+linux_tools/install_fzf_release	12042	"$(uname -m)"	*	echo "不支持的 fzf 架构: $(uname -m)"; return 1	not-run	-
+linux_tools/configure_starship	12193	"$(uname -m)"	x86_64|amd64	starship_arch="x86_64"	not-run	-
+linux_tools/configure_starship	12193	"$(uname -m)"	aarch64|arm64	starship_arch="aarch64"	not-run	-
+linux_tools/configure_starship	12193	"$(uname -m)"	i686|i386	starship_arch="i686"	not-run	-
+linux_tools/configure_starship	12193	"$(uname -m)"	*	starship_arch=""	not-run	-
+linux_tools/tool_installed	13053	"$id"	vim	command -v vim >/dev/null 2>&1 && grep -qxF 'export EDITOR=vim' "$HOME/.bashrc" 2>/dev/null && grep -qxF 'export VISUAL=vim' "$HOME/.bashrc" 2>/dev/null	not-run	-
+linux_tools/tool_installed	13053	"$id"	cpcat	grep -q '^# ========== cpcat clipboard setup ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
+linux_tools/tool_installed	13053	"$id"	ctrld	grep -q '^# ==================== Ctrl+D 改为删除下一个单词 ====================$' "$HOME/.bashrc" 2>/dev/null || grep -q '^bind '\''"\\C-d": kill-word'\''$' "$HOME/.bashrc" 2>/dev/null	not-run	-
+linux_tools/tool_installed	13053	"$id"	starship	command -v starship >/dev/null 2>&1 && [ -f "$HOME/.config/starship.toml" ]	not-run	-
+linux_tools/tool_installed	13053	"$id"	bat	(command -v batcat >/dev/null 2>&1 || command -v bat >/dev/null 2>&1) && [ -f "$HOME/.bat.sh" ] && grep -q '^# ========== bat 终端着色增强 ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
+linux_tools/tool_installed	13053	"$id"	ripgrep	command -v rg >/dev/null 2>&1	not-run	-
+linux_tools/tool_installed	13053	"$id"	fd	command -v fd >/dev/null 2>&1 || (command -v fdfind >/dev/null 2>&1 && grep -Eq "^alias fd=('fdfind'|\"fdfind\"|fdfind)$" "$HOME/.bashrc" 2>/dev/null)	not-run	-
+linux_tools/tool_installed	13053	"$id"	fzf	[ -x "$DAIMON_FZF_DIR/bin/fzf" ] && grep -q '^# ========== fzf 核心配置 ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
+linux_tools/tool_installed	13053	"$id"	blesh	[ -f "$HOME/.local/share/blesh/ble.sh" ] && grep -q '^# ========== ble.sh setup ==========$' "$HOME/.bashrc" 2>/dev/null	not-run	-
+linux_tools/tool_installed	13053	"$id"	python	python_312_is_default	not-run	-
+linux_tools/tool_installed	13053	"$id"	npm	command -v npm >/dev/null 2>&1	not-run	-
+linux_tools/tool_installed	13053	"$id"	nodejs	command -v node >/dev/null 2>&1	not-run	-
+linux_tools/tool_installed	13053	"$id"	iptables-persistent	command -v netfilter-persistent >/dev/null 2>&1 || dpkg -s iptables-persistent >/dev/null 2>&1	not-run	-
+linux_tools/tool_installed	13053	"$id"	firewalld	command -v firewall-cmd >/dev/null 2>&1	not-run	-
+linux_tools/tool_installed	13053	"$id"	claude	command -v claude >/dev/null 2>&1 && [ -f "$HOME/.claude/settings.json" ]	not-run	-
+linux_tools/tool_installed	13053	"$id"	codex	command -v codex >/dev/null 2>&1 && [ -f "$HOME/.codex/config.toml" ]	not-run	-
+linux_tools/tool_installed	13053	"$id"	*	command -v "$id" >/dev/null 2>&1	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	vim	if tool_installed vim || command -v vim >/dev/null 2>&1; then echo "vim 已安装，正在检查并设置默认编辑器..." else install vim || return 1 fi configure_vim_editor vim --version 2>/dev/null | head -n 1 || true	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	cpcat	configure_cpcat	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	ctrld	configure_ctrld	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	starship	configure_starship	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	bat	configure_bat_terminal	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	ripgrep	install ripgrep || return 1 rg --version 2>/dev/null | head -n 1 || true	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	fd	install fd-find || return 1 configure_fd_alias fd --version 2>/dev/null || fdfind --version 2>/dev/null || true	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	fzf	configure_fzf	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	blesh	configure_blesh	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	python	install_python_312	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	npm|nodejs	install_nvm_lts_auto	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	bun	if tool_installed bun; then bun --version else install curl unzip || return 1 daimon_run_cached_script "https://bun.sh/install" "bun-install.sh" || return 1 export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}" export PATH="$BUN_INSTALL/bin:$PATH	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	uv	if tool_installed uv; then uv --version else install curl || return 1 daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh" || return 1 export PATH="$HOME/.local/bin:$PATH" reload_shell_configs_safely uv --version 2>/de	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	iptables-persistent	if command -v apt >/dev/null 2>&1; then DEBIAN_FRONTEND=noninteractive apt update -y && DEBIAN_FRONTEND=noninteractive apt install -y iptables-persistent elif command -v dnf >/dev/null 2>&1; then dnf install -y iptables-services elif comman	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	ufw	install ufw ufw status 2>/dev/null || true	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	firewalld	install firewalld systemctl enable firewalld >/dev/null 2>&1 || true systemctl start firewalld >/dev/null 2>&1 || true firewall-cmd --state 2>/dev/null || true	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	yazi	install_yazi_griffo	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	nexttrace	install_nexttrace	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	git|curl|tree|wget|sudo|socat|htop|iftop|unzip|tar|tmux|ffmpeg|btop|ncdu|iperf3	install "$id" || return 1 command -v "$id" >/dev/null 2>&1 && "$id" --version 2>/dev/null | head -n 1 || true	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	fail2ban	install fail2ban systemctl enable fail2ban >/dev/null 2>&1 || true systemctl start fail2ban >/dev/null 2>&1 || true fail2ban-client status 2>/dev/null || true	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	claude	install_claude_code_auto	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	codex	install_codex_cli	not-run	-
+linux_tools/install_tool_by_id	13090	"$id"	*	echo "未知工具: $id"	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	vim	remove_vim_editor_config; remove vim	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	cpcat	remove_cpcat_config; reload_bashrc_safely; echo "已删除 cpcat 配置"	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	ctrld	remove_ctrld_config; reload_bashrc_safely; echo "已删除 Ctrl+D 绑定"	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	starship	remove_starship_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	bat	remove_bat_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	btop	remove btop; rm -rf "$HOME/.config/btop"	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	yazi	remove_yazi_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	htop	remove htop; rm -rf "$HOME/.config/htop" "$HOME/.htoprc"	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	ripgrep	remove ripgrep	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	fd	remove_fd_alias; remove fd-find	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	fzf	remove_fzf_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	blesh	remove_blesh_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	nexttrace	remove_nexttrace_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	python	remove_python_312_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	npm|nodejs	remove_nvm_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	iptables-persistent	remove_iptables_persistent_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	ufw	remove_ufw_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	firewalld	remove_firewalld_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	fail2ban	remove_fail2ban_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	claude	remove_claude_code_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	codex	remove_codex_all	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	bun	rm -rf "$HOME/.bun"; sed -i '/bun\/bin/d' ~/.bashrc ~/.profile ~/.bash_profile 2>/dev/null || true; reload_shell_configs_safely	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	uv	rm -f "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx"; reload_shell_configs_safely	not-run	-
+linux_tools/remove_tool_by_id	13205	"$id"	*	remove "$id"	not-run	-
+linux_tools/tool_category_menu	13267	"$category_key"	thirdparty	tool_ids=("${thirdparty_ids[@]}") tool_names=("${thirdparty_names[@]}") tool_desc=("${thirdparty_desc[@]}")	not-run	-
+linux_tools/tool_category_menu	13267	"$category_key"	programming	tool_ids=("${programming_ids[@]}") tool_names=("${programming_names[@]}") tool_desc=("${programming_desc[@]}")	not-run	-
+linux_tools/tool_category_menu	13267	"$category_key"	*	echo "未知分类: $category_key" break_end return	not-run	-
+linux_tools/tool_category_menu	13296	$sub_choice	1	read -e -p "请输入要安装的工具编号（支持多选，空格分隔）: " nums || return 1 handle_tool_numbers install "$nums" && [ -n "$nums" ] && restart_shell_after_tool_install	not-run	-
+linux_tools/tool_category_menu	13296	$sub_choice	2	read -e -p "请输入要卸载的工具编号（支持多选，空格分隔）: " nums || return 1 handle_tool_numbers remove "$nums"	not-run	-
+linux_tools/tool_category_menu	13296	$sub_choice	3	nums="$(all_tool_numbers)" read -e -i "$nums" -p "请确认/修改要安装的工具编号（默认全选，空格分隔）: " nums || return 1 handle_tool_numbers install "$nums" && [ -n "$nums" ] && restart_shell_after_tool_install	not-run	-
+linux_tools/tool_category_menu	13296	$sub_choice	4	nums="$(all_tool_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的工具编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应工具？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then handle_tool_numbers remove "$nums" e	not-run	-
+linux_tools/tool_category_menu	13296	$sub_choice	0	return	not-run	-
+linux_tools/tool_category_menu	13296	$sub_choice	*	echo "无效的输入!"	not-run	-
+linux_tools	13327	"${1:-}"	thirdparty	tool_category_menu thirdparty "第三方工具" return	not-run	-
+linux_tools	13327	"${1:-}"	thirdparty-install-all	local tool_ids=("${thirdparty_ids[@]}") handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '\n' ' ')" || return 1 restart_shell_after_tool_install return	not-run	-
+linux_tools	13327	"${1:-}"	programming|basic	tool_category_menu programming "编程工具" return	not-run	-
+linux_tools	13327	"${1:-}"	programming-install-all	local tool_ids=("${programming_ids[@]}") handle_tool_numbers install "$(seq 1 ${#tool_ids[@]} | tr '\n' ' ')" || return 1 restart_shell_after_tool_install return	not-run	-
+linux_tools	13358	$sub_choice	1	tool_category_menu thirdparty "第三方工具"	not-run	-
+linux_tools	13358	$sub_choice	2	tool_category_menu programming "编程工具"	not-run	-
+linux_tools	13358	$sub_choice	0	return	not-run	-
+linux_tools	13358	$sub_choice	*	echo "无效的输入!"; break_end	not-run	-
+docker_ssh_migration/docker_migration_restore	13652	"$restart_policy"	""|no		not-run	-
+docker_ssh_migration/docker_migration_restore	13652	"$restart_policy"	*	run_args+=(--restart "$restart_policy")	not-run	-
+docker_ssh_migration/main_menu	13745	$choice	1	docker_migration_backup	not-run	-
+docker_ssh_migration/main_menu	13745	$choice	2	docker_migration_migrate	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
+docker_ssh_migration/main_menu	13745	$choice	3	docker_migration_restore	rejection-real/restore-not-run	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
+docker_ssh_migration/main_menu	13745	$choice	4	docker_migration_delete_backup	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
+docker_ssh_migration/main_menu	13745	$choice	0	return	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
+docker_ssh_migration/main_menu	13745	$choice	*	echo -e "${gl_hong}无效选项${gl_bai}"	not-run	-
+docker_compose_update_cleanup_orphans	14275	"$file"	"${script_dir}"compose_update_*.sh		not-run	-
+docker_compose_update_cleanup_orphans	14275	"$file"	*	echo -e "${gl_hong}跳过非托管路径: $file${gl_bai}"; continue	not-run	-
+docker_compose_auto_update_manager	14329	"$sub_choice"	1	read -e -p "请输入要安装自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
+docker_compose_auto_update_manager	14329	"$sub_choice"	2	read -e -p "请输入要卸载自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers remove "$nums"	not-run	-
+docker_compose_auto_update_manager	14329	"$sub_choice"	3	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的项目编号（默认全选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
+docker_compose_auto_update_manager	14329	"$sub_choice"	4	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的项目编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应自动更新？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then docker	not-run	-
+docker_compose_auto_update_manager	14329	"$sub_choice"	5	docker_compose_update_cleanup_orphans	not-run	-
+docker_compose_auto_update_manager	14329	"$sub_choice"	0	return	not-run	-
+docker_compose_auto_update_manager	14329	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+linux_docker	14398	$sub_choice	1	clear send_stats "安装docker环境" install_add_docker	not-run	-
+linux_docker	14398	$sub_choice	2	clear if ! command -v docker >/dev/null 2>&1; then echo "Docker 未安装，请先选择 1 安装 Docker 环境。" elif ! docker info >/dev/null 2>&1; then echo "Docker 服务不可用，请检查 Docker 状态后重试。" else local container_count=$(docker ps -a -q 2>/dev/null | wc -l) local	not-run	-
+linux_docker	14398	$sub_choice	3	docker_ps [ "$?" -eq 90 ] && continue	not-run	-
+linux_docker	14398	$sub_choice	4	docker_image [ "$?" -eq 90 ] && continue	not-run	-
+linux_docker	14398	$sub_choice	5	while true; do clear send_stats "Docker网络管理" echo "Docker网络列表" echo "------------------------------------------------------------" docker network ls echo "" echo "------------------------------------------------------------" container_ids=$	not-run	-
+linux_docker	14398	$sub_choice	6	while true; do clear send_stats "Docker卷管理" echo "Docker卷列表" docker volume ls echo "" echo "卷操作" echo "------------------------" echo "1. 创建新卷" echo "2. 删除指定卷" echo "3. 删除所有卷" echo "------------------------" echo "0. 返回上一级选单" echo "--------	not-run	-
+linux_docker	14398	$sub_choice	7	clear send_stats "Docker清理" read -e -p "$(echo -e "${gl_huang}提示: ${gl_bai}将清理无用的镜像容器网络，包括停止的容器，确定清理吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker system prune -af --volumes ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
+linux_docker	14398	$sub_choice	8	clear send_stats "Docker源" docker_mirror_menu [ "$?" -eq 90 ] && continue	not-run	-
+linux_docker	14398	$sub_choice	9	clear install vim mkdir -p /etc/docker && vim /etc/docker/daemon.json restart docker	not-run	-
+linux_docker	14398	$sub_choice	10	docker_compose_auto_update_manager continue	not-run	-
+linux_docker	14398	$sub_choice	11	clear send_stats "Docker v6 开" docker_ipv6_on	not-run	-
+linux_docker	14398	$sub_choice	12	clear send_stats "Docker v6 关" docker_ipv6_off	not-run	-
+linux_docker	14398	$sub_choice	19	docker_ssh_migration continue	not-run	-
+linux_docker	14398	$sub_choice	20	clear send_stats "Docker卸载" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定卸载docker环境吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker_uninstall_environment || return 1 ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
+linux_docker	14398	$sub_choice	0	return	not-run	-
+linux_docker	14398	$sub_choice	*	echo "无效的输入!"	not-run	-
+linux_docker	14486	$sub_choice	1	send_stats "创建网络" read -e -p "设置新网络名: " dockernetwork || return 1 docker network create $dockernetwork	not-run	-
+linux_docker	14486	$sub_choice	2	send_stats "加入网络" read -e -p "加入网络名: " dockernetwork || return 1 read -e -p "那些容器加入该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network connect $dockernetwork $dockername done	not-run	-
+linux_docker	14486	$sub_choice	3	send_stats "加入网络" read -e -p "退出网络名: " dockernetwork || return 1 read -e -p "那些容器退出该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network disconnect $dockernetwork $dockername done	not-run	-
+linux_docker	14486	$sub_choice	4	send_stats "删除网络" read -e -p "请输入要删除的网络名: " dockernetwork || return 1 docker network rm $dockernetwork	not-run	-
+linux_docker	14486	$sub_choice	0	continue 2	not-run	-
+linux_docker	14486	$sub_choice	*	break	not-run	-
+linux_docker	14545	$sub_choice	1	send_stats "新建卷" read -e -p "设置新卷名: " dockerjuan || return 1 docker volume create $dockerjuan	not-run	-
+linux_docker	14545	$sub_choice	2	read -e -p "输入删除卷名（多个卷名请用空格分隔）: " dockerjuans || return 1 for dockerjuan in $dockerjuans; do docker volume rm $dockerjuan done	not-run	-
+linux_docker	14545	$sub_choice	3	send_stats "删除所有卷" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有未使用的卷吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker volume prune -f ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
+linux_docker	14545	$sub_choice	0	continue 2	not-run	-
+linux_docker	14545	$sub_choice	*	break	not-run	-
+linux_docker	14564	"$choice"	[Yy]	docker volume prune -f	not-run	-
+linux_docker	14564	"$choice"	[Nn]		not-run	-
+linux_docker	14564	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
+linux_docker	14589	"$choice"	[Yy]	docker system prune -af --volumes	not-run	-
+linux_docker	14589	"$choice"	[Nn]		not-run	-
+linux_docker	14589	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
+linux_docker	14644	"$choice"	[Yy]	docker_uninstall_environment || return 1	not-run	-
+linux_docker	14644	"$choice"	[Nn]		not-run	-
+linux_docker	14644	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
+ssh_private_key_name_valid	14769	"$1"	authorized_keys|known_hosts|known_hosts.old|config|*.pub	return 1	not-run	-
+ssh_config_manager/ssh_key_manager	14849	"$sub_choice"	1	read -e -p "请粘贴公钥: " public_key || return 1; ssh_add_public_key "$public_key"	not-run	-
+ssh_config_manager/ssh_key_manager	14849	"$sub_choice"	2	read -e -p "请输入要删除的公钥行号: " line_no || return 1; [[ "$line_no" =~ ^[0-9]+$ ]] && sed -i "${line_no}d" /root/.ssh/authorized_keys	not-run	-
+ssh_config_manager/ssh_key_manager	14849	"$sub_choice"	3	read -e -p "请输入私钥文件名（默认 id_ed25519）: " key_name || return 0 key_name=${key_name:-id_ed25519} if ! ssh_private_key_name_valid "$key_name" || [ -e "/root/.ssh/$key_name" ] || [ -L "/root/.ssh/$key_name" ]; then echo "文件名无效或文件已存在，未覆盖任何文件。" els	not-run	-
+ssh_config_manager/ssh_key_manager	14849	"$sub_choice"	4	read -e -p "请输入要删除的私钥文件名: " key_name || return 0 if ssh_private_key_name_valid "$key_name" && [ -f "/root/.ssh/$key_name" ] && [ ! -L "/root/.ssh/$key_name" ]; then rm -f -- "/root/.ssh/$key_name" else echo "文件名无效或不是私钥文件，未删除。" fi	not-run	-
+ssh_config_manager/ssh_key_manager	14849	"$sub_choice"	0	return	not-run	-
+ssh_config_manager/ssh_key_manager	14849	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+ssh_config_manager	14894	"$sub_choice"	1	read -e -p "请输入新 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1 ] && [ "$new_port" -le 65535 ]; then if command -v ufw >/dev/null 2>&1 && 	not-run	-
+ssh_config_manager	14894	"$sub_choice"	2	echo "1. 禁用密码登录 2. 开启密码登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then ssh_set_option PasswordAuthentication no ssh_set_option KbdInteractiveAuthentication no ssh_set_option ChallengeResponseAuthentication no ssh_set_opti	not-run	-
+ssh_config_manager	14894	"$sub_choice"	3	echo "1. 开启密钥登录 2. 禁用密钥登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then read -e -p "请粘贴公钥（可直接回车跳过）: " public_key || return 1 ssh_add_public_key "$public_key" ssh_set_option PubkeyAuthentication yes ssh_set_option Authorize	not-run	-
+ssh_config_manager	14894	"$sub_choice"	4	read -e -p "请粘贴公钥: " public_key || return 1 ssh_add_public_key "$public_key" || { break_end; continue; } read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if ! validate_tcp_port "$n	not-run	-
+ssh_config_manager	14894	"$sub_choice"	5	ssh_key_manager; continue	not-run	-
+ssh_config_manager	14894	"$sub_choice"	6	install vim; vim "$SSH_CONFIG"; ssh_restart_safe	not-run	-
+ssh_config_manager	14894	"$sub_choice"	0	return	not-run	-
+ssh_config_manager	14894	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+ufw_manager	14988	"$sub_choice"	1	root_use if install ufw && ufw_allow_current_ssh; then ufw --force enable && ufw status fi	not-run	-
+ufw_manager	14988	"$sub_choice"	2	root_use; ufw disable 2>/dev/null || true; remove ufw; rm -rf /etc/ufw /var/lib/ufw	not-run	-
+ufw_manager	14988	"$sub_choice"	3	root_use; read -e -p "请输入要开放的端口/协议: " port_rule || return 1; [ -n "$port_rule" ] && ufw allow "$port_rule"; ufw status numbered	not-run	-
+ufw_manager	14988	"$sub_choice"	4	root_use; read -e -p "请输入要删除的端口/协议: " port_rule || return 1; [ -n "$port_rule" ] && ufw delete allow "$port_rule"; ufw status numbered	not-run	-
+ufw_manager	14988	"$sub_choice"	0	return	not-run	-
+ufw_manager	14988	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+fail2ban_manager/fail2ban_service	15035	"$action"	status	/bin/systemctl --no-pager --full status fail2ban	not-run	-
+fail2ban_manager/fail2ban_service	15035	"$action"	*	/bin/systemctl "$action" fail2ban	not-run	-
+fail2ban_manager	15190	"$sub_choice"	1	fail2ban_install_sshd	not-run	-
+fail2ban_manager	15190	"$sub_choice"	2	fail2ban_uninstall_all	not-run	-
+fail2ban_manager	15190	"$sub_choice"	3	fail2ban_check_sshd_jail	not-run	-
+fail2ban_manager	15190	"$sub_choice"	0	return	not-run	-
+fail2ban_manager	15190	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+embedded@15218/nginx_domain_cert_dir_for_domain	390	"$cert_path"	/root/domain/*/fullchain.pem	dirname "$cert_path"; return 0	not-run	-
+embedded@15218/remove_cert	443	"$cert_dir"	/root/domain/*	[ -d "$cert_dir" ] && rm -rf "$cert_dir"	not-run	-
+embedded@15218/remove_nginx_and_cert	531	"$CERT_DIR"	/root/domain/*|/etc/letsencrypt/live/*	[ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"	not-run	-
+embedded@15218/CLI	1065	$ACTION	1	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
+embedded@15218/CLI	1065	$ACTION	2	remove_nginx_and_cert	not-run	-
+embedded@15218/CLI	1065	$ACTION	3	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } issue_cert "$DOMAIN" restart_nginx_if_needed	not-run	-
+embedded@15218/CLI	1065	$ACTION	4	remove_cert	not-run	-
+embedded@15218/CLI	1065	$ACTION	5	show_cert_list	not-run	-
+embedded@15218/CLI	1065	$ACTION	6	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
+embedded@15218/CLI	1065	$ACTION	7	remove_nginx_config	not-run	-
+embedded@15218/CLI	1065	$ACTION	8	create_test_page	not-run	-
+embedded@15218/CLI	1065	$ACTION	9	remove_test_page	not-run	-
+embedded@15218/CLI	1065	$ACTION	10	install_nginx nginx -v 2>&1 || true systemctl status nginx --no-pager 2>/dev/null || true	not-run	-
+embedded@15218/CLI	1065	$ACTION	11	backup_nginx_domain	not-run	-
+embedded@15218/CLI	1065	$ACTION	12	restore_nginx_domain	not-run	-
+embedded@15218/CLI	1065	$ACTION	13	nginx_domain_migrate_existing_certs	not-run	-
+embedded@15218/CLI	1065	$ACTION	0	echo -e "${GREEN}返回上一级菜单${NC}" exit 0	not-run	-
+embedded@15218/CLI	1065	$ACTION	*	echo -e "${RED}无效选择${NC}"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	1	daimon_exec_cached_script "https://run.NodeQuality.com" "NodeQuality.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	2	daimon_exec_cached_script "https://IP.Check.Place" "IPQuality.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	3	daimon_exec_cached_script "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" "ecs.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	4	daimon_exec_cached_script "https://Net.Check.Place" "NetQuality.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	5	daimon_exec_cached_script "https://check.unlock.media" "RegionRestrictionCheck.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	6	daimon_exec_cached_script "https://bench.sh" "bench.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	7	daimon_exec_cached_script "https://yabs.sh" "yabs.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	8	daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	9	daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	10	exec bash -c 'bash <(curl -sL kejilion.sh)'	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	11	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh" "sing-box-daimon.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	12	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh" "runTcpQuality.sh"	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	0	return	not-run	-
+common_one_click_scripts	16393	"$sub_choice"	*	echo "无效的输入!"; break_end	not-run	-
+rclone_install_cn_release	16431	"$(uname -m)"	x86_64|amd64	arch=amd64	not-run	-
+rclone_install_cn_release	16431	"$(uname -m)"	aarch64|arm64	arch=arm64	not-run	-
+rclone_install_cn_release	16431	"$(uname -m)"	i?86	arch=386	not-run	-
+rclone_install_cn_release	16431	"$(uname -m)"	armv7*	arch=arm-v7	not-run	-
+rclone_install_cn_release	16431	"$(uname -m)"	armv6*	arch=arm-v6	not-run	-
+rclone_install_cn_release	16431	"$(uname -m)"	*	echo "不支持的 rclone 架构: $(uname -m)"; return 1	not-run	-
+rclone_restore_name_valid	16533	"$name"	*/*|*\\*|*[[:cntrl:]]*	return 1	not-run	-
+rclone_state_text	16575	"$1"	valid	echo "有效（读取验证）"	not-run	-
+rclone_state_text	16575	"$1"	invalid	echo "无效（认证失败）"	not-run	-
+rclone_state_text	16575	"$1"	*	echo "无法检测（网络、权限或配置）"	not-run	-
+rclone_restore_remote_folder	16871	"$policy"	1	policy=keep	not-run	-
+rclone_restore_remote_folder	16871	"$policy"	2	policy=replace	not-run	-
+rclone_restore_remote_folder	16871	"$policy"	*	return 0	not-run	-
+rclone_nginx_allow_ports	16928	"$status"	*'Status: active'*|*'Status: inactive'*		not-run	-
+rclone_nginx_allow_ports	16928	"$status"	*	echo "UFW 状态未知，未修改规则。"; return 1	not-run	-
+rclone_nginx_target_for_key	16957	"$key"	sites-available|sites-enabled|conf.d|stream.d|nginx.conf|mime.types	printf '%s/%s\n' "$nginx_dir" "$key"	not-run	-
+rclone_nginx_target_for_key	16957	"$key"	home-web-conf.d	printf '%s/conf.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
+rclone_nginx_target_for_key	16957	"$key"	home-web-stream.d	printf '%s/stream.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
+rclone_nginx_target_for_key	16957	"$key"	domain	printf '%s\n' "${DAIMON_DOMAIN_DIR:-${DAIMON_RESTORE_ROOT:-/root}/domain}"	not-run	-
+rclone_nginx_target_for_key	16957	"$key"	*	return 1	not-run	-
+rclone_nginx_apply	17046	"$policy"	keep|replace		not-run	-
+rclone_nginx_apply	17046	"$policy"	*	return 1	not-run	-
+rclone_nginx_apply	17047	"$mode"	sites	keys=(sites-available)	not-run	-
+rclone_nginx_apply	17047	"$mode"	links	keys=(sites-enabled)	not-run	-
+rclone_nginx_apply	17047	"$mode"	domain	keys=(domain)	not-run	-
+rclone_nginx_apply	17047	"$mode"	all	for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types; do [ ! -e "$backup/$key" ] || keys+=("$key") done [ ! -s "$backup/enabled_sites.txt" ] || keys+=(sites-enabled) [ "${#keys[@]}" -gt 0	not-run	-
+rclone_nginx_apply	17047	"$mode"	*	return 1	not-run	-
+rclone_nginx_apply	17071	"$key"	nginx.conf|mime.types	[ -f "$backup/$key" ] && { [ ! -e "$dst" ] || [ -f "$dst" ]; } || return 1	not-run	-
+rclone_nginx_apply	17071	"$key"	*	[ "$key" = sites-enabled ] || rclone_tree_safe "$dst" || return 1	not-run	-
+rclone_nginx_apply	17108	"$key"	nginx.conf|mime.types		not-run	-
+rclone_nginx_apply	17108	"$key"	*	mkdir "$work/new/$key" || return 1	not-run	-
+rclone_nginx_apply	17111	"$key"	nginx.conf|mime.types	if [ "$policy" = replace ] || [ ! -f "$work/new/$key" ]; then cp -a -- "$backup/$key" "$work/new/$key" || return 1; fi continue	not-run	-
+rclone_restore_nginx_domain_remote	17215	"$choice"	1	mode=sites	not-run	-
+rclone_restore_nginx_domain_remote	17215	"$choice"	2	mode=links	not-run	-
+rclone_restore_nginx_domain_remote	17215	"$choice"	3	mode=domain	not-run	-
+rclone_restore_nginx_domain_remote	17215	"$choice"	4	mode=all	not-run	-
+rclone_restore_nginx_domain_remote	17215	"$choice"	0	return	not-run	-
+rclone_restore_nginx_domain_remote	17215	"$choice"	*	echo "无效的输入!"; continue	not-run	-
+rclone_restore_nginx_domain_remote	17224	"$policy"	1	policy=keep	not-run	-
+rclone_restore_nginx_domain_remote	17224	"$policy"	2	policy=replace	not-run	-
+rclone_restore_nginx_domain_remote	17224	"$policy"	*	continue	not-run	-
+rclone_restore_named_volumes	17772	"$choice"	1	rclone_show_named_volume_inventory; return $?	not-run	-
+rclone_restore_named_volumes	17772	"$choice"	2	rclone_export_named_volumes; return $?	not-run	-
+rclone_restore_named_volumes	17772	"$choice"	3		not-run	-
+rclone_restore_named_volumes	17772	"$choice"	*	return 0	not-run	-
+rclone_migration_verify	17835	",$dns,"	*",$expected,"*		not-run	-
+rclone_migration_verify	17835	",$dns,"	*	echo "DNS 尚未指向指定 IP，或使用了 CDN；请按你的 DNS 配置核对。"	not-run	-
+rclone_migration_verify	17838	"$output"	2??|3??|401|403	code=0	not-run	-
+rclone_migration_verify	17838	"$output"	*	code=1	not-run	-
+rclone_migration_verify	17842	"$output"	2??|3??|401|403		not-run	-
+rclone_migration_verify	17842	"$output"	*	rc=1	not-run	-
+rclone_migration_verify	17853	"$output"	2??|3??|401|403		not-run	-
+rclone_migration_verify	17853	"$output"	*	rc=1	not-run	-
+rclone_restore_docker_compose_projects	17901	"$?"	1	start_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" pending "awaiting startup confirmation" || return 1	not-run	-
+rclone_restore_docker_compose_projects	17901	"$?"	*	check_failed_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" failed "status query/health failed" || return 1	not-run	-
+rclone_manager	17976	$sub_choice	1	rclone_install_tool; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
+rclone_manager	17976	$sub_choice	2	rclone_edit_config; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
+rclone_manager	17976	$sub_choice	3	rclone_uninstall_tool	not-run	-
+rclone_manager	17976	$sub_choice	4	rclone_restore_remote_folder	not-run	-
+rclone_manager	17976	$sub_choice	5	rclone_restore_nginx_domain_remote	not-run	-
+rclone_manager	17976	$sub_choice	6	rclone_restore_docker_compose_projects	not-run	-
+rclone_manager	17976	$sub_choice	7	crontab_sync_log_manager	not-run	-
+rclone_manager	17976	$sub_choice	0	return	not-run	-
+rclone_manager	17976	$sub_choice	*	echo "无效的输入!"	not-run	-
+bitwarden_manager	18399	$sub_choice	1	bitwarden_configure_rclone_conf	not-run	-
+bitwarden_manager	18399	$sub_choice	2	bitwarden_backup_data	not-run	-
+bitwarden_manager	18399	$sub_choice	3	bitwarden_restore_data	not-run	-
+bitwarden_manager	18399	$sub_choice	4	bitwarden_configure_sync_script	not-run	-
+bitwarden_manager	18399	$sub_choice	0	return	not-run	-
+bitwarden_manager	18399	$sub_choice	*	echo "无效的输入!"	not-run	-
+crontab_sync_log_manager	18671	"$choice"	1	filter=""	not-run	-
+crontab_sync_log_manager	18671	"$choice"	2	read -e -p "任务名（如 root、emby、bitwarden）: " filter || return 1	not-run	-
+crontab_sync_log_manager	18671	"$choice"	3|4|5	read -e -p "请输入记录编号（1-15）: " number || return 1 record=$(crontab_sync_log_pick "$number" "$filter") || { echo "记录不存在"; break_end; continue; } IFS=$'\t' read -r _ _ _ _ _ _ _ _ _ _ log _ <<< "$record" [ -f "$log" ] || { echo "日志文件不存在: $log";	not-run	-
+crontab_sync_log_manager	18671	"$choice"	0	return	not-run	-
+crontab_sync_log_manager	18671	"$choice"	*	echo "无效的输入!"; break_end	not-run	-
+crontab_sync_log_manager	18679	"$choice"	3	crontab_sync_log_sanitize "$log"	not-run	-
+crontab_sync_log_manager	18679	"$choice"	4	crontab_sync_log_copy "$log"	not-run	-
+crontab_sync_log_manager	18679	"$choice"	5	crontab_sync_log_export "$log"	not-run	-
+crontab_sync_legacy_script_file_by_id	18710	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Infini.sh"	not-run	-
+crontab_sync_legacy_script_file_by_id	18710	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_Infini_to_OneDrive.sh"	not-run	-
+crontab_sync_script_file_by_id	18892	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Kissska1.sh"	not-run	-
+crontab_sync_script_file_by_id	18892	"$1"	imagebed	echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh"	not-run	-
+crontab_sync_script_file_by_id	18892	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_OneDrive_to_Kissska1.sh"	not-run	-
+crontab_sync_script_file_by_id	18892	"$1"	nginxdomain	echo "$(crontab_sync_backup_dir)/Nginx_Domain_Local_Backup.sh"	not-run	-
+crontab_sync_script_file_by_id	18892	"$1"	root	local name; name=$(crontab_sync_root_name) || return 1; echo "$(crontab_sync_backup_dir)/$name.sh"	not-run	-
+crontab_sync_script_file_by_id	18892	"$1"	emby	echo "$(crontab_sync_backup_dir)/Emby_Root_Backup.sh"	not-run	-
+crontab_sync_script_file_by_id	18892	"$1"	custom	echo "$(crontab_sync_backup_dir)/$2"	not-run	-
+crontab_sync_cron_line_by_id	18909	"$id"	bitwarden	echo "5 5 * * * /bin/bash $runner bitwarden $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18909	"$id"	imagebed	echo "10 4 * * * /bin/bash $runner imagebed $script_file >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18909	"$id"	via	echo "15 4 * * * /bin/bash $runner via $script_file >> /var/log/rclone/cron_Via_OneDrive_to_Kissska1.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18909	"$id"	nginxdomain	echo "0 4 * * * /bin/bash $runner nginxdomain $script_file >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18909	"$id"	root	echo "25 4 * * * /bin/bash $runner root $script_file >> /var/log/rclone/cron_Root_Backup.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18909	"$id"	emby	echo "45 5 * * 0 /bin/bash $runner emby $script_file >> /var/log/rclone/cron_Emby_Root_Backup.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18909	"$id"	custom	local script_base script_base=$(basename "$script_file" .sh) echo "45 4 * * * /bin/bash $runner custom:$script_base $script_file >> /var/log/rclone/cron_${script_base}.log 2>&1"	not-run	-
+crontab_sync_script_content_ok	18929	"$id"	bitwarden	grep -q 'SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'DEST_REMOTE="kissska1:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
+crontab_sync_script_content_ok	18929	"$id"	imagebed	grep -q 'qq3303338052@cloudflare:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'qq3303338052@outlook:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
+crontab_sync_script_content_ok	18929	"$id"	via	grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \ && grep -q '"kissska1:Via"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
+crontab_sync_script_content_ok	18929	"$id"	nginxdomain	if grep -q 'BACKUP_DIR="\$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null && grep -Eq 'rclone_nginx_write_bundle|copy_backup_item' "$script_file" 2>/dev/null && grep -q 'manifest.txt' "$script_file" 2>/dev/null; then return 0 fi return	not-run	-
+crontab_sync_script_content_ok	18929	"$id"	root|emby|custom	local stage expected result=1 stage=$(mktemp -d) || return 1 expected="$stage/$(basename "$script_file")" if DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script "$id" "$expected" && cmp -s "$expected" "$script_file"; then result=0; fi rm -	not-run	-
+crontab_sync_builtin_name_by_id	18998	"$1"	bitwarden	echo "bitwarden同步脚本"	not-run	-
+crontab_sync_builtin_name_by_id	18998	"$1"	imagebed	echo "图床同步脚本"	not-run	-
+crontab_sync_builtin_name_by_id	18998	"$1"	via	echo "via同步脚本"	not-run	-
+crontab_sync_builtin_name_by_id	18998	"$1"	nginxdomain	echo "域名和nginx配置备份脚本"	not-run	-
+crontab_sync_builtin_name_by_id	18998	"$1"	root	echo "/root Docker一致性备份脚本"	not-run	-
+crontab_sync_builtin_name_by_id	18998	"$1"	emby	echo "Emby目录备份脚本"	not-run	-
+crontab_sync_builtin_id_by_number	19009	"$1"	1	echo "bitwarden"	not-run	-
+crontab_sync_builtin_id_by_number	19009	"$1"	2	echo "imagebed"	not-run	-
+crontab_sync_builtin_id_by_number	19009	"$1"	3	echo "via"	not-run	-
+crontab_sync_builtin_id_by_number	19009	"$1"	4	echo "nginxdomain"	not-run	-
+crontab_sync_builtin_id_by_number	19009	"$1"	5	echo "emby"	not-run	-
+crontab_sync_builtin_id_by_number	19009	"$1"	6	echo "root"	not-run	-
+crontab_sync_write_script	19048	"$id"	bitwarden	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail # ========= 源与目标 ========= SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup" DEST_REMOTE="kissska1:/BitwardenBackup" # ========= 日志 ========= LOG_DIR="/var/log/rclone" LOG_FILE="${	not-run	-
+crontab_sync_write_script	19048	"$id"	imagebed	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/r2_to_onedrive_imagebed.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
+crontab_sync_write_script	19048	"$id"	via	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/outlook_to_kissska1_via.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
+crontab_sync_write_script	19048	"$id"	nginxdomain	rclone_nginx_write_backup_script "$script_file"	not-run	-
+crontab_sync_write_script	19048	"$id"	root|emby|custom	local backup_name kind source if [ "$id" = emby ]; then backup_name=Emby; kind=emby; source=/root/emby else backup_name=$(basename "$target" .sh) if [ "$backup_name" = Root_Backup ]; then backup_name=$(crontab_sync_root_name) || return 1 fi	not-run	-
+crontab_sync_write_script	19048	"$id"	*	return 1	not-run	-
+crontab_sync_reconcile_legacy	20002	"$custom_file"	"$bit_old"|"$via_old"	continue	not-run	-
+crontab_sync_install_one	20047	"$id"	bitwarden|via|root|emby|custom	if ! crontab_sync_remote_ready; then echo -e "${gl_hong}kissska1 连接检查失败，未修改脚本和定时任务。${gl_bai}" return 1 fi	not-run	-
+crontab_sync_get_item_by_number	20107	"$num"	1|2|3|4|5|6	id=$(crontab_sync_builtin_id_by_number "$num") if [ "$id" = root ]; then if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then [ "$action" = install ] || return 1 crontab_sync_prompt_root_name >/dev/null || return 1 file=$(cro	not-run	-
+crontab_sync_manager	20196	"$sub_choice"	1	read -e -p "请输入要安装的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
+crontab_sync_manager	20196	"$sub_choice"	2	read -e -p "请输入要卸载的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers remove "$nums"	not-run	-
+crontab_sync_manager	20196	"$sub_choice"	3	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的脚本编号（默认全选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
+crontab_sync_manager	20196	"$sub_choice"	4	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的脚本编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应脚本和定时任务？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then crontab_sync	not-run	-
+crontab_sync_manager	20196	"$sub_choice"	5	crontab_sync_run_root_once	not-run	-
+crontab_sync_manager	20196	"$sub_choice"	0	return	not-run	-
+crontab_sync_manager	20196	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+server_retire_nginx_remove	20291	"$file"	/etc/nginx/sites-enabled/*|/etc/nginx/sites-available/*|/home/web/conf.d/*		not-run	-
+server_retire_nginx_remove	20291	"$file"	*	echo -e "${gl_hong}跳过非托管 Nginx 路径: $file${gl_bai}"; return 1	not-run	-
+server_retire_nginx_remove	20303	"$domain"	*.*	rm -rf -- "/root/domain/$domain"	not-run	-
+server_retire_remove_script	20360	"$real"	"$(realpath -m -- "$dir")"/*	allowed=true	not-run	-
+server_retire_remove_script	20362	"$real"	"$(realpath -m -- "$DAIMON_SCRIPT_DIR")/auto_cert_renewal.sh"|"$(realpath -m -- "$DAIMON_ROOT_DIR")/cert-renew.sh"	allowed=true	not-run	-
+server_retire_apply_token	20416	"$token"	C[0-9]*	n="${token#C}"; item=$(server_retire_compose_item "$n") || return 1; IFS=$'\t' read -r idx project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	not-run	-
+server_retire_apply_token	20416	"$token"	N[0-9]*	n="${token#N}"; item=$(server_retire_nginx_item "$n") || return 1; IFS=$'\t' read -r file domains enabled <<< "$item"; server_retire_nginx_remove "$file" "$domains"	not-run	-
+server_retire_apply_token	20416	"$token"	A[0-9]*	n="${token#A}"; file=$(server_retire_script_items | sed -n "${n}p" | cut -f1); [ -n "$file" ] || return 1; server_retire_remove_script "$file"	not-run	-
+server_retire_apply_token	20416	"$token"	U[0-9]*	n="${token#U}"; file=$(server_retire_update_items | sed -n "${n}p" | cut -f1); [ -n "$file" ] || return 1; server_retire_remove_script "$file"	not-run	-
+server_retire_apply_token	20416	"$token"	R1	server_retire_remove_script "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" 2>/dev/null || true server_retire_remove_script "$DAIMON_ROOT_DIR/cert-renew.sh"	not-run	-
+server_retire_apply_token	20416	"$token"	*	return 1	not-run	-
+server_retire_apply_tokens_for_prefix	20432	"$token"	"$prefix"[0-9]*	printf '%s\n' "$token"	not-run	-
+server_retire_bulk	20452	" $nums "	*' R1 '*	server_retire_apply_token R1 || echo -e "${gl_hong}证书续期任务处理失败${gl_bai}"	not-run	-
+server_retire_menu	20518	"$choice"	1	server_retire_bulk	not-run	-
+server_retire_menu	20518	"$choice"	2	server_retire_compose_menu	not-run	-
+server_retire_menu	20518	"$choice"	3	server_retire_nginx_menu	not-run	-
+server_retire_menu	20518	"$choice"	4	server_retire_script_menu sync	not-run	-
+server_retire_menu	20518	"$choice"	5	server_retire_script_menu update	not-run	-
+server_retire_menu	20518	"$choice"	6	server_retire_cert_menu	not-run	-
+server_retire_menu	20518	"$choice"	0	return	not-run	-
+server_retire_menu	20518	"$choice"	*	echo "无效的输入!"	not-run	-
+warp_manager	20554	$sub_choice	1	clear send_stats "warp管理" install wget curl daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"	not-run	-
+warp_manager	20554	$sub_choice	2	clear echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}" read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then send_stats "彻底删除warp" install wget curl 	not-run	-
+warp_manager	20554	$sub_choice	0	return	not-run	-
+warp_manager	20554	$sub_choice	*	echo "无效的输入!"	not-run	-
+debian_basics_install	20686	"$package"	ca-certificates|curl|wget|jq		not-run	-
+debian_basics_install	20686	"$package"	*	echo "无效的 Debian 软件包: $package"; return 1	not-run	-
+debian_basics_menu	20734	"$answer"	''|y|Y		not-run	-
+debian_basics_menu	20734	"$answer"	*	echo "已取消"; return 0	not-run	-
+kejilion_sh	20789	$choice	1	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
+kejilion_sh	20789	$choice	2	clear ; send_stats "系统更新" ; linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+kejilion_sh	20789	$choice	3	clear ; send_stats "系统清理" ; linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+kejilion_sh	20789	$choice	4	one_click_config_manager; pause_after=false	handler-real/partial	2026-09-28; 5ca85df; six hosts; one_click_config_manager handler real apt for items 2/3; main-menu 4 dispatch itself only in guarded regression; other setup items not covered
+kejilion_sh	20789	$choice	5	linux_Settings; pause_after=false	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; selected submenus only
+kejilion_sh	20789	$choice	6	linux_tools thirdparty; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	7	linux_tools programming; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	8	linux_docker; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	9	ssh_config_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	10	ufw_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	11	ssl_nginx_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	12	fail2ban_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	13	linux_bbr; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	14	warp_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	15	rclone_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	16	bitwarden_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	17	crontab_sync_manager; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	18	common_one_click_scripts; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	19	server_retire_menu; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	20	debian_basics_menu; pause_after=false	not-run	-
+kejilion_sh	20789	$choice	00	kejilion_update; pause_after=false	handler-real/scoped	2026-09-28 updater; six hosts; skip backup/helper migration as authorized
+kejilion_sh	20789	$choice	0	clear ; exit	menu-real/partial	2026-09-28; 5ca85df; six hosts; actual menu exits after info/update/clean without a second completion pause
+kejilion_sh	20789	$choice	*	echo "无效的输入!"	not-run	-
+CLI	20852	$1	install|add|安装	shift send_stats "安装软件" install "$@"	not-run	-
+CLI	20852	$1	remove|del|uninstall|卸载	shift send_stats "卸载软件" remove "$@"	not-run	-
+CLI	20852	$1	update|更新	linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+CLI	20852	$1	clean|清理	linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+CLI	20852	$1	bbr3|bbrv3	bbrv3	not-run	-
+CLI	20852	$1	nhyh|内核优化	Kernel_optimize	not-run	-
+CLI	20852	$1	trash|hsz|回收站	linux_trash	not-run	-
+CLI	20852	$1	backup|bf|备份	linux_backup	not-run	-
+CLI	20852	$1	ssh|远程连接	ssh_manager	not-run	-
+CLI	20852	$1	rsync|远程同步	rsync_manager	not-run	-
+CLI	20852	$1	rsync_run	shift send_stats "定时rsync同步" run_task "$@"	not-run	-
+CLI	20852	$1	disk|硬盘管理	disk_manager	not-run	-
+CLI	20852	$1	wp|wordpress	echo "LDNMP建站模块已移除"	not-run	-
+CLI	20852	$1	fd|rp|反代	echo "LDNMP反代模块已移除"	not-run	-
+CLI	20852	$1	loadbalance|负载均衡	echo "LDNMP负载均衡模块已移除"	not-run	-
+CLI	20852	$1	stream|L4负载均衡	echo "LDNMP四层转发模块已移除"	not-run	-
+CLI	20852	$1	swap	shift send_stats "快速设置虚拟内存" add_swap "$@"	cli-real-vm/partial	38629fc; two owned Ubuntu/Debian VMs; actual CLI create/repeat/invalid sizes and reboot activation; not six host swap tests
+CLI	20852	$1	time|时区	shift send_stats "快速设置时区" set_timedate "$@"	not-run	-
+CLI	20852	$1	iptables_open	iptables_open	not-run	-
+CLI	20852	$1	frps	frps_panel	not-run	-
+CLI	20852	$1	frpc	frpc_panel	not-run	-
+CLI	20852	$1	打开端口|dkdk	shift open_port "$@"	not-run	-
+CLI	20852	$1	关闭端口|gbdk	shift close_port "$@"	not-run	-
+CLI	20852	$1	放行IP|fxip	shift allow_ip "$@"	not-run	-
+CLI	20852	$1	阻止IP|zzip	shift block_ip "$@"	not-run	-
+CLI	20852	$1	防火墙|fhq	iptables_panel	not-run	-
+CLI	20852	$1	命令收藏夹|fav	linux_fav	not-run	-
+CLI	20852	$1	status|状态	shift send_stats "软件状态查看" status "$@"	not-run	-
+CLI	20852	$1	start|启动	shift send_stats "软件启动" start "$@"	not-run	-
+CLI	20852	$1	stop|停止	shift send_stats "软件暂停" stop "$@"	not-run	-
+CLI	20852	$1	restart|重启	shift send_stats "软件重启" restart "$@"	not-run	-
+CLI	20852	$1	enable|autostart|开机启动	shift send_stats "软件开机自启" enable "$@"	not-run	-
+CLI	20852	$1	ssl	shift if [ "$1" = "ps" ]; then send_stats "查看证书状态" ssl_ps elif [ -z "$1" ]; then add_ssl send_stats "快速申请证书" elif [ -n "$1" ]; then add_ssl "$1" send_stats "快速申请证书" else k_info fi	not-run	-
+CLI	20852	$1	docker	shift case $1 in install|安装) send_stats "快捷安装docker" install_docker ;; ps|容器) send_stats "快捷容器管理" docker_ps ;; img|镜像) send_stats "快捷镜像管理" docker_image ;; *) linux_docker ;; esac	not-run	-
+CLI	20852	$1	web	echo "LDNMP站点管理模块已移除"	not-run	-
+CLI	20852	$1	info	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
+CLI	20852	$1	fail2ban|f2b	fail2ban_manager	not-run	-
+CLI	20852	$1	rclone|rc	rclone_manager	not-run	-
+CLI	20852	$1	bitwarden|bw	bitwarden_manager	not-run	-
+CLI	20852	$1	cronsync|syncscripts|cron-sync	crontab_sync_manager	not-run	-
+CLI	20852	$1	retire|退役	server_retire_menu	not-run	-
+CLI	20852	$1	sshkey	shift case "$1" in "" ) # sshkey → 交互菜单 send_stats "SSHKey 交互菜单" sshkey_panel ;; github ) shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1" ;; http://*|https://* ) send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1" ;; ss	not-run	-
+CLI	20852	$1	*	k_info	not-run	-
+CLI	21014	$1	install|安装	send_stats "快捷安装docker" install_docker	not-run	-
+CLI	21014	$1	ps|容器	send_stats "快捷容器管理" docker_ps	not-run	-
+CLI	21014	$1	img|镜像	send_stats "快捷镜像管理" docker_image	not-run	-
+CLI	21014	$1	*	linux_docker	not-run	-
+CLI	21068	"$1"	""	send_stats "SSHKey 交互菜单" sshkey_panel	not-run	-
+CLI	21068	"$1"	github	shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1"	not-run	-
+CLI	21068	"$1"	http://*|https://*	send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
+CLI	21068	"$1"	ssh-rsa*|ssh-ed25519*|ssh-ecdsa*	send_stats "公钥直接导入" import_sshkey "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
+CLI	21068	"$1"	*	echo "错误：未知参数 '$1'" echo "用法：" echo " k sshkey 进入交互菜单" echo " k sshkey \"<pubkey>\" 直接导入 SSH 公钥" echo " k sshkey <url> 从 URL 导入 SSH 公钥" echo " k sshkey github <user> 从 GitHub 导入 SSH 公钥"	not-run	-
 linux_tools/thirdparty/install		tool number	1	install_tool_by_id vim	not-run	-
 linux_tools/thirdparty/remove		tool number	1	remove_tool_by_id vim	not-run	-
 linux_tools/thirdparty/install		tool number	2	install_tool_by_id cpcat	not-run	-

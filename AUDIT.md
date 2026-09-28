@@ -779,3 +779,13 @@ APT 测试使用 Docker 官方 Ubuntu 22.04 ARM64/x86_64、Debian 13 slim x86_64
 `f6c1d2c` 六台各通过 54 项用户真实检查，包含错误策略显示 Unknown 和拒绝删除；另各通过通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 29、locale 10 个隔离回归。Windows 的 POSIX/PTY 跳过项以 Linux 执行为准。六台通过现有内置更新器安装，归一化 SHA256 为 `37db0450d1a93034888c4d26a64e4d08646668737b874db72ecd9f5656ab2738`，仍跳过任务迁移和证书辅助更新。
 
 此检查点六台宿主状态比较均无变化，hash 匹配，无测试 loop 或原生 rootfs 残留。日本、西班牙仅保留并运行已授权的两个 VM 及其自有 supervisor/QEMU 进程，用于继续 journal 等测试；没有创建更多 VM。静态清单现为 965 行，106 行有有限真实证据，859 行仍为 not-run；669 个 case pattern 的静态通过不能代替这些未执行功能。
+
+#### journal 五个选项（2026-09-29）
+
+`277318d` 修复配置不可写、符号链接覆盖和服务重启失败仍报告成功；保留其他 Journal 字段、文件权限，失败恢复配置，仅原先活动的服务才重启。`c6c215b` 进一步修复 `systemd-analyze timespan --help` 退出 0 导致错误保留时间被接受，加入 `--` 分隔选项。
+
+仍复用一个 Ubuntu 22.04 ARM64 和一个 Debian 13 AMD64 VM。两者通过内置更新器安装 `c6c215b`，归一化 SHA256 均为 `22ff6952795223dbf9e6131917eb66ed32454d5c83f7f80e0695320b48bd2be4`，分别完成 30 项检查：主菜单 `5 → 14` 的配置、磁盘占用、最后 200 条服务日志、按时间/大小 vacuum；默认值、重复、EOF、非法/溢出大小、非法时间和 `--help`；immutable、symlink、真实 flock、runtime mask 引起的重启失败、原先停止的 journald 不被意外启动。真实临时服务产生 250 条日志，原生 rotate 后检查 vacuum 使归档数量下降。两个报告均 `complete=true`、`failure=null`，外层 SSH 与内层退出均为 0；结束后恢复 guest 原配置和 journald。**没有重启六台业务宿主的 journald。**
+
+六台宿主已通过内置更新器安装同版，各通过 13 个 journal 回归和此前的通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 29、locale 10 个回归，采集状态未变。真实证据为 `.tmp/audit-20260928/c6c215b-vm-{debian,ubuntu}-journal-real.jsonl`，另保留旧版红测试与 `277318d` 中间验证，不将错误复现的退出 0 当功能通过。
+
+日志清理不可逆；配置恢复不能恢复已清理的历史日志。vacuum 仅处理归档，不保证活动文件在内的总占用立即低于限额。VM 继续复用进行 IPv6 等测试，整个审计仍未完成。
