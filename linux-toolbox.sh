@@ -1988,81 +1988,116 @@ daimon_swap_is_managed() {
 		[ "$(stat -c '%d:%i' /swapfile)" = "$(cat "$DAIMON_ROOT_DIR/.swapfile-managed")" ]
 }
 
-add_swap() {
+daimon_swap_transaction() (
+	local action="$1" size="${2:-}" work tmp="" old_swap="" marker_tmp="" lockfd
+	local was_active=0 old_moved=0 new_moved=0 fstab_changed=0 marker_changed=0 committed=0 had_marker=0
+	local old_identity="" new_identity="" fstab_identity="" marker_identity=""
 	root_use
-	local new_swap="${1:-}" tmp old_swap="" was_active=0
+	[ -f /etc/fstab ] && [ ! -L /etc/fstab ] || return 1
+	[ ! -L "$DAIMON_ROOT_DIR/.swapfile-managed" ] || return 1
+	[ ! -e "$DAIMON_ROOT_DIR/.swapfile-managed" ] || [ -f "$DAIMON_ROOT_DIR/.swapfile-managed" ] || return 1
+	mkdir -p "$DAIMON_ROOT_DIR" || return 1
+	[ ! -L "$DAIMON_ROOT_DIR/.swapfile.lock" ] || return 1
+	exec {lockfd}> "$DAIMON_ROOT_DIR/.swapfile.lock" || return 1
+	flock -n "$lockfd" || { echo "另一个虚拟内存操作正在进行，请稍后重试。"; return 1; }
+	if [ "$action" = delete ] || [ -e /swapfile ] || [ -L /swapfile ]; then
+		daimon_swap_is_managed || { echo "现有 /swapfile 的归属未确认，未修改。"; return 1; }
+	fi
+	work=$(mktemp -d /etc/.daimon-swap.XXXXXX) || return 1
+	trap '
+		status=$?
+		trap "" INT TERM HUP
+		if [ "$committed" = 0 ]; then
+			[ -z "$old_identity" ] || [ "$(stat -c "%d:%i" "$old_swap" 2>/dev/null)" != "$old_identity" ] || old_moved=1
+			[ -z "$new_identity" ] || [ "$(stat -c "%d:%i" /swapfile 2>/dev/null)" != "$new_identity" ] || new_moved=1
+			[ -z "$fstab_identity" ] || [ "$(stat -c "%d:%i" /etc/fstab 2>/dev/null)" != "$fstab_identity" ] || fstab_changed=1
+			[ -z "$marker_identity" ] || [ "$(stat -c "%d:%i" "$DAIMON_ROOT_DIR/.swapfile-managed" 2>/dev/null)" != "$marker_identity" ] || marker_changed=1
+			[ "$had_marker" = 0 ] || [ -e "$DAIMON_ROOT_DIR/.swapfile-managed" ] || marker_changed=1
+			if [ "$new_moved" = 1 ] && daimon_swap_is_active; then
+				swapoff /swapfile || { echo "回滚失败，新 swap 无法停用；恢复文件保留在: $work $old_swap"; exit 1; }
+			fi
+			if [ "$old_moved" = 1 ]; then
+				mv -Tf -- "$old_swap" /swapfile || { echo "回滚失败，原 swap 保留在: $old_swap"; exit 1; }
+			elif [ "$new_moved" = 1 ]; then
+				rm -f -- /swapfile || exit 1
+			fi
+			if [ "$was_active" = 1 ] && ! daimon_swap_is_active; then
+				swapon /swapfile && daimon_swap_is_active || { echo "原 swap 重新启用失败，恢复文件保留在: $work"; exit 1; }
+			fi
+			[ "$fstab_changed" = 0 ] || mv -Tf -- "$work/fstab" /etc/fstab || { echo "fstab 恢复失败: $work/fstab"; exit 1; }
+			if [ "$marker_changed" = 1 ]; then
+				if [ "$had_marker" = 1 ]; then
+					cp -p -- "$work/marker" "$marker_tmp" && mv -Tf -- "$marker_tmp" "$DAIMON_ROOT_DIR/.swapfile-managed" || { echo "归属标记恢复失败: $work/marker"; exit 1; }
+				else
+					rm -f -- "$DAIMON_ROOT_DIR/.swapfile-managed" || exit 1
+				fi
+			fi
+		fi
+		rm -f -- "$tmp" "$old_swap" "$marker_tmp" "$work/fstab" "$work/new-fstab" "$work/marker"
+		rmdir -- "$work"
+		exit "$status"
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	cp -p -- /etc/fstab "$work/fstab" || return 1
+	sed '\|^[[:space:]]*/swapfile[[:space:]]|d' /etc/fstab > "$work/new-fstab" || return 1
+	chmod --reference=/etc/fstab "$work/new-fstab" && chown --reference=/etc/fstab "$work/new-fstab" || return 1
+	fstab_identity=$(stat -c '%d:%i' "$work/new-fstab") || return 1
+	if [ -f "$DAIMON_ROOT_DIR/.swapfile-managed" ]; then
+		cp -p -- "$DAIMON_ROOT_DIR/.swapfile-managed" "$work/marker" || return 1
+		had_marker=1
+	fi
+	marker_tmp=$(mktemp "$DAIMON_ROOT_DIR/.swapfile-managed.XXXXXX") || return 1
+	marker_identity=$(stat -c '%d:%i' "$marker_tmp") || return 1
+	if [ "$action" = resize ]; then
+		tmp=$(mktemp /swapfile.daimon.XXXXXX) || return 1
+		chmod 600 "$tmp" && fallocate -l "${size}M" "$tmp" && mkswap "$tmp" || return 1
+		stat -c '%d:%i' "$tmp" > "$marker_tmp" || return 1
+		new_identity=$(cat "$marker_tmp") || return 1
+		printf '/swapfile swap swap defaults 0 0\n' >> "$work/new-fstab" || return 1
+	fi
+	if [ -e /swapfile ]; then
+		old_swap=$(mktemp /swapfile.daimon.old.XXXXXX) || return 1
+		old_identity=$(stat -c '%d:%i' /swapfile) || return 1
+	fi
+	daimon_swap_is_active && was_active=1
+	if [ "$was_active" = 1 ]; then swapoff /swapfile || return 1; fi
+	if [ -n "$old_swap" ]; then mv -Tf -- /swapfile "$old_swap" || return 1; old_moved=1; fi
+	if [ "$action" = resize ]; then
+		mv -Tf -- "$tmp" /swapfile || return 1
+		new_moved=1
+		swapon /swapfile && daimon_swap_is_active || return 1
+	fi
+	mv -Tf -- "$work/new-fstab" /etc/fstab || return 1
+	fstab_changed=1
+	if [ "$action" = resize ]; then
+		mv -Tf -- "$marker_tmp" "$DAIMON_ROOT_DIR/.swapfile-managed" || return 1
+	else
+		rm -f -- "$DAIMON_ROOT_DIR/.swapfile-managed" || return 1
+	fi
+	marker_changed=1
+	committed=1
+	if [ -f /etc/alpine-release ]; then
+		if [ "$action" = resize ]; then
+			mkdir -p /etc/local.d && printf 'nohup swapon /swapfile\n' > /etc/local.d/swap.start &&
+				chmod +x /etc/local.d/swap.start && rc-update add local || return 1
+		else
+			rm -f /etc/local.d/swap.start || return 1
+		fi
+	fi
+)
+
+add_swap() {
+	local new_swap="${1:-}"
 	if ! [[ "$new_swap" =~ ^[1-9][0-9]{0,6}$ ]] || [ "$new_swap" -gt 1048576 ]; then
 		echo "虚拟内存大小必须为 1-1048576 MiB 的整数"
 		return 1
 	fi
-	if { [ -e /swapfile ] || [ -L /swapfile ]; } && ! daimon_swap_is_managed; then
-		echo "现有 /swapfile 的归属未确认，未修改；其他 swap 文件和分区保持不变。"
-		return 1
-	fi
-	tmp=$(mktemp /swapfile.daimon.XXXXXX) || return 1
-	if ! chmod 600 "$tmp" || ! fallocate -l "${new_swap}M" "$tmp" || ! mkswap "$tmp"; then
-		rm -f -- "$tmp"
-		return 1
-	fi
-	mkdir -p "$DAIMON_ROOT_DIR" || { rm -f -- "$tmp"; return 1; }
-	if [ -e /swapfile ]; then
-		old_swap=$(mktemp /swapfile.daimon.old.XXXXXX) || { rm -f -- "$tmp"; return 1; }
-	fi
-	daimon_swap_is_active && was_active=1
-	if [ "$was_active" -eq 1 ] && ! swapoff /swapfile; then
-		rm -f -- "$tmp"
-		[ -z "$old_swap" ] || rm -f -- "$old_swap"
-		echo "swapoff 失败，原虚拟内存和 fstab 保持不变。"
-		return 1
-	fi
-	if [ -n "$old_swap" ] && ! mv -f -- /swapfile "$old_swap"; then
-		rm -f -- "$tmp" "$old_swap"
-		[ "$was_active" -eq 0 ] || swapon /swapfile
-		return 1
-	fi
-	if ! mv -f -- "$tmp" /swapfile || ! swapon /swapfile || ! daimon_swap_is_active; then
-		if daimon_swap_is_active && ! swapoff /swapfile; then
-			echo "新 swap 停用失败，原文件保留在: $old_swap"
-			return 1
-		fi
-		rm -f -- "$tmp"
-		if [ -n "$old_swap" ]; then
-			mv -f -- "$old_swap" /swapfile || { echo "恢复失败，原 swap 保留在: $old_swap"; return 1; }
-			[ "$was_active" -eq 0 ] || swapon /swapfile || { echo "原 swap 文件已恢复，但重新启用失败。"; return 1; }
-		else
-			rm -f /swapfile
-		fi
-		echo "新 swap 启用失败，已恢复原文件，fstab 未修改。"
-		return 1
-	fi
-	stat -c '%d:%i' /swapfile > "$DAIMON_ROOT_DIR/.swapfile-managed" || { echo "归属标记写入失败，原文件保留在: $old_swap"; return 1; }
-	[ -z "$old_swap" ] || rm -f -- "$old_swap"
-	sed -i '\|^[[:space:]]*/swapfile[[:space:]]|d' /etc/fstab || return 1
-	echo "/swapfile swap swap defaults 0 0" >> /etc/fstab || return 1
-
-	if [ -f /etc/alpine-release ]; then
-		echo "nohup swapon /swapfile" > /etc/local.d/swap.start
-		chmod +x /etc/local.d/swap.start
-		rc-update add local
-	fi
-
+	daimon_swap_transaction resize "$new_swap" || return 1
 	echo -e "虚拟内存大小已调整为${gl_huang}${new_swap}${gl_bai}M"
 }
 
 delete_swap() {
-	root_use
-	if ! daimon_swap_is_managed; then
-		echo "未检测到本脚本创建并标记的 /swapfile，未删除任何文件。"
-		return 1
-	fi
-	if daimon_swap_is_active && ! swapoff /swapfile; then
-		echo "swapoff 失败，未删除虚拟内存或修改 fstab。"
-		return 1
-	fi
-	rm -f /swapfile || return 1
-	sed -i '\|^[[:space:]]*/swapfile[[:space:]]|d' /etc/fstab || return 1
-	rm -f "$DAIMON_ROOT_DIR/.swapfile-managed"
-	rm -f /etc/local.d/swap.start 2>/dev/null || true
+	daimon_swap_transaction delete || return 1
 	echo -e "${gl_lv}已删除脚本创建的 /swapfile 虚拟内存，并清理 /etc/fstab 持久化配置。${gl_bai}"
 }
 

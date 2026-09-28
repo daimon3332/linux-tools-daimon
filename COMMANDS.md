@@ -330,14 +330,14 @@ free -m
 ```bash
 d swap 2048
 ```
-解释：先验证大小和 `/root/linux-daimon/.swapfile-managed` inode 标记，再暂存新文件。停用失败不覆盖旧文件，新文件启用失败尝试恢复原文件及启用状态。已有但未标记的 `/swapfile` 不接管，不擦除其他 swap 文件或分区。
+解释：先验证大小和 `/root/linux-daimon/.swapfile-managed` inode 标记，再暂存新文件。通过互斥锁串行操作；先暂存 fstab 和归属标记，停用、启用、持久化失败或可捕获信号中断时，尝试恢复原文件、启用状态、fstab 和归属标记。恢复失败会保留临时恢复文件并明确报错。已有但未标记的 `/swapfile` 不接管，不擦除其他 swap 文件或分区。
 
 删除虚拟内存：
 
 ```bash
 delete_swap
 ```
-解释：菜单调用 `delete_swap`，只删除 inode 与归属标记一致的 `/swapfile`。`swapoff` 失败时不删文件、不改 fstab；其他 swap 保持不变。
+解释：菜单调用 `delete_swap`，只删除 inode 与归属标记一致的 `/swapfile`。停用或 fstab 更新失败时尝试恢复原文件和启用状态；其他 swap 保持不变。
 
 ### 5.6 用户管理
 

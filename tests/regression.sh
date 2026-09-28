@@ -535,66 +535,13 @@ test_nginx_page_ownership() {
     else [ ! -s "$trace" ]; fi
 }
 test_swapoff_failure() {
-    local trace="$WORK/swap.trace" DAIMON_ROOT_DIR="$WORK"
-    : > "$trace"
-    daimon_swap_is_managed() { return 0; }
-    daimon_swap_is_active() { return 0; }
-    swapoff() { return 1; }
-    rm() { echo remove >> "$trace"; }
-    sed() { echo fstab >> "$trace"; }
-    ! delete_swap || return 1
-    [ ! -s "$trace" ]
+    DAIMON_TEST_SOURCE="$SOURCE" "${PYTHON_BIN:-python3}" "$ROOT/tests/swap-regression.py" Swap.test_delete_swapoff_failure_keeps_original
 }
 test_swap_input() {
-    local trace="$WORK/swap-input.trace" input DAIMON_ROOT_DIR="$WORK"
-    : > "$trace"
-    swapoff() { echo swapoff >> "$trace"; }
-    wipefs() { echo wipefs >> "$trace"; }
-    rm() { echo remove >> "$trace"; }
-    fallocate() { echo allocate >> "$trace"; exit 77; }
-    chmod() { :; }
-    mkswap() { :; }
-    swapon() { :; }
-    sed() { :; }
-    for input in 0 -1 abc 1.5 999999999999999999999999; do
-        ! add_swap "$input" || return 1
-    done
-    [ ! -s "$trace" ]
+    DAIMON_TEST_SOURCE="$SOURCE" "${PYTHON_BIN:-python3}" "$ROOT/tests/swap-regression.py" Swap.test_invalid_sizes_preserve_everything
 }
 test_swap_activation_failure() {
-    local DAIMON_ROOT_DIR="$WORK" backing="$WORK/managed-swap" active=1 calls=0
-    printf original > "$backing"
-    daimon_swap_is_managed() { return 0; }
-    daimon_swap_is_active() { [ "$active" -eq 1 ]; }
-    function [() {
-        local args=() arg
-        for arg in "$@"; do
-            if [[ "$arg" = /swapfile ]]; then args+=("$backing"); else args+=("$arg"); fi
-        done
-        builtin [ "${args[@]}"
-    }
-    mv() {
-        local args=() arg
-        for arg in "$@"; do
-            if [[ "$arg" = /swapfile ]]; then args+=("$backing"); else args+=("$arg"); fi
-        done
-        command mv "${args[@]}"
-    }
-    rm() {
-        local args=() arg
-        for arg in "$@"; do
-            if [[ "$arg" = /swapfile ]]; then args+=("$backing"); else args+=("$arg"); fi
-        done
-        command rm "${args[@]}"
-    }
-    stat() { echo fixture-inode; }
-    mktemp() { command mktemp "$WORK/swap.XXXXXX"; }
-    fallocate() { :; }
-    mkswap() { printf replacement > "$1"; }
-    swapoff() { active=0; }
-    swapon() { calls=$((calls + 1)); [ "$calls" -gt 1 ] || return 1; active=1; }
-    ! add_swap 1 || return 1
-    [ "$(cat "$backing")" = original ] && [ "$active" -eq 1 ]
+    DAIMON_TEST_SOURCE="$SOURCE" "${PYTHON_BIN:-python3}" "$ROOT/tests/swap-regression.py" Swap.test_activation_failure_restores_everything
 }
 test_backup_exit_status() {
     docker() {
