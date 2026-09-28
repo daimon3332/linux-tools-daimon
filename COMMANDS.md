@@ -119,13 +119,13 @@ sysctl -n net.ipv4.tcp_congestion_control
 sysctl -n net.core.default_qdisc
 date "+%Y-%m-%d %I:%M %p"
 cat /proc/uptime
-timedatectl show -p Timezone --value
+readlink -f /etc/localtime
 ss -H -t | wc -l
 ss -H -u | wc -l
 ```
 解释：查看 TCP 算法、队列算法、时间、运行时长、TCP/UDP 连接数。
 
-查询失败不计为零连接；时区查询失败回退到 `date +"%Z %z"`。CPU 采样包括 nice、IRQ、softirq、steal，iowait 计入空闲，不重复计算 guest；采样无增量时避免除零。位置解析只使用已有 jq 或 Python，不为信息查询安装软件；缺失数据显示未知。
+查询失败不计为零连接；时区读取 `/etc/localtime` 的 zoneinfo 链接，无法识别时回退到 `date +"%Z %z"`，不调用可能激活服务的 timedatectl。CPU 采样包括 nice、IRQ、softirq、steal，iowait 计入空闲，不重复计算 guest；采样无增量时避免除零。位置解析只使用已有 jq 或 Python，不为信息查询安装软件；缺失数据显示未知。
 
 ```bash
 sshd -T

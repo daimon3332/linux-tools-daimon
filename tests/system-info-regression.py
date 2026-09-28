@@ -135,6 +135,14 @@ timedatectl() { return 1; }
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(result.stdout.strip(), result.stderr)
 
+    def test_timezone_reads_symlink_without_dbus_activation(self):
+        result = self.shell(['current_timezone'], 'current_timezone', '''
+readlink() { echo /usr/share/zoneinfo/Asia/Singapore; }
+timedatectl() { echo activated > "$WORK/dbus-activation"; echo Asia/Singapore; }
+''')
+        self.assertEqual(result.stdout.strip(), 'Asia/Singapore')
+        self.assertFalse((self.work / 'dbus-activation').exists())
+
     def info(self, setup=''):
         return self.shell(['linux_info'], 'linux_info', ('''python3() { command python "$@" | tr -d '\\r'; }
 ''' if os.name == 'nt' else '') + '''

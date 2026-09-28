@@ -5513,11 +5513,11 @@ yt_menu_pro() {
 
 current_timezone() {
 	local timezone
-	if timezone=$(timedatectl show -p Timezone --value 2>/dev/null) && [ -n "$timezone" ]; then
-		printf '%s\n' "$timezone"
-	else
-		date +"%Z %z"
-	fi
+	timezone=$(readlink -f /etc/localtime 2>/dev/null)
+	case "$timezone" in
+		/usr/share/zoneinfo/*) printf '%s\n' "${timezone#/usr/share/zoneinfo/}" ;;
+		*) date +"%Z %z" ;;
+	esac
 }
 
 
