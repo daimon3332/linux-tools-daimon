@@ -8562,8 +8562,9 @@ except (ValueError, AttributeError):
 
 	local kernel_version=$(uname -r)
 
-	local congestion_algorithm=$(sysctl -n net.ipv4.tcp_congestion_control)
-	local queue_algorithm=$(sysctl -n net.core.default_qdisc)
+	local congestion_algorithm queue_algorithm
+	congestion_algorithm=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null) || congestion_algorithm="未知"
+	queue_algorithm=$(sysctl -n net.core.default_qdisc 2>/dev/null) || queue_algorithm="未知"
 
 	local os_info=$(grep PRETTY_NAME /etc/os-release | cut -d '=' -f2 | tr -d '"')
 

@@ -179,6 +179,11 @@ curl() {
         result = self.info('ss() { echo partial; return 1; }')
         self.assertRegex(result.stdout, r'TCP\|UDP连接数:\s+未知\|未知')
 
+    def test_unavailable_network_sysctls_are_unknown(self):
+        result = self.info('sysctl() { echo unavailable >&2; return 1; }')
+        self.assertRegex(result.stdout, r'网络算法:\s+未知 未知')
+        self.assertNotIn('unavailable', result.stderr)
+
     def test_missing_arm_frequency_is_explicit(self):
         result = self.info('cat() { case "$1" in /proc/cpuinfo) echo "processor : 0" ;; *) command cat "$@" ;; esac; }')
         self.assertRegex(result.stdout, r'CPU频率:\s+未知')
