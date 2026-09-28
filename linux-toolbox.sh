@@ -5779,15 +5779,125 @@ new_ssh_port() {
 
 
 sshkey_on() {
-
-	sed -i -e 's/^\s*#\?\s*PermitRootLogin .*/PermitRootLogin prohibit-password/' \
-		   -e 's/^\s*#\?\s*PasswordAuthentication .*/PasswordAuthentication no/' \
-		   -e 's/^\s*#\?\s*PubkeyAuthentication .*/PubkeyAuthentication yes/' \
-		   -e 's/^\s*#\?\s*ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
-	rm -rf /etc/ssh/sshd_config.d/* /etc/ssh/ssh_config.d/*
-	restart_ssh
+	(
+	local config=/etc/ssh/sshd_config staged='' rollback='' applied=0 committed=0 effective context connection="${SSH_CONNECTION:-}"
+	[ -f "$config" ] && [ ! -L "$config" ] &&
+		ssh-keygen -lf "$HOME/.ssh/authorized_keys" >/dev/null 2>&1 || {
+		echo "SSH 配置或 authorized_keys 无效，未切换登录模式。" >&2; return 1
+	}
+	trap '
+		status=$?
+		if [ "$applied" = 1 ] && [ "$committed" = 0 ]; then
+			if mv -f -- "$rollback" "$config"; then
+				rollback=""
+				restart_ssh || echo "原配置已恢复，但 SSH 服务恢复失败，请检查服务。" >&2
+			else
+				echo "无法恢复 SSH 配置，临时恢复文件保留在 $rollback" >&2
+				rollback=""
+			fi
+		fi
+		[ -z "$staged" ] || rm -f -- "$staged"
+		[ -z "$rollback" ] || rm -f -- "$rollback"
+		exit "$status"
+	' EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	trap 'exit 129' HUP
+	staged=$(mktemp "${config}.tmp.XXXXXX") || return 1
+	rollback=$(mktemp "${config}.rollback.XXXXXX") || return 1
+	cp -p -- "$config" "$rollback" || return 1
+	{
+		printf '%s\n' '# BEGIN DAIMON SSH KEY MODE' 'PermitRootLogin prohibit-password' \
+			'PasswordAuthentication no' 'KbdInteractiveAuthentication no' \
+			'PubkeyAuthentication yes' '# END DAIMON SSH KEY MODE'
+		awk '
+			$0 == "# BEGIN DAIMON SSH KEY MODE" {if (block) exit 1; block=1; next}
+			$0 == "# END DAIMON SSH KEY MODE" {if (!block) exit 1; block=0; next}
+			!block {print}
+			END {if (block) exit 1}
+		' "$rollback"
+	} > "$staged" || return 1
+	chmod --reference="$config" "$staged" && chown --reference="$config" "$staged" || return 1
+	sshd -t -f "$staged" || { echo "SSH 候选配置校验失败，未修改原配置。" >&2; return 1; }
+	context="user=root,host=$(hostname),addr=${connection%% *}"
+	[ -n "$connection" ] || context="user=root,host=$(hostname),addr=127.0.0.1"
+	effective=$(sshd -T -f "$staged" -C "$context") || return 1
+	if ! awk '
+		$1=="permitrootlogin" && ($2=="prohibit-password" || $2=="without-password") {root=1}
+		$1=="passwordauthentication" && $2=="no" {password=1}
+		$1=="kbdinteractiveauthentication" && $2=="no" {kbd=1}
+		$1=="pubkeyauthentication" && $2=="yes" {pubkey=1}
+		$1=="authenticationmethods" && ($2=="any" || $2=="publickey") {methods=1}
+		$1=="authorizedkeysfile" {
+			for (i=2;i<=NF;i++) if ($i==".ssh/authorized_keys" || $i=="%h/.ssh/authorized_keys" || $i=="/root/.ssh/authorized_keys") keys=1
+		}
+		END {exit !(root && password && kbd && pubkey && methods && keys)}
+	' <<< "$effective"; then
+		echo "SSH Match 规则、认证组合或密钥路径与密钥登录模式冲突，未修改配置。" >&2
+		return 1
+	fi
+	cmp -s -- "$config" "$rollback" || { echo "SSH 配置已被其他进程修改，已取消。" >&2; return 1; }
+	cmp -s -- "$staged" "$rollback" && { echo "密钥登录配置已生效，无需重复修改。"; return 0; }
+	applied=1
+	mv -f -- "$staged" "$config" || return 1
+	restart_ssh || { echo "SSH 应用失败，正在恢复原配置。" >&2; return 1; }
+	committed=1
 	echo -e "${gl_lv}用户密钥登录模式已开启，已关闭密码登录模式，重连将会生效${gl_bai}"
+	)
+}
 
+
+ssh_public_key_valid() {
+	local key="$1"
+	[[ "$key" != *$'\n'* && "$key" != *$'\r'* ]] || return 1
+	case "$key" in ssh-*' '*|ecdsa-sha2-*' '*|sk-*' '*) ;; *) return 1 ;; esac
+	printf '%s\n' "$key" | ssh-keygen -lf /dev/stdin >/dev/null 2>&1
+}
+
+ssh_import_key_file() {
+	(
+	local file="$1" base_dir="${2:-$HOME}" ssh_dir auth_keys tmp='' line added=0
+	local -a keys=()
+	while IFS= read -r line || [ -n "$line" ]; do
+		line=${line%$'\r'}
+		[[ ! "$line" =~ [^[:space:]] || "$line" =~ ^[[:space:]]*# ]] && continue
+		ssh_public_key_valid "$line" || { echo "公钥格式或内容无效，未导入任何公钥。" >&2; return 1; }
+		keys+=("$line")
+	done < "$file"
+	[ "${#keys[@]}" -gt 0 ] || { echo "未找到有效公钥。" >&2; return 1; }
+	ssh_dir="$base_dir/.ssh"
+	auth_keys="$ssh_dir/authorized_keys"
+	[ -d "$base_dir" ] && [ ! -L "$ssh_dir" ] && [ ! -L "$auth_keys" ] &&
+		{ [ ! -e "$auth_keys" ] || [ -f "$auth_keys" ]; } || {
+		echo "SSH 密钥目录或文件不安全，未写入。" >&2; return 1
+	}
+	mkdir -p -- "$ssh_dir" && chmod 700 "$ssh_dir" || return 1
+	tmp=$(mktemp "$ssh_dir/authorized_keys.tmp.XXXXXX") || return 1
+	trap 'rm -f -- "$tmp"' EXIT
+	if [ -f "$auth_keys" ]; then
+		cp -p -- "$auth_keys" "$tmp" || return 1
+	else
+		chown --reference="$base_dir" "$ssh_dir" "$tmp" || return 1
+	fi
+	for line in "${keys[@]}"; do
+		if ! grep -Fxq -- "$line" "$tmp" && ! grep -Fxq -- "$line"$'\r' "$tmp"; then
+			if [ -s "$tmp" ] && [ -n "$(tail -c 1 "$tmp")" ]; then printf '\n' >> "$tmp" || return 1; fi
+			printf '%s\n' "$line" >> "$tmp" || return 1
+			added=$((added + 1))
+		fi
+	done
+	if [ "$added" -gt 0 ]; then
+		chmod 600 "$tmp" && mv -f -- "$tmp" "$auth_keys" || return 1
+		echo "成功添加 $added 条公钥。"
+	else
+		echo "公钥已存在，无需重复添加。"
+	fi
+	if [ "$(realpath -e -- "$base_dir")" = "$(realpath -e -- "$HOME")" ]; then
+		sshkey_on
+	else
+		echo "仅导入目标用户公钥，未修改全局 SSH 登录策略。"
+	fi
+	)
 }
 
 
@@ -5798,10 +5908,10 @@ add_sshkey() {
 	chmod 700 "${HOME}/.ssh"
 	touch "${HOME}/.ssh/authorized_keys"
 
-	ssh-keygen -t ed25519 -C "xxxx@gmail.com" -f "${HOME}/.ssh/sshkey" -N ""
+	ssh-keygen -t ed25519 -C "xxxx@gmail.com" -f "${HOME}/.ssh/sshkey" -N "" || return 1
 
-	cat "${HOME}/.ssh/sshkey.pub" >> "${HOME}/.ssh/authorized_keys"
-	chmod 600 "${HOME}/.ssh/authorized_keys"
+	cat "${HOME}/.ssh/sshkey.pub" >> "${HOME}/.ssh/authorized_keys" || return 1
+	chmod 600 "${HOME}/.ssh/authorized_keys" || return 1
 
 	ip_address
 	echo -e "私钥信息已生成，务必复制保存，可保存成 ${gl_huang}${ipv4_address}_ssh.key${gl_bai} 文件，用于以后的SSH登录"
@@ -5819,10 +5929,8 @@ add_sshkey() {
 
 import_sshkey() {
 
-	local public_key="$1"
+	local public_key="${1:-}" temp_file result
 	local base_dir="${2:-$HOME}"
-	local ssh_dir="${base_dir}/.ssh"
-	local auth_keys="${ssh_dir}/authorized_keys"
 
 	if [[ -z "$public_key" ]]; then
 		read -e -p "请输入您的SSH公钥内容（通常以 'ssh-rsa' 或 'ssh-ed25519' 开头）: " public_key || return 1
@@ -5833,34 +5941,28 @@ import_sshkey() {
 		return 1
 	fi
 
-	if [[ ! "$public_key" =~ ^ssh-(rsa|ed25519|ecdsa) ]]; then
+	if ! ssh_public_key_valid "$public_key"; then
 		echo -e "${gl_hong}错误：看起来不像合法的 SSH 公钥。${gl_bai}"
 		return 1
 	fi
 
-	if grep -Fxq "$public_key" "$auth_keys" 2>/dev/null; then
-		echo "该公钥已存在，无需重复添加"
-		return 0
-	fi
-
-	mkdir -p "$ssh_dir"
-	chmod 700 "$ssh_dir"
-	touch "$auth_keys"
-	echo "$public_key" >> "$auth_keys"
-	chmod 600 "$auth_keys"
-
-	sshkey_on
+	temp_file=$(mktemp) || return 1
+	printf '%s\n' "$public_key" > "$temp_file" || { rm -f -- "$temp_file"; return 1; }
+	ssh_import_key_file "$temp_file" "$base_dir"
+	result=$?
+	rm -f -- "$temp_file"
+	return "$result"
 }
 
 
 
 fetch_remote_ssh_keys() {
 
-	local keys_url="$1"
+	local keys_url="${1:-}"
 	local base_dir="${2:-$HOME}"
 	local ssh_dir="${base_dir}/.ssh"
 	local authorized_keys="${ssh_dir}/authorized_keys"
-	local temp_file
+	local temp_file result
 
 	if [[ -z "${keys_url}" ]]; then
 		read -e -p "请输入您的远端公钥URL： " keys_url || return 1
@@ -5873,7 +5975,7 @@ fetch_remote_ssh_keys() {
 	echo ""
 
 	# 创建临时文件
-	temp_file=$(mktemp)
+	temp_file=$(mktemp) || return 1
 
 	# 下载公钥
 	if command -v curl >/dev/null 2>&1; then
@@ -5901,33 +6003,10 @@ fetch_remote_ssh_keys() {
 		return 1
 	fi
 
-	mkdir -p "${ssh_dir}"
-	chmod 700 "${ssh_dir}"
-	touch "${authorized_keys}"
-	chmod 600 "${authorized_keys}"
-
-	# 追加公钥（避免重复）
-	local added=0
-	while IFS= read -r line; do
-		[[ -z "${line}" || "${line}" =~ ^# ]] && continue
-
-		if ! grep -Fxq "${line}" "${authorized_keys}" 2>/dev/null; then
-			echo "${line}" >> "${authorized_keys}"
-			((added++))
-		fi
-	done < "${temp_file}"
-
-	rm -f "${temp_file}"
-
-	echo ""
-	if (( added > 0 )); then
-		echo "成功添加 ${added} 条新的公钥到 ${authorized_keys}"
-		sshkey_on
-	else
-		echo "没有新的公钥需要添加（可能已全部存在）"
-	fi
-
-	echo ""
+	ssh_import_key_file "$temp_file" "$base_dir"
+	result=$?
+	rm -f -- "$temp_file"
+	return "$result"
 }
 
 
