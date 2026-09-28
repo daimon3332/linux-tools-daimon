@@ -37,7 +37,9 @@ class Journal(unittest.TestCase):
         body='\n'.join(function(n) for n in names).replace('/etc/',self.work.as_posix()+'/etc/')
         body+=r'''
 root_use() { :; }; clear() { :; }; send_stats() { :; }; break_end() { :; }
-systemd-analyze() { [ "$2" != invalid-time ]; }
+systemd-analyze() {
+    if [ "$2" = -- ]; then [ "${@: -1}" != --help ] && [ "${@: -1}" != invalid-time ]; else [ "$2" != invalid-time ]; fi
+}
 systemctl() {
     if [ "$1" = is-active ]; then [ "$FAILURE" != inactive ]; return; fi
     echo "$*" >> "$WORK/service-calls"
@@ -97,6 +99,10 @@ mv() {
 
     def test_invalid_retention_preserves_configuration(self):
         self.menu(values=['16M','128M','4M','invalid-time'])
+        self.assertEqual(self.config.read_bytes(),self.initial)
+
+    def test_retention_option_is_not_treated_as_a_command_flag(self):
+        self.menu(values=['16M','128M','4M','--help'])
         self.assertEqual(self.config.read_bytes(),self.initial)
 
     def test_repeat_is_idempotent(self):

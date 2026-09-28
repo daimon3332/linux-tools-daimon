@@ -11110,7 +11110,7 @@ daimon_journal_configure() (
 	for value in "$1" "$2" "$3"; do
 		daimon_journal_size_valid "$value" || { echo "日志大小无效，请使用字节数或 K/M/G/T/P/E 后缀。"; return 1; }
 	done
-	[[ "$4" != *$'\n'* && "$4" != *$'\r'* ]] && systemd-analyze timespan "$4" >/dev/null 2>&1 || {
+	[[ "$4" != *$'\n'* && "$4" != *$'\r'* ]] && systemd-analyze timespan -- "$4" >/dev/null 2>&1 || {
 		echo "日志保留时间无效。"; return 1
 	}
 	command -v systemctl >/dev/null || return 1
