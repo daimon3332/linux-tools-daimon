@@ -7886,6 +7886,39 @@ disk_manager() {
 
 
 # 显示任务列表
+rsync_task_get() {
+	[[ "$1" =~ ^[1-9][0-9]*$ ]] || { echo "任务编号无效" >&2; return 1; }
+	awk -v number="$1" 'NR == number {print; found=1; exit} END {exit !found}' "${CONFIG_FILE:-$HOME/.rsync_tasks}"
+}
+
+rsync_cron_read() {
+	local current
+	if current=$(LC_ALL=C crontab -l 2>&1); then
+		printf '%s\n' "$current"
+	elif [[ "$current" == 'no crontab for '* ]]; then
+		return 0
+	else
+		printf '%s\n' "$current" >&2
+		return 1
+	fi
+}
+
+rsync_cron_filter() {
+	awk -v action="$1" -v number="${2:-0}" '
+		/^[[:space:]]*#/ {if (action != "query" && action != "list") print; next}
+		{
+			cmd = ($1 ~ /^@/ ? 2 : 6)
+			owned = ($cmd ~ /^(k|d|\/usr\/(local\/)?bin\/(k|d))$/ && $(cmd+1) == "rsync_run" && $(cmd+2) ~ /^[1-9][0-9]*$/)
+			match_number = owned && $(cmd+2) == number
+			if (action == "query") {if (match_number) found=1; next}
+			if (action == "list") {if (owned) print; next}
+			if (match_number) next
+			if (action == "reindex" && owned && $(cmd+2) > number) $(cmd+2)--
+			print
+		}
+		END {if (action == "query") exit !found}'
+}
+
 list_tasks() {
 	echo "已保存的同步任务:"
 	echo "---------------------------------"
@@ -7895,6 +7928,9 @@ list_tasks() {
 
 # 添加新任务
 add_task() {
+	local name local_path remote_path remote port mode options auth_method password_or_key path
+	local CONFIG_FILE="${CONFIG_FILE:-$HOME/.rsync_tasks}"
+	local KEY_DIR="$HOME/.ssh/rsync_manager_keys"
 	send_stats "添加新同步任务"
 	echo "创建新同步任务示例："
 	echo "  - 任务名称: backup_www"
@@ -7903,9 +7939,17 @@ add_task() {
 	echo "  - 远程目录: /backup/www"
 	echo "  - 端口号 (默认 22)"
 	echo "---------------------------------"
-	read -e -p "请输入任务名称: " name || return 1
-	read -e -p "请输入本地目录: " local_path || return 1
-	read -e -p "请输入远程目录: " remote_path || return 1
+	read -r -e -p "请输入任务名称: " name || return 1
+	validate_config_name "$name" || { echo "任务名称无效"; return 1; }
+	[ ! -L "$CONFIG_FILE" ] || return 1
+	if [ -f "$CONFIG_FILE" ] && awk -F'|' -v name="$name" '$1 == name {found=1} END {exit !found}' "$CONFIG_FILE"; then
+		echo "任务名称已存在"; return 1
+	fi
+	read -r -e -p "请输入本地目录: " local_path || return 1
+	read -r -e -p "请输入远程目录: " remote_path || return 1
+	for path in "$local_path" "$remote_path"; do
+		[[ "$path" = /* && "$path" != *'|'* && "$path" != *$'\r'* ]] || { echo "请输入不含分隔符的绝对路径"; return 1; }
+	done
 
 	while true; do
 		read -e -p "请输入远程用户@IP: " remote || return 1
@@ -7915,14 +7959,18 @@ add_task() {
 		fi
 	done
 
-	kj_ssh_read_port "请输入 SSH 端口 (默认 22): " "22"
+	kj_ssh_read_port "请输入 SSH 端口 (默认 22): " "22" || return 1
 	port="$KJ_SSH_PORT"
 
+	[ ! -e "$KEY_DIR/${name}_sync.key" ] && [ ! -L "$KEY_DIR/${name}_sync.key" ] || return 1
+	[ ! -L "$KEY_DIR" ] || return 1
+	mkdir -p "$KEY_DIR" && chmod 700 "$KEY_DIR" || return 1
 	if ! kj_ssh_read_auth "$KEY_DIR/${name}_sync.key"; then
-		return
+		return 1
 	fi
 	auth_method="$KJ_SSH_AUTH_METHOD"
 	password_or_key="$KJ_SSH_AUTH_SECRET"
+	[[ "$password_or_key" != *'|'* && "$password_or_key" != *$'\n'* && "$password_or_key" != *$'\r'* ]] || return 1
 
 	echo "请选择同步模式:"
 	echo "1. 标准模式 (-avz)"
@@ -7934,9 +7982,10 @@ add_task() {
 		*) echo "无效选择，使用默认 -avz"; options="-avz" ;;
 	esac
 
-	echo "$name|$local_path|$remote|$remote_path|$port|$options|$auth_method|$password_or_key" >> "$CONFIG_FILE"
-
-	install rsync rsync
+	install rsync || return 1
+	[ "$auth_method" != password ] || install sshpass || return 1
+	(umask 077; printf '%s\n' "$name|$local_path|$remote|$remote_path|$port|$options|$auth_method|$password_or_key" >> "$CONFIG_FILE") || return 1
+	chmod 600 "$CONFIG_FILE" || return 1
 
 	echo "任务已保存!"
 }
@@ -7944,28 +7993,48 @@ add_task() {
 
 # 删除任务
 delete_task() {
+	local num task current next staged key_dir real_key
+	local name local_path remote remote_path port options auth_method password_or_key
 	send_stats "删除同步任务"
 	read -e -p "请输入要删除的任务编号: " num || return 1
 
-	local task=$(sed -n "${num}p" "$CONFIG_FILE")
-	if [[ -z "$task" ]]; then
+	if ! task=$(rsync_task_get "$num"); then
 		echo "错误：未找到对应的任务。"
-		return
+		return 1
+	fi
+	[ ! -L "$CONFIG_FILE" ] || return 1
+	current=$(rsync_cron_read) || return 1
+	next=$(printf '%s\n' "$current" | rsync_cron_filter reindex "$num") || return 1
+	staged=$(mktemp "${CONFIG_FILE}.XXXXXX") || return 1
+	if ! sed "${num}d" "$CONFIG_FILE" > "$staged" || ! printf '%s\n' "$next" | crontab -; then
+		rm -f -- "$staged"; return 1
+	fi
+	if ! mv -f -- "$staged" "$CONFIG_FILE"; then
+		printf '%s\n' "$current" | crontab - || echo "定时任务回滚失败，请手动检查" >&2
+		rm -f -- "$staged"; return 1
 	fi
 
 	IFS='|' read -r name local_path remote remote_path port options auth_method password_or_key <<< "$task"
 
 	# 如果任务使用的是密钥文件，则删除该密钥文件
-	if [[ "$auth_method" == "key" && "$password_or_key" == "$KEY_DIR"* ]]; then
-		rm -f "$password_or_key"
+	if [[ "$auth_method" == key && ! -L "$password_or_key" ]] && validate_config_name "$name"; then
+		real_key=$(realpath -m -- "$password_or_key") || return 1
+		for key_dir in "$HOME/.ssh/rsync_manager_keys" "$HOME/.ssh/ssh_manager_keys"; do
+			[ ! -L "$key_dir" ] || continue
+			if [ "$real_key" = "$(realpath -m -- "$key_dir")/${name}_sync.key" ] &&
+				! awk -F'|' -v key="$password_or_key" '$8 == key {found=1} END {exit !found}' "$CONFIG_FILE"; then
+				rm -f -- "$real_key" || return 1
+			fi
+		done
 	fi
 
-	sed -i "${num}d" "$CONFIG_FILE"
 	echo "任务已删除!"
 }
 
 
 run_task() {
+	local name local_path remote remote_path port options auth_method password_or_key source destination task rc
+	local -a rsync_options
 	send_stats "执行同步任务"
 
 	CONFIG_FILE="$HOME/.rsync_tasks"
@@ -7987,19 +8056,22 @@ run_task() {
 		read -e -p "请输入要执行的任务编号: " num || return 1
 	fi
 
-	local task=$(sed -n "${num}p" "$CONFIG_FILE")
-	if [[ -z "$task" ]]; then
+	if ! task=$(rsync_task_get "$num"); then
 		echo "错误: 未找到该任务!"
-		return
+		return 1
 	fi
 
 	IFS='|' read -r name local_path remote remote_path port options auth_method password_or_key <<< "$task"
+	validate_tcp_port "$port" || return 1
+	[ -n "$local_path" ] && [ -n "$remote_path" ] && [ -n "$remote" ] || return 1
+	case "$options" in '-avz'|'-avz --delete') ;; *) echo "同步选项无效"; return 1 ;; esac
+	read -r -a rsync_options <<< "$options"
 
 	# 根据同步方向调整源和目标路径
 	if [[ "$direction" == "pull" ]]; then
-		echo "正在拉取同步到本地: $remote:$local_path -> $remote_path"
-		source="$remote:$local_path"
-		destination="$remote_path"
+		echo "正在拉取同步到本地: $remote:$remote_path -> $local_path"
+		source="$remote:$remote_path"
+		destination="$local_path"
 	else
 		echo "正在推送同步到远端: $local_path -> $remote:$remote_path"
 		source="$local_path"
@@ -8015,25 +8087,29 @@ run_task() {
 			echo "安装方法："
 			echo "  - Ubuntu/Debian: apt install sshpass"
 			echo "  - CentOS/RHEL: yum install sshpass"
-			return
+			return 1
 		fi
-		sshpass -p "$password_or_key" rsync $options -e "ssh $ssh_options" "$source" "$destination"
-	else
+		SSHPASS="$password_or_key" sshpass -e rsync "${rsync_options[@]}" -e "ssh $ssh_options" -- "$source" "$destination"
+		rc=$?
+	elif [ "$auth_method" = key ]; then
 		# 检查密钥文件是否存在和权限是否正确
 		if [[ ! -f "$password_or_key" ]]; then
 			echo "错误：密钥文件不存在：$password_or_key"
-			return
+			return 1
 		fi
 
 		if [[ "$(stat -c %a "$password_or_key")" != "600" ]]; then
 			echo "警告：密钥文件权限不正确，正在修复..."
-			chmod 600 "$password_or_key"
+			chmod 600 "$password_or_key" || return 1
 		fi
 
-		rsync $options -e "ssh -i $password_or_key $ssh_options" "$source" "$destination"
+		rsync "${rsync_options[@]}" -e "ssh -i \"${password_or_key//\"/\"\"}\" $ssh_options" -- "$source" "$destination"
+		rc=$?
+	else
+		echo "身份验证方式无效"; return 1
 	fi
 
-	if [[ $? -eq 0 ]]; then
+	if [ "$rc" -eq 0 ]; then
 		echo "同步完成!"
 	else
 		echo "同步失败! 请检查以下内容："
@@ -8042,17 +8118,19 @@ run_task() {
 		echo "3. 认证信息是否正确"
 		echo "4. 本地和远程目录是否有正确的访问权限"
 	fi
+	return "$rc"
 }
 
 
 # 创建定时任务
 schedule_task() {
+	local num interval random_minute cron_time cron_job current
 	send_stats "添加同步定时任务"
 
 	read -e -p "请输入要定时同步的任务编号: " num || return 1
-	if ! [[ "$num" =~ ^[0-9]+$ ]]; then
+	if ! rsync_task_get "$num" >/dev/null; then
 		echo "错误: 请输入有效的任务编号！"
-		return
+		return 1
 	fi
 
 	echo "请选择定时执行间隔："
@@ -8070,17 +8148,17 @@ schedule_task() {
 		*) echo "错误: 请输入有效的选项！" ; return ;;
 	esac
 
-	local cron_job="$cron_time k rsync_run $num"
-	local cron_job="$cron_time k rsync_run $num"
+	cron_job="$cron_time /usr/local/bin/d rsync_run $num"
+	current=$(rsync_cron_read) || return 1
 
 	# 检查是否已存在相同任务
-	if crontab -l | grep -q "k rsync_run $num"; then
+	if printf '%s\n' "$current" | rsync_cron_filter query "$num"; then
 		echo "错误: 该任务的定时同步已存在！"
-		return
+		return 1
 	fi
 
 	# 创建到用户的 crontab
-	(crontab -l 2>/dev/null; echo "$cron_job") | crontab -
+	printf '%s\n' "$current" "$cron_job" | crontab - || return 1
 	echo "定时任务已创建: $cron_job"
 }
 
@@ -8088,20 +8166,25 @@ schedule_task() {
 view_tasks() {
 	echo "当前的定时任务:"
 	echo "---------------------------------"
-	crontab -l | grep "k rsync_run"
+	local current
+	current=$(rsync_cron_read) || return 1
+	printf '%s\n' "$current" | rsync_cron_filter list
 	echo "---------------------------------"
 }
 
 # 删除定时任务
 delete_task_schedule() {
+	local num current next
 	send_stats "删除同步定时任务"
 	read -e -p "请输入要删除的任务编号: " num || return 1
-	if ! [[ "$num" =~ ^[0-9]+$ ]]; then
+	if ! [[ "$num" =~ ^[1-9][0-9]*$ ]]; then
 		echo "错误: 请输入有效的任务编号！"
-		return
+		return 1
 	fi
 
-	crontab -l | grep -v "k rsync_run $num" | crontab -
+	current=$(rsync_cron_read) || return 1
+	next=$(printf '%s\n' "$current" | rsync_cron_filter delete "$num") || return 1
+	printf '%s\n' "$next" | crontab - || return 1
 	echo "已删除任务编号 $num 的定时任务"
 }
 
