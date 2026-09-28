@@ -266,18 +266,16 @@ echo "LANG=en_US.UTF-8" > /etc/default/locale
 ### 5.1 设置脚本启动快捷键
 
 ```bash
-find /usr/local/bin/ -type l -exec bash -c 'test "$(readlink -f {})" = "/usr/local/bin/d" && rm -f {}' \;
-ln -sf /usr/local/bin/d /usr/local/bin/自定义快捷键
-ln -sf /usr/local/bin/d /usr/bin/自定义快捷键
+daimon_set_shortcut 自定义快捷键
 ```
-解释：清理旧快捷链接并创建新的快捷命令。
+解释：先在两个目录原子创建新链接，失败恢复原链接；成功后仅删除指向工具箱的旧别名，保留 `d` 和其他命令。
 
 ### 5.2 更换系统软件包镜像源
 
 ```bash
-bash <(curl -sSL https://linuxmirrors.cn/main.sh)
+daimon_run_cached_script https://linuxmirrors.cn/main.sh linuxmirrors-main.sh
 ```
-解释：运行 linuxmirrors 脚本更换系统软件源。
+解释：下载、缓存并通过 `bash -n` 后执行 LinuxMirrors；下载、权限或语法校验失败时不执行部分脚本。
 
 ### 5.3 优化 DNS 地址
 

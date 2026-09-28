@@ -277,7 +277,7 @@ daimon_download() {
 	if [ -s "$target" ]; then
 		echo -e "${gl_lv}使用本地缓存: $target${gl_bai}"
 		chmod +x "$target" >/dev/null 2>&1
-		return 0
+		return $?
 	fi
 	echo -e "${gl_kjlan}下载到: $target${gl_bai}"
 	daimon_download_to "$url" "$target" || return 1
@@ -316,6 +316,7 @@ daimon_run_cached_script() {
 	local name="$2"
 	shift 2
 	daimon_download "$url" "$name" || return 1
+	bash -n "$DAIMON_SCRIPT_DIR/$name" || { echo "脚本语法校验失败，未执行。"; return 1; }
 	if [ -n "${DAIMON_SCRIPT_TIMEOUT:-}" ]; then
 		timeout "$DAIMON_SCRIPT_TIMEOUT" bash "$DAIMON_SCRIPT_DIR/$name" "$@"
 	else
@@ -329,6 +330,7 @@ daimon_exec_cached_script() {
 	local name="$2"
 	shift 2
 	daimon_download "$url" "$name" || exit 1
+	bash -n "$DAIMON_SCRIPT_DIR/$name" || { echo "脚本语法校验失败，未执行。"; return 1; }
 	clear
 	echo -e "${gl_kjlan}已退出 daimon，正在运行: bash $DAIMON_SCRIPT_DIR/$name $*${gl_bai}"
 	exec bash "$DAIMON_SCRIPT_DIR/$name" "$@"
@@ -11007,6 +11009,46 @@ daimon_shortcut_available() {
 	done
 }
 
+daimon_set_shortcut() (
+	local name="$1" path staged="" i committed=0
+	local -a paths=() previous=() changed=() obsolete=()
+	daimon_shortcut_available "$name" || return 1
+	[ -f /usr/local/bin/d ] && [ ! -L /usr/local/bin/d ] || return 1
+	for path in "/usr/local/bin/$name" "/usr/bin/$name"; do
+		[ "$path" != /usr/local/bin/d ] || continue
+		paths+=("$path")
+		previous+=("$(readlink -- "$path" 2>/dev/null || true)")
+	done
+	trap '
+		if [ "$committed" = 0 ]; then
+			for i in "${changed[@]}"; do
+				if [ -n "${previous[i]}" ]; then
+					ln -sfnT -- "${previous[i]}" "${paths[i]}" || echo "快捷键恢复失败: ${paths[i]}" >&2
+				else
+					rm -f -- "${paths[i]}"
+				fi
+			done
+		fi
+		[ -z "$staged" ] || { rm -f -- "$staged/link"; rmdir -- "$staged"; }
+	' EXIT
+	trap 'exit 1' INT TERM HUP
+	for i in "${!paths[@]}"; do
+		path=${paths[i]}
+		staged=$(mktemp -d "${path}.XXXXXX") || return 1
+		ln -s /usr/local/bin/d "$staged/link" || return 1
+		changed+=("$i")
+		mv -Tf -- "$staged/link" "$path" || return 1
+		rmdir -- "$staged" || return 1
+		staged=""
+	done
+	committed=1
+	while IFS= read -r -d '' path; do
+		case "$path" in /usr/local/bin/d|/usr/bin/d|"/usr/local/bin/$name"|"/usr/bin/$name") continue ;; esac
+		[ "$(readlink -f -- "$path")" != /usr/local/bin/d ] || obsolete+=("$path")
+	done < <(find /usr/local/bin /usr/bin -maxdepth 1 -type l -print0)
+	[ "${#obsolete[@]}" = 0 ] || rm -f -- "${obsolete[@]}" || { echo "新快捷键已创建，但部分旧快捷键未能删除。"; return 1; }
+)
+
 daimon_regular_user_valid() {
 	local uid
 	[[ "$1" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || return 1
@@ -11047,11 +11089,7 @@ linux_Settings() {
 						break_end; continue
 					fi
 					root_use
-					find /usr/local/bin/ -maxdepth 1 -type l -exec bash -c 'for link do [ "$(readlink -f -- "$link")" = /usr/local/bin/d ] && rm -f -- "$link"; done' bash {} + 2>/dev/null || true
-					if [ "$kuaijiejian" != d ] && ! ln -sf /usr/local/bin/d "/usr/local/bin/$kuaijiejian"; then
-						echo "快捷键创建失败"; break_end; continue
-					fi
-					if ! ln -sf /usr/local/bin/d "/usr/bin/$kuaijiejian"; then
+					if ! daimon_set_shortcut "$kuaijiejian"; then
 						echo "快捷键创建失败"; break_end; continue
 					fi
 					echo "快捷键已设置: $kuaijiejian"
@@ -11065,8 +11103,8 @@ linux_Settings() {
 				send_stats "更换系统软件包镜像源"
 				clear
 				echo "更换系统软件包镜像源"
-				echo "将执行：bash <(curl -sSL https://linuxmirrors.cn/main.sh)"
-				bash <(curl -sSL https://linuxmirrors.cn/main.sh)
+				echo "下载并校验后执行 LinuxMirrors 脚本；下载失败时不会执行部分内容。"
+				daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh"
 				;;
 			3) set_dns_ui ;;
 			4)

@@ -27,6 +27,9 @@ class SystemTools(unittest.TestCase):
         self.etc.mkdir()
         self.home = self.work / 'home'
         self.home.mkdir()
+        for name in ['local-bin', 'system-bin']:
+            (self.work / name).mkdir()
+        (self.work / 'local-bin/d').write_bytes(b'#!/bin/sh\necho fixture\n')
         (self.etc / 'gai.conf').write_text('# owned policy\nlabel 2002::/16 2\nprecedence ::/0 40\nprecedence ::ffff:0:0/96 100\n', encoding='utf-8', newline='')
         (self.etc / 'hosts').write_text('127.0.0.1 localhost local-alias\n127.0.1.1 old-host kept-alias\n192.0.2.1 a.example other-alias\n192.0.2.2 unrelated\n', encoding='utf-8', newline='')
         (self.etc / 'hostname').write_text('old-host\n', encoding='utf-8', newline='')
@@ -46,6 +49,8 @@ class SystemTools(unittest.TestCase):
         body = body.replace('/etc/gai.conf', str(self.etc / 'gai.conf').replace('\\', '/'))
         body = body.replace('/etc/hosts', str(self.etc / 'hosts').replace('\\', '/'))
         body = body.replace('/etc/hostname', str(self.etc / 'hostname').replace('\\', '/'))
+        body = body.replace('/usr/local/bin', (self.work / 'local-bin').as_posix())
+        body = body.replace('/usr/bin', (self.work / 'system-bin').as_posix())
         body += '''
 clear() { :; }; root_use() { :; }; send_stats() { :; }; break_end() { :; }
 install() { echo unexpected-install; return 99; }
@@ -237,6 +242,75 @@ hostname() { printf '%s\\n' "$1" > "$WORK/runtime"; [ "$1" != new-host ] || kill
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertNotIn('OK  HTTP:', result.stdout)
         self.assertIn('FAIL  HTTP:', result.stdout)
+
+    def test_shortcut_failure_preserves_existing_aliases(self):
+        names = ['linux_Settings', 'daimon_shortcut_available']
+        if 'daimon_set_shortcut()' in SOURCE:
+            names.append('daimon_set_shortcut')
+        result = self.shell(names, 'linux_Settings', '1\naudit-shortcut\n0\n0\n', setup='''
+daimon_shortcut_available() { return 0; }
+find() { echo REMOVED_OLD_ALIASES; }
+ln() { return 1; }
+''')
+        self.assertNotIn('REMOVED_OLD_ALIASES', result.stdout)
+        self.assertNotIn('快捷键已设置:', result.stdout)
+
+    def test_mirror_menu_does_not_execute_failed_partial_download(self):
+        result = self.shell(['linux_Settings', 'daimon_run_cached_script'], 'linux_Settings', '2\n0\n', setup='''
+curl() { echo 'touch "$WORK/partial-executed"'; return 18; }
+daimon_download() { return 1; }
+''')
+        self.assertFalse((self.work / 'partial-executed').exists(), result.stdout)
+
+    def test_cached_script_syntax_is_checked_before_execution(self):
+        (self.work / 'broken.sh').write_bytes(b'touch "$WORK/partial-executed"\nif then\n')
+        result = self.shell(['daimon_run_cached_script'], 'daimon_run_cached_script https://example.invalid broken.sh',
+                            setup='DAIMON_SCRIPT_DIR="$WORK"; daimon_download() { return 0; }')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.work / 'partial-executed').exists())
+
+    def test_cached_exec_script_syntax_is_checked_before_execution(self):
+        (self.work / 'broken.sh').write_bytes(b'touch "$WORK/partial-executed"\nif then\n')
+        result = self.shell(['daimon_exec_cached_script'], 'daimon_exec_cached_script https://example.invalid broken.sh',
+                            setup='DAIMON_SCRIPT_DIR="$WORK"; daimon_download() { return 0; }')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse((self.work / 'partial-executed').exists())
+
+    def test_cached_script_permission_failure_is_not_success(self):
+        (self.work / 'cached.sh').write_bytes(b'echo fixture\n')
+        result = self.shell(['daimon_download'], 'daimon_download https://example.invalid cached.sh',
+                            setup='DAIMON_SCRIPT_DIR="$WORK"; chmod() { return 1; }')
+        self.assertNotEqual(result.returncode, 0)
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX shortcut fixture')
+    def test_shortcut_success_cleans_only_owned_aliases_and_keeps_d(self):
+        target = self.work / 'local-bin/d'
+        for directory in ['local-bin', 'system-bin']:
+            (self.work / directory / 'old').symlink_to(target)
+            (self.work / directory / 'unrelated').symlink_to('/bin/true')
+        result = self.shell(['daimon_shortcut_available', 'daimon_set_shortcut'], 'daimon_set_shortcut audit')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(target.is_file())
+        for directory in ['local-bin', 'system-bin']:
+            self.assertEqual((self.work / directory / 'audit').resolve(), target)
+            self.assertFalse((self.work / directory / 'old').is_symlink())
+            self.assertEqual(os.readlink(self.work / directory / 'unrelated'), '/bin/true')
+
+    @unittest.skipIf(os.name == 'nt', 'POSIX shortcut fixture')
+    def test_shortcut_second_install_failure_restores_first_alias(self):
+        target = self.work / 'local-bin/d'
+        for directory in ['local-bin', 'system-bin']:
+            (self.work / directory / 'old').symlink_to(target)
+        (self.work / 'local-bin/audit').symlink_to(target.parent / 'old')
+        result = self.shell(['daimon_shortcut_available', 'daimon_set_shortcut'], 'daimon_set_shortcut audit', setup='''
+mv() { case "${@: -1}" in "$WORK/system-bin/audit") return 1 ;; esac; command mv "$@"; }
+''')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(os.readlink(self.work / 'local-bin/audit'), str(target.parent / 'old'))
+        self.assertFalse((self.work / 'system-bin/audit').is_symlink())
+        for directory in ['local-bin', 'system-bin']:
+            self.assertTrue((self.work / directory / 'old').is_symlink())
+            self.assertFalse(list((self.work / directory).glob('audit.*')))
 
 
 if __name__ == '__main__':
