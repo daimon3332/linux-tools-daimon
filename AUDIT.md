@@ -796,7 +796,7 @@ APT 测试使用 Docker 官方 Ubuntu 22.04 ARM64/x86_64、Debian 13 slim x86_64
 
 两 VM 在 `4de03a3` 各通过 22 项运行时检查：完整主菜单 `5 → 16/17`、真实 sysctl、地址/路由删除、重复、新接口默认值、immutable/symlink/目录/外来配置拒绝、真实锁、只读 `all` 控制文件和 TERM 故障、真实 IPv6 SSH 中禁用拒绝与开启成功。Debian 初次测试的临时 sshd 因禁用 PAM 拒绝锁定的 root 公钥登录，修正夹具为原生 PAM 后重新通过；没有把该次失败记为通过。Ubuntu 原只读 `default` 夹具不足以制造故障：procps 忽略 EROFS，且 `all` 已改变其值；改用只读 `all` 后实际验证不一致和恢复。
 
-**Debian 13 的真实重启检查失败**：配置仍为禁用，`all/default/lo=1`，但 `ens3=0`。该 VM 的活动 systemd-networkd 使用 cloud-init Netplan 的 `dhcp6: true` 和 `LinkLocalAddressing=ipv6`。因此当前 sysctl 开关不能保证网络管理器重配置或重启后仍禁用。已请求用户确认是否扩展为适配网络管理器的 IPv6 配置；未擅自改写 IPv4、Netplan 或宿主网络。Ubuntu 重启检查仍在进行，不能宣称持久性已通过。
+**两个 VM 的真实重启检查均失败**：配置仍为禁用，`all/default/lo=1`，但 Debian 的 `ens3=0`、Ubuntu 的 `enp0s1=0`。该 VM 的活动 systemd-networkd 使用 cloud-init Netplan 的 `dhcp6: true` 和 `LinkLocalAddressing=ipv6`。因此当前 sysctl 开关不能保证网络管理器重配置或重启后仍禁用。已请求用户确认是否扩展为适配网络管理器的 IPv6 配置；未擅自改写 IPv4、Netplan 或宿主网络。两个发行版均不能宣称持久性通过；已停止该项验收，先恢复测试前配置和开关。
 
 运行时证据：`.tmp/audit-20260928/4de03a3-vm-debian-ipv6-real-r2.jsonl`、`4de03a3-vm-ubuntu-ipv6-real.jsonl`；失败与诊断另有版本化 persistence/boot-diagnose JSON。内核 [5.15](https://www.kernel.org/doc/html/v5.15/networking/ip-sysctl.html) 与 [6.12](https://www.kernel.org/doc/html/v6.12/networking/ip-sysctl.html) 文档均说明禁用会删除接口地址和路由，读取 `conf/all` 不能代替逐接口状态。当前不承诺网络状态事务性恢复。
 
@@ -806,6 +806,8 @@ APT 测试使用 Docker 官方 Ubuntu 22.04 ARM64/x86_64、Debian 13 slim x86_64
 
 `cac885b` 六台通过内置更新器部署，归一化 SHA256 为 `2a66b8660d435e75b70b824194f5f7b91ec61d4efa9e5dc9bcd9e8a996685e14`。在每台私有 `/usr/bin` OverlayFS、私有 `/usr/local/bin`、root 和 crontab spool 中，真实主菜单 `5 → 20` 各完成 11 项检查：原生 uid 65534 拒绝、取消/EOF/非法输入、卸载/重复、外来命令/文件/目录保护、immutable 删除失败及解除后重试。使用真实 crontab、unlink 和符号链接，逐次确认全部定时任务、备份/证书辅助脚本及无关命令保留。**未卸载任何生产工具箱或业务服务。** 多文件删除不是原子事务，失败时保留未删除项并允许重试。
 
-六台各通过通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 29、locale 10、journal 13、IPv6 15、卸载 10 个隔离回归。真实卸载证据为 `cac885b-uninstall-all-r2.jsonl`，各宿主前后状态无变化。两个 VM 因仍在 IPv6 完整菜单/重启测试而暂留 `4de03a3`，不把它们称作已验证最新卸载版。全项目逐选项审计仍未完成。
+六台各通过通用 79、安装 19、Rsync 13、磁盘 8、Docker 路径 28、一键配置 17、系统工具 40、Swap 17、用户 29、locale 10、journal 13、IPv6 15、卸载 10 个隔离回归。真实卸载证据为 `cac885b-uninstall-all-r2.jsonl`，各宿主前后状态无变化。两 VM 的 IPv6 测试证据属于 `4de03a3`；持久性失败后均通过菜单恢复原配置和开关，再通过内置更新器升级至 `cac885b` 并核对 hash，不据此把旧测试归为新版验收。全项目逐选项审计仍未完成。
 
 当前清单 974 行，116 行登记了有限真实证据（含 IPv6 重启失败），858 行仍为 not-run；不能把行数当完整通过的功能数。静态菜单审计仍为 669 patterns / 83 case blocks / 9 内嵌 Bash。
+
+本轮结束检查：六台宿主状态比较无变化、脚本 hash 匹配，无测试进程或 loop 残留。两个原有 VM 均已恢复配置、升级工具箱并通过 guest systemctl poweroff 关机，已核对 QEMU 退出。Ubuntu 关机曾等待原有 shutdown pivot root 任务超时并输出 guest udev/loop 警告，不将其描述为无系统告警。VM 自有目录保留供剩余测试复用，尚未删除；没有创建额外 VM。
