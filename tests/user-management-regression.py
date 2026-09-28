@@ -153,6 +153,12 @@ runuser() {
         expected=subprocess.check_output([BASH,'-c','cd "$1" && pwd','bash',(self.work/'srv/alice').as_posix()],text=True).strip()
         self.assertEqual((self.work/'import-home').read_text().strip(),expected)
 
+    @unittest.skipIf(os.name=='nt','real flock requires Linux')
+    def test_creation_can_grant_sudo_under_its_lock(self):
+        result=self.shell('create_user_with_sshkey alice true','\n')
+        self.assertEqual(result.returncode,0,result.stdout.decode()+result.stderr.decode())
+        self.assertTrue((self.work/'etc/sudoers.d/alice').is_file())
+
     def test_sudo_install_failure_does_not_grant(self):
         result=self.shell('create_user_with_sshkey alice true','\n','install')
         self.assertNotEqual(result.returncode,0)

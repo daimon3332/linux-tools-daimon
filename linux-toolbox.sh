@@ -10630,7 +10630,8 @@ create_user_with_sshkey() (
 	[[ "$new_username" =~ ^[a-z_][a-z0-9_-]{0,31}$ ]] || { echo "用户名格式无效"; return 1; }
 	[[ "$is_sudo" = true || "$is_sudo" = false ]] || return 1
 	mkdir -p "${DAIMON_ROOT_DIR:-/root/linux-daimon}" || return 1
-	exec {user_lock}>"${DAIMON_ROOT_DIR:-/root/linux-daimon}/.users.lock" || return 1
+	[ ! -L "${DAIMON_ROOT_DIR:-/root/linux-daimon}/.user-create.lock" ] || return 1
+	exec {user_lock}>"${DAIMON_ROOT_DIR:-/root/linux-daimon}/.user-create.lock" || return 1
 	flock -n "$user_lock" || { echo "其他用户管理任务正在运行。"; return 1; }
 	if id "$new_username" >/dev/null 2>&1; then
 		daimon_regular_user_valid "$new_username" || { echo "不能修改系统账号。"; return 1; }
