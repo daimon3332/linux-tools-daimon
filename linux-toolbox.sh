@@ -20132,9 +20132,7 @@ crontab_sync_install_one() {
 
 crontab_sync_remove_one() {
 	local script_file="$1"
-	root_use
-	rm -f "$script_file"
-	crontab -l 2>/dev/null | grep -vF "$script_file" | crontab - 2>/dev/null || true
+	server_retire_remove_script "$script_file" || return 1
 	echo -e "${gl_lv}已卸载: $(basename "$script_file")${gl_bai}"
 }
 
