@@ -813,128 +813,114 @@ check_port() {
 }
 
 
-docker_daemon_json_merge() {
-	local filter="$1" file="/etc/docker/daemon.json" tmp
+docker_daemon_json_merge() (
+	local filter="$1" file="/etc/docker/daemon.json" work="" original="" state="" written=0 done=0 fingerprint=""
 	shift
+	[ "$(id -u)" -eq 0 ] || return 1
 	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	command -v dockerd >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || return 1
+	[ ! -L /etc/docker ] && [ "$(realpath -m /etc/docker)" = /etc/docker ] || return 1
 	mkdir -p /etc/docker || return 1
-	tmp=$(mktemp /etc/docker/.daemon.json.XXXXXX) || return 1
-	if [ -s "$file" ]; then
-		if ! jq -e 'type == "object"' "$file" >/dev/null 2>&1; then
-			echo "现有 /etc/docker/daemon.json 不是有效的 JSON 对象，未修改。"
-			rm -f -- "$tmp"
-			return 1
-		fi
-		if ! jq "$@" "$filter" "$file" > "$tmp"; then
-			echo "合并 /etc/docker/daemon.json 失败，原文件未修改。"
-			rm -f -- "$tmp"
-			return 1
-		fi
-	else
-		if ! jq -n "$@" "$filter" > "$tmp"; then
-			echo "生成 /etc/docker/daemon.json 失败，原文件未修改。"
-			rm -f -- "$tmp"
-			return 1
-		fi
+	[ "$(stat -c %u /etc/docker)" = 0 ] && (( (8#$(stat -c %a /etc/docker) & 8#022) == 0 )) || return 1
+	[ ! -L /run/lock/daimon-docker-config.lock ] || return 1
+	exec 9>/run/lock/daimon-docker-config.lock || return 1
+	flock -n 9 || { echo "Docker 配置正在修改，请稍后重试。"; return 1; }
+	if [ -e "$file" ] || [ -L "$file" ]; then
+		[ -f "$file" ] && [ ! -L "$file" ] && [ "$(stat -c %u:%h "$file")" = 0:1 ] || return 1
+		(( (8#$(stat -c %a "$file") & 8#022) == 0 )) || return 1
+		[ "$filter" = __edit__ ] || jq -e 'type == "object"' "$file" >/dev/null 2>&1 || { echo "现有 Docker 配置无效，未修改。"; return 1; }
+		original=$(sha256sum "$file") || return 1
 	fi
-	chmod 644 "$tmp" && mv -f -- "$tmp" "$file"
-}
+	state=$(systemctl show -p ActiveState --value docker) || return 1
+	case "$state" in active|inactive|failed) ;; *) echo "Docker 服务状态不稳定，未修改。"; return 1 ;; esac
+	work=$(mktemp -d /etc/docker/.daimon-config.XXXXXX) || return 1
+	docker_config_finish() {
+		local rc=$?
+		trap - EXIT INT TERM HUP
+		if [ "$written" = 1 ] && [ "$done" = 0 ]; then
+			if [ "$(sha256sum "$file" 2>/dev/null)" = "$fingerprint" ]; then
+				if [ -n "$original" ]; then
+					mv -f -- "$work/original" "$file" || rc=1
+				else
+					rm -f -- "$file" || rc=1
+				fi
+				if [ "$state" = active ]; then
+					systemctl restart docker && systemctl is-active --quiet docker || { echo "Docker 原配置已恢复，但服务恢复失败，请检查。" >&2; rc=1; }
+				fi
+			else
+				echo "Docker 配置已被其他进程修改，未覆盖；请人工检查。" >&2
+				rc=1
+			fi
+		fi
+		rm -f -- "$work/original" "$work/next" || rc=1
+		rmdir -- "$work" || rc=1
+		exit "$rc"
+	}
+	trap docker_config_finish EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	trap 'exit 129' HUP
+	if [ -n "$original" ]; then
+		cp -p -- "$file" "$work/original" || return 1
+	fi
+	if [ "$filter" = __edit__ ]; then
+		command -v vim >/dev/null 2>&1 || install vim >/dev/null || return 1
+		if [ -n "$original" ]; then cp -p -- "$file" "$work/next"; else printf '{}\n' > "$work/next"; fi || return 1
+		vim "$work/next" || return 1
+	elif [ -n "$original" ]; then
+		jq "$@" "$filter" "$file" > "$work/next" || return 1
+	else
+		jq -n "$@" "$filter" > "$work/next" || return 1
+	fi
+	[ -f "$work/next" ] && [ ! -L "$work/next" ] || return 1
+	if [ -n "$original" ]; then
+		chmod --reference="$work/original" "$work/next" && chown --reference="$work/original" "$work/next" || return 1
+	else
+		chmod 600 "$work/next" || return 1
+	fi
+	jq -e 'type == "object"' "$work/next" >/dev/null 2>&1 || { echo "Docker 配置不是有效 JSON 对象，未修改。"; return 1; }
+	dockerd --validate --config-file "$work/next" >/dev/null 2>&1 || { echo "Docker 配置验证失败，未修改。"; return 1; }
+	if [ -n "$original" ] && [ "$(jq -cS . "$work/original" 2>/dev/null)" = "$(jq -cS . "$work/next")" ]; then
+		echo "Docker 配置未变化。"; return 0
+	fi
+	[ "$(sha256sum "$file" 2>/dev/null)" = "$original" ] && [ ! -L "$file" ] || { echo "Docker 配置已变化，已取消。"; return 1; }
+	fingerprint="$(sha256sum "$work/next" | cut -d' ' -f1)  $file"
+	written=1
+	mv -f -- "$work/next" "$file" || { written=0; return 1; }
+	if [ "$state" = active ]; then
+		systemctl restart docker && systemctl is-active --quiet docker || return 1
+	fi
+	done=1
+	echo "Docker 配置已验证并更新；未启动原先停止的服务。"
+)
 
 install_add_docker_cn() {
-	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
-		docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors \
-			'["https://hub.333186.xyz","https://docker.m.daocloud.io","https://docker.1ms.run","https://docker.registry.cyou"]' || return 1
-		enable docker
-		restart docker
-		return
-	fi
-	mkdir -p /etc/docker
-	cat > /etc/docker/daemon.json << EOF
-{
-  "registry-mirrors": [
-    "https://hub.333186.xyz",
-    "https://docker.m.daocloud.io",
-    "https://docker.1ms.run",
-    "https://docker.registry.cyou"
-  ]
-}
-EOF
-	enable docker
-	start docker
-	restart docker
+	docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors \
+		'["https://hub.333186.xyz","https://docker.m.daocloud.io","https://docker.1ms.run","https://docker.registry.cyou"]'
 }
 
 docker_mirror_menu() {
-	install vim
-	mkdir -p /etc/docker
-	local mirrors=(
-		"https://hub.333186.xyz"
-		"https://docker.m.daocloud.io"
-		"https://docker.1ms.run"
-		"https://docker.registry.cyou"
-	)
-	local mirror_names=(
-		"hub.333186.xyz"
-		"docker.m.daocloud.io"
-		"docker.1ms.run"
-		"docker.registry.cyou"
-	)
+	local selected idx mirrors_json
+	local mirrors=("https://hub.333186.xyz" "https://docker.m.daocloud.io" "https://docker.1ms.run" "https://docker.registry.cyou")
+	local selected_mirrors=()
 	clear
 	echo "Docker 镜像源多选"
 	echo "------------------------"
-	for i in "${!mirrors[@]}"; do
-		printf "%2d. %-24s %s\n" "$((i+1))" "${mirror_names[$i]}" "${mirrors[$i]}"
-	done
-	echo "------------------------"
-	echo "输入编号，使用空格分隔；直接回车使用默认源：1 2 3 4"
-	echo "输入 0 返回上一级菜单"
+	for idx in "${!mirrors[@]}"; do printf '%2d. %s\n' "$((idx+1))" "${mirrors[$idx]}"; done
+	echo "直接回车使用默认源 1 2 3 4；输入 0 返回上一级菜单"
 	read -e -p "请选择: " selected || return 1
-	[ "$selected" = "0" ] && return 90
+	[ "$selected" = 0 ] && return 90
 	selected=${selected:-"1 2 3 4"}
-	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
-		local -a selected_mirrors=()
-		local idx mirror mirrors_json before after
-		command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
-		for idx in $selected; do
-			if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt ${#mirrors[@]} ]; then
-				echo -e "${gl_huang}跳过无效编号: $idx${gl_bai}" >&2
-				continue
-			fi
-			mirror="${mirrors[$((idx-1))]}"
-			[ -n "$mirror" ] && selected_mirrors+=("$mirror")
-		done
-		[ "${#selected_mirrors[@]}" -gt 0 ] || { echo "未选择有效镜像源，未修改。"; return 1; }
-		mirrors_json=$(printf '%s\n' "${selected_mirrors[@]}" | jq -R . | jq -s -c .) || return 1
-		before=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
-		docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors "$mirrors_json" || return 1
-		after=$(sha256sum /etc/docker/daemon.json 2>/dev/null | awk '{print $1}')
-		cat /etc/docker/daemon.json
-		[ -n "$before" ] && [ "$before" = "$after" ] && { echo "镜像源未变化，无需重启 Docker。"; return 0; }
-		restart docker
-		return
-	fi
-	{
-		echo '{'
-		echo '  "registry-mirrors": ['
-		local first=1
-		for idx in $selected; do
-			if ! [[ "$idx" =~ ^[0-9]+$ ]] || [ "$idx" -lt 1 ] || [ "$idx" -gt ${#mirrors[@]} ]; then
-				echo -e "${gl_huang}跳过无效编号: $idx${gl_bai}" >&2
-				continue
-			fi
-			local mirror="${mirrors[$((idx-1))]}"
-			[ -z "$mirror" ] && continue
-			if [ "$first" -eq 0 ]; then echo ','; fi
-			printf '    "%s"' "$mirror"
-			first=0
-		done
-		echo
-		echo '  ]'
-		echo '}'
-	} > /etc/docker/daemon.json
-	cat /etc/docker/daemon.json
-	restart docker
+	for idx in $selected; do
+		[[ "$idx" =~ ^[1-4]$ ]] || { echo "无效编号，未修改: $idx"; return 1; }
+		[[ " ${selected_mirrors[*]} " = *" ${mirrors[$((idx-1))]} "* ]] || selected_mirrors+=("${mirrors[$((idx-1))]}")
+	done
+	[ "${#selected_mirrors[@]}" -gt 0 ] || return 1
+	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	mirrors_json=$(printf '%s\n' "${selected_mirrors[@]}" | jq -R . | jq -s -c .) || return 1
+	docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors "$mirrors_json"
 }
+
 
 docker_mirror_default_urls() {
 	printf '%s\n' \
@@ -1182,7 +1168,7 @@ else
 	  --ignore-backup-tips || return 1
 fi
 
-install_add_docker_cn
+if [ "$country" = CN ]; then install_add_docker_cn || return 1; fi
 
 }
 
@@ -1194,7 +1180,7 @@ install_add_docker() {
 		linuxmirrors_install_docker || return 1
 	else
 		install docker docker-compose
-		install_add_docker_cn
+		if [ "$(daimon_country)" = CN ]; then install_add_docker_cn || return 1; fi
 
 	fi
 	sleep 2
@@ -1502,106 +1488,12 @@ install_crontab() {
 
 
 docker_ipv6_on() {
-	root_use
-	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
-		command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
-		local CONFIG_FILE="/etc/docker/daemon.json" before after
-		before=$(sha256sum "$CONFIG_FILE" 2>/dev/null | awk '{print $1}')
-		docker_daemon_json_merge '. + {ipv6: $enabled, "fixed-cidr-v6": $cidr}' \
-			--argjson enabled true --arg cidr "2001:db8:1::/64" || return 1
-		after=$(sha256sum "$CONFIG_FILE" 2>/dev/null | awk '{print $1}')
-		cat "$CONFIG_FILE"
-		if [ -n "$before" ] && [ "$before" = "$after" ]; then
-			echo -e "${gl_huang}当前已开启ipv6访问${gl_bai}"
-		else
-			restart docker
-		fi
-		return
-	fi
-	install jq
-
-	local CONFIG_FILE="/etc/docker/daemon.json"
-	local REQUIRED_IPV6_CONFIG='{"ipv6": true, "fixed-cidr-v6": "2001:db8:1::/64"}'
-
-	# 检查配置文件是否存在，如果不存在则创建文件并写入默认设置
-	if [ ! -f "$CONFIG_FILE" ]; then
-		echo "$REQUIRED_IPV6_CONFIG" | jq . > "$CONFIG_FILE"
-		restart docker
-	else
-		# 使用jq处理配置文件的更新
-		local ORIGINAL_CONFIG=$(<"$CONFIG_FILE")
-
-		# 检查当前配置是否已经有 ipv6 设置
-		local CURRENT_IPV6=$(echo "$ORIGINAL_CONFIG" | jq '.ipv6 // false')
-
-		# 更新配置，开启 IPv6
-		if [[ "$CURRENT_IPV6" == "false" ]]; then
-			UPDATED_CONFIG=$(echo "$ORIGINAL_CONFIG" | jq '. + {ipv6: true, "fixed-cidr-v6": "2001:db8:1::/64"}')
-		else
-			UPDATED_CONFIG=$(echo "$ORIGINAL_CONFIG" | jq '. + {"fixed-cidr-v6": "2001:db8:1::/64"}')
-		fi
-
-		# 对比原始配置与新配置
-		if [[ "$ORIGINAL_CONFIG" == "$UPDATED_CONFIG" ]]; then
-			echo -e "${gl_huang}当前已开启ipv6访问${gl_bai}"
-		else
-			echo "$UPDATED_CONFIG" | jq . > "$CONFIG_FILE"
-			restart docker
-		fi
-	fi
+	docker_daemon_json_merge '.ipv6 = true | .["fixed-cidr-v6"] //= "fd42:da10:6::/64"'
 }
-
 
 docker_ipv6_off() {
-	root_use
-	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
-		command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
-		local CONFIG_FILE="/etc/docker/daemon.json" before after
-		if [ ! -s "$CONFIG_FILE" ]; then
-			echo -e "${gl_hong}配置文件不存在${gl_bai}"
-			return
-		fi
-		before=$(sha256sum "$CONFIG_FILE" | awk '{print $1}')
-		docker_daemon_json_merge 'del(.["fixed-cidr-v6"]) | .ipv6 = false' || return 1
-		after=$(sha256sum "$CONFIG_FILE" | awk '{print $1}')
-		cat "$CONFIG_FILE"
-		if [ "$before" = "$after" ]; then
-			echo -e "${gl_huang}当前已关闭ipv6访问${gl_bai}"
-		else
-			restart docker
-			echo -e "${gl_huang}已成功关闭ipv6访问${gl_bai}"
-		fi
-		return
-	fi
-	install jq
-
-	local CONFIG_FILE="/etc/docker/daemon.json"
-
-	# 检查配置文件是否存在
-	if [ ! -f "$CONFIG_FILE" ]; then
-		echo -e "${gl_hong}配置文件不存在${gl_bai}"
-		return
-	fi
-
-	# 读取当前配置
-	local ORIGINAL_CONFIG=$(<"$CONFIG_FILE")
-
-	# 使用jq处理配置文件的更新
-	local UPDATED_CONFIG=$(echo "$ORIGINAL_CONFIG" | jq 'del(.["fixed-cidr-v6"]) | .ipv6 = false')
-
-	# 检查当前的 ipv6 状态
-	local CURRENT_IPV6=$(echo "$ORIGINAL_CONFIG" | jq -r '.ipv6 // false')
-
-	# 对比原始配置与新配置
-	if [[ "$CURRENT_IPV6" == "false" ]]; then
-		echo -e "${gl_huang}当前已关闭ipv6访问${gl_bai}"
-	else
-		echo "$UPDATED_CONFIG" | jq . > "$CONFIG_FILE"
-		restart docker
-		echo -e "${gl_huang}已成功关闭ipv6访问${gl_bai}"
-	fi
+	docker_daemon_json_merge 'del(.["fixed-cidr-v6"]) | .ipv6 = false'
 }
-
 
 
 save_iptables_rules() {
@@ -14669,9 +14561,7 @@ linux_docker() {
 
 		  9)
 			  clear
-			  install vim
-			  mkdir -p /etc/docker && vim /etc/docker/daemon.json
-			  restart docker
+			  docker_daemon_json_merge __edit__
 			  ;;
 
 

@@ -593,7 +593,7 @@ https://docker.registry.cyou
 ```bash
 timeout 100s docker pull 镜像源域名/library/python:3.12-slim
 docker image inspect -f '{{.Size}}' 镜像源域名/library/python:3.12-slim
-docker image rm -f 镜像源域名/library/python:3.12-slim
+docker image rm 镜像源域名/library/python:3.12-slim
 docker image prune -f
 ```
 解释：支持默认镜像源、第三方镜像源、第三方+默认镜像源，均可选择加入官方源。默认超时 100 秒、1 轮，允许 1–3600 秒、1–20 轮。已有镜像引用跳过，不重新拉取或删除；仅尝试非强制删除本轮新增、ID 未变化且未被容器使用的引用，不执行全局 prune。输出拉取耗时与镜像逻辑大小，不代表网络带宽；缓存及失败拉取留下的层可能影响结果。无法确认镜像状态时停止该源，拉取或清理失败返回非零。
@@ -1011,20 +1011,16 @@ docker system prune -af --volumes
 ```
 
 ```bash
-mkdir -p /etc/docker
-cat > /etc/docker/daemon.json
-systemctl restart docker
+docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors "$mirrors_json"
 ```
-解释：写入 Docker daemon 镜像源并重启 Docker。
+解释：Ubuntu/Debian 使用同一事务路径，仅合并镜像字段，保留其他配置及权限；拒绝软/硬链接、非法 JSON 和共享可写目录。持锁后暂存并经 `dockerd --validate` 校验，仅重启原先活动的 Docker，失败尝试恢复原配置与服务，恢复失败明确报告。取消、无效选择和无变化不重启；不打印可能含敏感值的配置。
 
 ### 8.9 编辑 daemon.json 文件
 
 ```bash
-mkdir -p /etc/docker
-vim /etc/docker/daemon.json
-systemctl restart docker
+docker_daemon_json_merge __edit__
 ```
-解释：手动编辑 Docker daemon 配置并重启。
+解释：Vim 编辑短生命周期暂存文件，通过上述 JSON/daemon 校验后应用。编辑器非零退出或验证失败不覆盖原文件。
 
 ### 8.10 Docker Compose 自动更新
 
@@ -1057,20 +1053,16 @@ crontab -l 2>/dev/null | grep -vF "/root/linux-daimon/docker-compose-update/comp
 ### 8.11 开启 Docker IPv6 访问
 
 ```bash
-jq '. + {ipv6: true, "fixed-cidr-v6": "2001:db8:1::/64"}' /etc/docker/daemon.json > /etc/docker/daemon.json.tmp
-mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
-systemctl restart docker
+docker_ipv6_on
 ```
-解释：启用 Docker IPv6 配置。
+解释：通过上述事务开启 Docker IPv6，保留已有 fixed-cidr-v6；缺省使用本地 ULA fd42:da10:6::/64，而非文档用途的 2001:db8 地址。该前缀不是公网地址，多主机互联前须规划避免冲突，不承诺公网 IPv6 连通。
 
 ### 8.12 关闭 Docker IPv6 访问
 
 ```bash
-jq 'del(.["fixed-cidr-v6"]) | .ipv6 = false' /etc/docker/daemon.json > /etc/docker/daemon.json.tmp
-mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
-systemctl restart docker
+docker_ipv6_off
 ```
-解释：关闭 Docker IPv6 配置。
+解释：通过上述事务关闭 Docker IPv6，移除 fixed-cidr-v6，不改其他 daemon 配置。
 
 ### 8.19 备份/迁移/还原 Docker 环境
 
