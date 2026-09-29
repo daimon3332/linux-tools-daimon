@@ -237,7 +237,7 @@ test_ssh_key_names() {
     done
     ssh_private_key_name_valid id_ed25519
 }
-test_ssh_allow_order() {
+test_ssh_transaction_failure() {
     load_function ssh_config_manager || return 1
     local trace="$WORK/ssh-order.trace" count=0 SSH_CONNECTION='a 1 b 64400'
     : > "$trace"
@@ -251,14 +251,15 @@ test_ssh_allow_order() {
                 ssh_config_backup() { :; }
                 ssh_set_option() { echo write >> "$trace"; }
                 ssh_restart_safe() { echo restart >> "$trace"; }
-                ufw_allow_current_ssh() { echo allow >> "$trace"; return 1; }
+                ufw_allow_current_ssh() { echo unsafe-allow >> "$trace"; return 1; }
+                ssh_transaction_apply() { echo "transaction $*" >> "$trace"; return 1; }
                 printf -v "${@: -1}" 1 ;;
             2) printf -v "${@: -1}" 64401 ;;
             *) printf -v "${@: -1}" 0 ;;
         esac
     }
     ssh_config_manager || return 1
-    [ "$(cat "$trace")" = allow ]
+    [ "$(cat "$trace")" = "transaction Port 64401" ]
 }
 test_shortcut_collision() {
     load_function linux_Settings || return 1
@@ -922,7 +923,7 @@ check 'update rejects syntactically invalid scripts' test_update_syntax
 check 'startup ignores unrelated scripts in the working directory' test_self_install_source
 check 'script replacement preserves readers of the old inode' test_atomic_script_install
 check 'SSH private key names reject traversal and reserved files' test_ssh_key_names
-check 'SSH allow failure prevents config write and restart' test_ssh_allow_order
+check 'SSH transaction failure prevents fallback writes and restart' test_ssh_transaction_failure
 check 'shortcut cannot overwrite the bash executable' test_shortcut_collision
 check 'unmount locates the mount by its source device' test_unmount_lookup
 check 'user management rejects system users and path input' test_regular_user_validation
