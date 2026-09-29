@@ -39,6 +39,7 @@ docker() {
             else echo "Error response from daemon: No such image: ${!#}" >&2; return 1; fi ;;
         'image rm') [ "$FAILURE" != cleanup ] || return 1; command rm -f "$WORK/pulled" ;;
         'image prune') : ;;
+        'image ls') if [ "$FAILURE" = shared ]; then echo sha256:fixture; fi ;;
         'ps -aq') [ "$FAILURE" != discovery ] || return 1; [ "$FAILURE" != used ] || echo active-container ;;
         'pull registry.example/library/python:3.12-slim')
             [ "$FAILURE" != pull ] || return 1
@@ -114,6 +115,12 @@ timeout() { shift; "$@"; }
     def test_container_discovery_failure_retains_image(self):
         p, calls = self.invoke('discovery')
         self.assertNotEqual(p.returncode, 0)
+        self.assertNotIn('image rm', calls)
+        self.assertTrue((self.work / 'pulled').exists())
+
+    def test_preexisting_untagged_image_is_not_removed(self):
+        p, calls = self.invoke('shared')
+        self.assertEqual(p.returncode, 0)
         self.assertNotIn('image rm', calls)
         self.assertTrue((self.work / 'pulled').exists())
 

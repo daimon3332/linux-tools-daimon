@@ -992,7 +992,7 @@ docker_mirror_speed_run() {
 	local image="${IMAGE:-library/python:3.12-slim}"
 	local platform="${PLATFORM:-}"
 	local pull_args=()
-	local round mirror base_url host ref start_ms end_ms status size_bytes rc pull_time mb initial image_id port
+	local round mirror base_url host ref start_ms end_ms status size_bytes rc pull_time mb initial image_id port prior_ids
 	local failed=0 measured=0
 	[[ "$timeout_sec" =~ ^[0-9]{1,4}$ && "$rounds" =~ ^[0-9]{1,2}$ ]] &&
 		(( 10#$timeout_sec >= 1 && 10#$timeout_sec <= 3600 && 10#$rounds >= 1 && 10#$rounds <= 20 )) || {
@@ -1042,6 +1042,7 @@ docker_mirror_speed_run() {
 			if [[ "$initial" != "Error response from daemon: No such image: $ref" && "$initial" != "Error: No such image: $ref" ]]; then
 				echo "无法确认镜像是否存在，跳过: $ref"; failed=1; continue
 			fi
+			prior_ids=$(docker image ls -aq --no-trunc) || { echo "无法读取已有镜像清单，未拉取。"; failed=1; continue; }
 			start_ms="$(date +%s%3N)"
 			if timeout "${timeout_sec}s" docker pull "${pull_args[@]}" "$ref" >/dev/null 2>&1; then
 				end_ms="$(date +%s%3N)"
@@ -1051,7 +1052,11 @@ docker_mirror_speed_run() {
 					echo "镜像读取失败，保留现场: $ref"; failed=1; continue
 				}
 				measured=$((measured + 1))
-				docker_mirror_cleanup_test_image "$ref" "$image_id" || failed=1
+				if [[ $'\n'"$prior_ids"$'\n' = *$'\n'"$image_id"$'\n'* ]]; then
+					echo "镜像数据原已存在，为避免删除原镜像，保留新增引用: $ref"
+				else
+					docker_mirror_cleanup_test_image "$ref" "$image_id" || failed=1
+				fi
 			else
 				rc=$?
 				end_ms="$(date +%s%3N)"
