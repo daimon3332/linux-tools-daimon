@@ -19616,10 +19616,8 @@ crontab_sync_custom_files() {
 	find "$dir" -maxdepth 1 -type f -name '*.sh' \
 		! -name '.rclone-runner.sh' \
 		! -name 'Vaultwarden_OneDrive_to_Kissska1.sh' \
-		! -name 'Vaultwarden_OneDrive_to_Infini.sh' \
 		! -name 'ImageBed_CloudFlare-R2_to_OneDrive.sh' \
 		! -name 'Via_OneDrive_to_Kissska1.sh' \
-		! -name 'Via_Infini_to_OneDrive.sh' \
 		! -name 'Nginx_Domain_Local_Backup.sh' \
 		! -name 'Root_Backup.sh' \
 		! -name 'Emby_Root_Backup.sh' \
@@ -20549,83 +20547,105 @@ EOF
 )
 
 crontab_sync_reconcile_legacy() {
-	[ "${CRONTAB_SYNC_RECONCILED:-false}" = "true" ] && return 0
-
-	local dir current_cron bit_old via_old bit_new via_new
-	local bit_old_line via_old_line bit_schedule via_schedule
-	local had_bit=false had_via=false legacy_found=false custom_file
-	dir=$(crontab_sync_backup_dir)
-	bit_old=$(crontab_sync_legacy_script_file_by_id bitwarden)
-	via_old=$(crontab_sync_legacy_script_file_by_id via)
-	bit_new=$(crontab_sync_script_file_by_id bitwarden)
-	via_new=$(crontab_sync_script_file_by_id via)
-	current_cron=$(crontab -l 2>/dev/null || true)
-	bit_old_line=$(printf '%s\n' "$current_cron" | grep -F "$bit_old" | head -n1 || true)
-	via_old_line=$(printf '%s\n' "$current_cron" | grep -F "$via_old" | head -n1 || true)
-
-	if [ -f "$bit_old" ] || [ -n "$bit_old_line" ]; then legacy_found=true; fi
-	if [ -f "$via_old" ] || [ -n "$via_old_line" ]; then legacy_found=true; fi
-	if [ -d "$dir" ] && grep -RIl 'Infini-cloud' "$dir"/*.sh >/dev/null 2>&1; then
-		legacy_found=true
-	fi
-	if ! $legacy_found; then
-		CRONTAB_SYNC_RECONCILED=true
-		return 0
-	fi
-
-	if ! crontab_sync_remote_ready; then
-		echo -e "${gl_hong}检测到旧 Infini-cloud 同步任务，但 kissska1 连接检查失败，已保留原任务。${gl_bai}"
-		return 1
-	fi
-
-	mkdir -p "$dir" "$(crontab_sync_log_dir)"
-	if [ -f "$bit_old" ] || [ -n "$bit_old_line" ]; then
-		crontab_sync_write_script bitwarden "$bit_new"
-		bash -n "$bit_new" || { rm -f "$bit_new"; return 1; }
-		[ -n "$bit_old_line" ] && had_bit=true
-	fi
-	if [ -f "$via_old" ] || [ -n "$via_old_line" ]; then
-		crontab_sync_write_script via "$via_new"
-		bash -n "$via_new" || { rm -f "$via_new"; return 1; }
-		[ -n "$via_old_line" ] && had_via=true
-	fi
-
-	for custom_file in "$dir"/*.sh; do
-		[ -f "$custom_file" ] || continue
-		case "$custom_file" in "$bit_old"|"$via_old") continue ;; esac
-		if grep -q 'Infini-cloud' "$custom_file" 2>/dev/null; then
-			sed -i 's/Infini-cloud/kissska1/g' "$custom_file"
-			bash -n "$custom_file" || { echo -e "${gl_hong}迁移后语法检查失败: $custom_file${gl_bai}"; return 1; }
+	[ "${CRONTAB_SYNC_RECONCILED:-false}" = true ] && return 0
+	local id file
+	for id in bitwarden via; do
+		file=$(crontab_sync_legacy_script_file_by_id "$id") || return 1
+		if [ -f "$file" ] && [ ! -L "$file" ] && grep -q 'Infini-cloud:' "$file"; then
+			echo "检测到旧同步脚本，原任务保持不变；请到 crontab 管理选项 6 显式迁移: $file"
 		fi
 	done
-
-	bit_schedule=$(crontab_sync_cron_line_by_id bitwarden "$bit_new")
-	via_schedule=$(crontab_sync_cron_line_by_id via "$via_new")
-
-	local cron_backup filtered_cron
-	cron_backup=$(mktemp) || return 1
-	printf '%s\n' "$current_cron" > "$cron_backup"
-	filtered_cron=$(printf '%s\n' "$current_cron" \
-		| grep -vF "$bit_old" \
-		| grep -vF "$via_old" \
-		| grep -vF 'Infini-cloud' || true)
-	if $had_bit; then
-		filtered_cron="$filtered_cron
-$bit_schedule"
-	fi
-	if $had_via; then
-		filtered_cron="$filtered_cron
-$via_schedule"
-	fi
-	if ! printf '%s\n' "$filtered_cron" | sed '/^[[:space:]]*$/d' | crontab -; then
-		crontab "$cron_backup" 2>/dev/null || true
-		rm -f "$cron_backup"
-		echo -e "${gl_hong}crontab 迁移失败，已恢复原任务。${gl_bai}"
-		return 1
-	fi
-	rm -f "$cron_backup" "$bit_old" "$via_old"
 	CRONTAB_SYNC_RECONCILED=true
-	echo -e "${gl_lv}已将旧 Infini-cloud 同步任务迁移到 kissska1。${gl_bai}"
+}
+
+crontab_sync_migrate_legacy_file() {
+	local id="$1" file
+	case "$id" in bitwarden|via) ;; *) return 1 ;; esac
+	file=$(crontab_sync_legacy_script_file_by_id "$id") || return 1
+	crontab_sync_remote_ready || return 1
+	python3 - "$file" "${DAIMON_LOCK_DIR:-/run/lock}" <<'PYCRON_MIGRATE'
+import fcntl, os, re, signal, stat, subprocess, sys, tempfile
+from pathlib import Path
+
+def require(ok, message):
+    if not ok: raise ValueError(message)
+
+def trusted(path, directory=False):
+    info = path.lstat()
+    require(path.resolve() == path and info.st_uid == 0 and not info.st_mode & 0o022,
+            'Untrusted migration path')
+    require(stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode) and info.st_nlink == 1,
+            'Not a private regular script or directory')
+    return info
+
+def identity(path):
+    i = trusted(path)
+    return (i.st_dev, i.st_ino, i.st_mode, i.st_uid, i.st_gid, i.st_size, i.st_mtime_ns, path.read_bytes())
+
+def idle(path):
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdecimal() or int(proc.name) == os.getpid(): continue
+        try:
+            require(os.fsencode(path) not in (proc / 'cmdline').read_bytes().split(b'\0'), 'Script is running')
+            for fd in (proc / 'fd').iterdir():
+                try: require(fd.resolve() != path, 'Script is open')
+                except FileNotFoundError: pass
+        except (FileNotFoundError, ProcessLookupError): pass
+
+def interrupted(signum, frame):
+    raise InterruptedError('Migration interrupted')
+
+for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP): signal.signal(signum, interrupted)
+temp = None
+try:
+    require(os.geteuid() == 0, 'Root required')
+    target, locks = map(Path, sys.argv[1:])
+    require(target.is_absolute(), 'Absolute script path required')
+    for parent in target.parents: trusted(parent, True)
+    require(locks.resolve() == locks and locks.stat().st_uid == 0, 'Untrusted lock directory')
+    require(not locks.stat().st_mode & 0o022 or locks.stat().st_mode & stat.S_ISVTX, 'Unsafe lock directory')
+    lock = os.open(locks / 'daimon-backup-scripts.lock', os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    i = os.fstat(lock)
+    require(stat.S_ISREG(i.st_mode) and i.st_uid == 0 and i.st_nlink == 1 and not i.st_mode & 0o022, 'Unsafe lock file')
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    original = identity(target)
+    idle(target)
+    data = re.sub(rb'(?<![A-Za-z0-9_.-])Infini-cloud:', b'kissska1:', original[-1])
+    require(data != original[-1], 'No literal legacy remote found; unchanged')
+    fd, name = tempfile.mkstemp(prefix='.legacy-migrate.', dir=target.parent)
+    temp = Path(name)
+    with os.fdopen(fd, 'wb') as stream:
+        stream.write(data)
+        stream.flush()
+        os.fchmod(stream.fileno(), stat.S_IMODE(original[2]))
+        os.fchown(stream.fileno(), original[3], original[4])
+        os.fsync(stream.fileno())
+    require(subprocess.run(['/bin/bash', '-n', str(temp)], capture_output=True).returncode == 0, 'Invalid script syntax; unchanged')
+    idle(target)
+    require(identity(target) == original, 'Script changed concurrently; unchanged by migration')
+    os.replace(temp, target)
+    temp = None
+    require(target.read_bytes() == data, 'Post-write verification failed; check script before use')
+    print('Migrated literal remote in the selected script; path, direction and crontab preserved.')
+except (OSError, ValueError) as error:
+    print('Migration failed: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+finally:
+    if temp is not None: temp.unlink()
+PYCRON_MIGRATE
+}
+
+crontab_sync_migrate_legacy_menu() {
+	local choice id file confirm
+	echo "仅替换所选旧脚本的 Infini-cloud: 远端为 kissska1:；保留文件名、同步方向和定时，不改自定义脚本。"
+	echo "1. Bitwarden 旧脚本    2. Via 旧脚本    0. 返回"
+	read -r -p "请选择: " choice || return 1
+	case "$choice" in 1) id=bitwarden ;; 2) id=via ;; 0|'') return 0 ;; *) return 1 ;; esac
+	file=$(crontab_sync_legacy_script_file_by_id "$id") || return 1
+	printf '目标: %s\n请先核查脚本，迁移后同步方向和删除行为保持原样。\n' "$file"
+	read -r -p "输入 MIGRATE 确认: " confirm || return 1
+	[ "$confirm" = MIGRATE ] || return 0
+	crontab_sync_migrate_legacy_file "$id"
 }
 
 crontab_sync_install_one() {
@@ -20881,6 +20901,7 @@ crontab_sync_manager() {
 		echo -e "${gl_kjlan}3.   ${gl_bai}一键安装（默认全选，可自行删除编号）"
 		echo -e "${gl_kjlan}4.   ${gl_bai}一键卸载（默认全选，可自行删除编号）"
 		echo -e "${gl_kjlan}5.   ${gl_bai}立即执行一次 /root Docker 一致性备份"
+		echo -e "${gl_kjlan}6.   ${gl_bai}迁移旧 Infini-cloud 脚本（显式确认）"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice || return 1
@@ -20911,6 +20932,7 @@ crontab_sync_manager() {
 				fi
 				;;
 			5) crontab_sync_run_root_once ;;
+			6) crontab_sync_migrate_legacy_menu ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
