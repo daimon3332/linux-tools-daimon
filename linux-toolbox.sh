@@ -965,14 +965,14 @@ docker_mirror_size_mb() {
 	awk -v b="$1" 'BEGIN { printf "%.2f", b / 1024 / 1024 }'
 }
 
-docker_mirror_rate_mb_s() {
-	awk -v mb="$1" -v sec="$2" 'BEGIN { if (sec > 0) printf "%.2f", mb / sec; else printf "0.00" }'
-}
-
 docker_mirror_cleanup_test_image() {
-	local ref="$1"
-	docker image rm -f "$ref" >/dev/null 2>&1 || true
-	docker image prune -f >/dev/null 2>&1 || true
+	local ref="$1" expected="${2:-}" current users
+	[ -n "$expected" ] || return 1
+	current=$(docker image inspect -f '{{.Id}}' "$ref") || return 1
+	[ "$current" = "$expected" ] || { echo "镜像引用已变化，保留: $ref"; return 0; }
+	users=$(docker ps -aq --filter "ancestor=$expected") || return 1
+	[ -z "$users" ] || { echo "镜像已被容器使用，保留: $ref"; return 0; }
+	docker image rm "$ref" >/dev/null || { echo "测速镜像清理失败，已保留: $ref"; return 1; }
 }
 
 docker_mirror_ask_official() {
@@ -992,7 +992,24 @@ docker_mirror_speed_run() {
 	local image="${IMAGE:-library/python:3.12-slim}"
 	local platform="${PLATFORM:-}"
 	local pull_args=()
-	local round mirror base_url host ref start_ms end_ms status size_bytes rc pull_time mb speed
+	local round mirror base_url host ref start_ms end_ms status size_bytes rc pull_time mb initial image_id port
+	local failed=0 measured=0
+	[[ "$timeout_sec" =~ ^[0-9]{1,4}$ && "$rounds" =~ ^[0-9]{1,2}$ ]] &&
+		(( 10#$timeout_sec >= 1 && 10#$timeout_sec <= 3600 && 10#$rounds >= 1 && 10#$rounds <= 20 )) || {
+		echo "超时需为 1–3600 秒，轮数需为 1–20。"; return 1
+	}
+	timeout_sec=$((10#$timeout_sec)); rounds=$((10#$rounds))
+	[[ "$image" =~ ^[A-Za-z0-9][A-Za-z0-9._/:@-]*$ ]] || return 1
+	for mirror in "${mirrors[@]}"; do
+		base_url=$(docker_mirror_scheme_url "$mirror"); host=$(docker_mirror_normalize_host "$mirror")
+		[[ "$base_url" = "https://$host" || "$base_url" = "http://$host" ]] &&
+			[[ "$host" =~ ^(\[[0-9a-fA-F:]+\]|[A-Za-z0-9][A-Za-z0-9.-]*)(:[0-9]+)?$ ]] || { echo "镜像源地址无效: $mirror"; return 1; }
+		port=${host##*]}; [[ "$host" = \[* ]] || port="$host"
+		if [[ "$port" = *:* ]]; then
+			port=${port##*:}
+			[[ "$port" =~ ^[0-9]{1,5}$ ]] && ((10#$port >= 1 && 10#$port <= 65535)) || return 1
+		fi
+	done
 
 	if ! command -v docker >/dev/null 2>&1; then
 		echo -e "${gl_hong}未检测到 docker，请先安装并启动 Docker。${gl_bai}"
@@ -1007,9 +1024,11 @@ docker_mirror_speed_run() {
 		return 1
 	fi
 	[ -n "$platform" ] && pull_args+=(--platform "$platform")
+	timeout 10s docker info >/dev/null 2>&1 || { echo "Docker 服务不可用，未测速。"; return 1; }
 
 	echo "image=$image timeout=${timeout_sec}s rounds=$rounds"
-	echo "说明：每次测速前后会删除测试镜像引用并清理 dangling 镜像；若本机已有相同镜像层缓存，结果仍可能偏快。"
+	echo "已有镜像引用跳过；仅非强制清理本轮新增且未使用的引用，不执行全局 prune。"
+	echo "结果为拉取耗时及镜像逻辑大小，不是网络带宽；共享缓存和失败拉取留下的层可能影响耗时。"
 	echo "------------------------"
 	for round in $(seq 1 "$rounds"); do
 		for mirror in "${mirrors[@]}"; do
@@ -1017,13 +1036,22 @@ docker_mirror_speed_run() {
 			host="$(docker_mirror_normalize_host "$mirror")"
 			ref="${host}/${image}"
 			echo "round=${round} mirror=${base_url}"
-			docker_mirror_cleanup_test_image "$ref"
+			if initial=$(docker image inspect -f '{{.Id}}' "$ref" 2>&1); then
+				echo "SKIP(existing) $ref"; continue
+			fi
+			if [[ "$initial" != "Error response from daemon: No such image: $ref" && "$initial" != "Error: No such image: $ref" ]]; then
+				echo "无法确认镜像是否存在，跳过: $ref"; failed=1; continue
+			fi
 			start_ms="$(date +%s%3N)"
 			if timeout "${timeout_sec}s" docker pull "${pull_args[@]}" "$ref" >/dev/null 2>&1; then
 				end_ms="$(date +%s%3N)"
 				status="OK"
-				size_bytes="$(docker image inspect -f '{{.Size}}' "$ref" 2>/dev/null || echo 0)"
-				docker_mirror_cleanup_test_image "$ref"
+				image_id=$(docker image inspect -f '{{.Id}}' "$ref") &&
+					size_bytes=$(docker image inspect -f '{{.Size}}' "$ref") && [[ "$size_bytes" =~ ^[0-9]+$ ]] || {
+					echo "镜像读取失败，保留现场: $ref"; failed=1; continue
+				}
+				measured=$((measured + 1))
+				docker_mirror_cleanup_test_image "$ref" "$image_id" || failed=1
 			else
 				rc=$?
 				end_ms="$(date +%s%3N)"
@@ -1033,15 +1061,16 @@ docker_mirror_speed_run() {
 					status="FAIL"
 				fi
 				size_bytes=0
-				docker_mirror_cleanup_test_image "$ref"
+				failed=1
 			fi
 			pull_time="$(awk -v s="$start_ms" -v e="$end_ms" 'BEGIN { printf "%.3f", (e - s) / 1000 }')"
 			mb="$(docker_mirror_size_mb "$size_bytes")"
-			speed="$(docker_mirror_rate_mb_s "$mb" "$pull_time")"
-			echo "${status} pull=${pull_time}s size=${mb}MB approx=${speed}MB/s"
+			echo "${status} pull=${pull_time}s logical-size=${mb}MiB"
 			echo
 		done
 	done
+	[ "$measured" -gt 0 ] || echo "没有完成有效拉取测量。"
+	return "$failed"
 }
 
 docker_mirror_collect_defaults() {
