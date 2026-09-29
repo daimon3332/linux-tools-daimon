@@ -20221,12 +20221,90 @@ crontab_sync_install_one() {
 	next=$(printf '%s\n' "$current" | server_retire_filter_cron "$script_file" "$runner") || return 1
 	if [ -n "$next" ]; then next+=$'\n'; fi
 	next+="$cron_line"
-	crontab_sync_write_script "$id" "$script_file" || return 1
-	checked=$(rsync_cron_read) || return 1
-	[ "$checked" = "$current" ] || { echo "定时任务已被其他进程修改，未覆盖；请核对已生成的脚本。" >&2; return 1; }
-	printf '%s\n' "$next" | crontab - || return 1
-	checked=$(rsync_cron_read) || return 1
-	[ "$checked" = "$next" ] || { echo "定时任务写入后校验失败，请检查 crontab。" >&2; return 1; }
+	(
+		umask 077
+		local stage='' applying=0 committed=0 cron_attempt=0 had_cron=0 keep_stage=0 i status restored
+		local lock_dir="${DAIMON_LOCK_DIR:-/run/lock}" lock_file lock_mode original_script original_runner
+		local -a files=("$script_file" "$runner") identities=()
+		[ "$script_file" != "$runner" ] && [ "$(dirname "$script_file")" = "$(dirname "$runner")" ] || return 1
+		for i in 0 1; do identities[$i]=$(server_retire_script_guard "${files[$i]}") || return 1; done
+		mkdir -p -- "$lock_dir" "$(dirname "$script_file")" || return 1
+		[ "$(realpath -e -- "$lock_dir")" = "$lock_dir" ] && [ -O "$lock_dir" ] || return 1
+		lock_mode=$(stat -c %a -- "$lock_dir") || return 1
+		(( (8#${lock_mode} & 022) == 0 || (8#${lock_mode} & 01000) != 0 )) || return 1
+		lock_file="$lock_dir/daimon-backup-scripts.lock"
+		(set -o noclobber; : > "$lock_file") 2>/dev/null || true
+		[ -f "$lock_file" ] && [ ! -L "$lock_file" ] && [ -O "$lock_file" ] || return 1
+		lock_mode=$(stat -c %a -- "$lock_file") || return 1
+		(( (8#${lock_mode} & 022) == 0 )) || return 1
+		exec 7< "$lock_file" || return 1
+		[ "$(stat -c '%d:%i' -- "$lock_file")" = "$(stat -Lc '%d:%i' /dev/fd/7)" ] &&
+			[ "$(stat -Lc %h /dev/fd/7)" = 1 ] && flock -xn 7 || return 1
+		stage=$(mktemp -d "$(dirname "$script_file")/.cron-install.XXXXXX") || return 1
+		original_script="$stage/$(basename "$script_file")"
+		original_runner="$stage/$(basename "$runner")"
+		trap '
+			status=$?
+			trap "" INT TERM HUP
+			if [ "$applying" = 1 ] && [ "$committed" = 0 ]; then
+				restored=1
+				if [ "$cron_attempt" = 1 ]; then
+					if ! checked=$(rsync_cron_read); then restored=0
+					elif [ "$checked" = "$next" ]; then
+						if [ "$had_cron" = 1 ]; then crontab - < "$stage/cron.old" || restored=0
+						else crontab -r || restored=0; fi
+					elif [ "$checked" != "$current" ]; then restored=0; fi
+				fi
+				if [ "$restored" = 1 ]; then
+					for i in 0 1; do
+						checked=$(server_retire_script_guard "${files[$i]}") || { keep_stage=1; continue; }
+						[ "$checked" != "${identities[$i]}" ] || continue
+						if [ "$checked" != absent ] && cmp -s -- "${files[$i]}" "$stage/new-$i"; then
+							if [ "${identities[$i]}" = absent ]; then rm -- "${files[$i]}" || keep_stage=1
+							else mv -f -- "$stage/old-$i" "${files[$i]}" || keep_stage=1; fi
+						else keep_stage=1; fi
+					done
+				else keep_stage=1; fi
+			fi
+			if [ "$keep_stage" = 1 ]; then
+				echo "安装回滚未完成，未覆盖未知变更；私有恢复文件保留在 $stage" >&2
+				status=1
+			else
+				rm -f -- "$original_script" "$original_runner" "$stage"/{old-0,old-1,new-0,new-1,apply-0,apply-1,cron.old,cron.err}
+				rmdir -- "$stage" || { echo "临时目录包含未识别内容，已保留: $stage" >&2; status=1; }
+			fi
+			exit "$status"
+		' EXIT
+		trap 'exit 130' INT
+		trap 'exit 143' TERM
+		trap 'exit 129' HUP
+		for i in 0 1; do
+			[ "${identities[$i]}" = absent ] || cp -p -- "${files[$i]}" "$stage/old-$i" || return 1
+		done
+		if LC_ALL=C crontab -l > "$stage/cron.old" 2> "$stage/cron.err"; then had_cron=1
+		else grep -q '^no crontab for ' "$stage/cron.err" || return 1; fi
+		[ "$(cat "$stage/cron.old")" = "$current" ] || return 1
+		DAIMON_SKIP_RUNNER_WRITE=1 DAIMON_UPGRADE_LOCKED=1 crontab_sync_write_script "$id" "$original_script" || return 1
+		crontab_sync_write_runner "$original_runner" || return 1
+		cp -p -- "$original_script" "$stage/new-0" && cp -p -- "$original_runner" "$stage/new-1" || return 1
+		for i in 0 1; do
+			checked=$(server_retire_script_guard "${files[$i]}") || return 1
+			[ "$checked" = "${identities[$i]}" ] || return 1
+		done
+		checked=$(rsync_cron_read) || return 1
+		[ "$checked" = "$current" ] || { echo "定时任务已被其他进程修改，未覆盖。" >&2; return 1; }
+		applying=1
+		for i in 0 1; do
+			cp -p -- "$stage/new-$i" "$stage/apply-$i" && mv -f -- "$stage/apply-$i" "${files[$i]}" || return 1
+		done
+		checked=$(rsync_cron_read) || return 1
+		[ "$checked" = "$current" ] || { echo "定时任务已变化，正在恢复脚本；未覆盖其他任务。" >&2; return 1; }
+		cron_attempt=1
+		printf '%s\n' "$next" | crontab - || return 1
+		checked=$(rsync_cron_read) || return 1
+		[ "$checked" = "$next" ] || { echo "定时任务写入后校验失败。" >&2; return 1; }
+		committed=1
+	) || return 1
 	if [ "$id" = "nginxdomain" ]; then /bin/bash "$script_file" || return 1; fi
 	echo -e "${gl_lv}已安装: $(basename "$script_file")${gl_bai}"
 	echo "定时任务: $cron_line"

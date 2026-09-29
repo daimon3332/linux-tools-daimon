@@ -16,7 +16,7 @@ def function(name):
 
 @unittest.skipUnless(os.name == 'posix', 'requires native Bash and Python cron parser')
 class InstallPreflight(unittest.TestCase):
-    def invoke(self, failure='', compound=False):
+    def invoke(self, failure='', compound=False, preexisting=False):
         (ROOT / '.tmp').mkdir(exist_ok=True)
         with tempfile.TemporaryDirectory(dir=ROOT / '.tmp') as directory:
             work = Path(directory)
@@ -25,17 +25,26 @@ class InstallPreflight(unittest.TestCase):
             existing = f'0 3 * * * /bin/bash {target}' + (' && /srv/business' if compound else '') + '\n'
             initial = keep + existing
             (work / 'cron').write_text(initial)
+            if preexisting:
+                (work / 'task.sh').write_text('original task\n')
+                (work / 'runner.sh').write_text('original runner\n')
             body = '\n'.join(function(n) for n in ['crontab_sync_install_one', 'rsync_cron_read', 'server_retire_filter_cron']) + r'''
 root_use() { :; }
 rclone() { :; }
 check_crontab_installed() { [ "$FAILURE" != dependency ]; }
 crontab_sync_runner_file() { printf '%s\n' "$WORK/runner.sh"; }
-crontab_sync_write_script() { echo changed > "$WORK/task.sh"; }
+crontab_sync_write_script() { [ "$FAILURE" != generate ] || return 1; echo changed > "$2"; chmod 700 "$2"; }
+crontab_sync_write_runner() { [ "$FAILURE" != runner ] || return 1; echo changed > "$1"; chmod 700 "$1"; }
+server_retire_script_guard() {
+    if [ -e "$1" ]; then stat -c '%d:%i:%s:%Y:%Z' -- "$1"; else echo absent; fi
+}
+export DAIMON_LOCK_DIR="$WORK/run"
 crontab() {
     if [ "$1" = -l ]; then
         [ "$FAILURE" != read ] || { echo 'permission denied' >&2; return 1; }
         cat "$WORK/cron"
     else
+        [ "$FAILURE" != write ] || return 1
         cat > "$WORK/cron.next" && mv "$WORK/cron.next" "$WORK/cron"
     fi
 }
@@ -45,6 +54,9 @@ crontab_sync_install_one imagebed "$WORK/task.sh" "0 4 * * * /bin/bash $WORK/tas
             entry.write_text(body)
             result = subprocess.run(['/bin/bash', str(entry)], capture_output=True, timeout=15,
                                     env=dict(os.environ, WORK=str(work), FAILURE=failure))
+            result.task_contents = (work / 'task.sh').read_text() if (work / 'task.sh').exists() else None
+            result.runner_contents = (work / 'runner.sh').read_text() if (work / 'runner.sh').exists() else None
+            result.pending = list(work.glob('.cron-install.*'))
             return result, (work / 'task.sh').exists(), (work / 'cron').read_text(), initial, keep, target
 
     def test_read_failure_before_script_mutation(self):
@@ -52,6 +64,25 @@ crontab_sync_install_one imagebed "$WORK/task.sh" "0 4 * * * /bin/bash $WORK/tas
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(changed)
         self.assertEqual(cron, initial)
+        self.assertIsNone(result.runner_contents)
+        self.assertEqual(result.pending, [])
+
+    def test_write_failure_preserves_existing_files(self):
+        result, _, cron, initial, _, _ = self.invoke('write', preexisting=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.task_contents, 'original task\n')
+        self.assertEqual(result.runner_contents, 'original runner\n')
+        self.assertEqual(cron, initial)
+        self.assertEqual(result.pending, [])
+
+    def test_staging_failure_preserves_existing_files(self):
+        for failure in ('generate', 'runner'):
+            result, _, cron, initial, _, _ = self.invoke(failure, preexisting=True)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(result.task_contents, 'original task\n')
+            self.assertEqual(result.runner_contents, 'original runner\n')
+            self.assertEqual(cron, initial)
+            self.assertEqual(result.pending, [])
 
     def test_dependency_failure_before_script_mutation(self):
         result, changed, cron, initial, _, _ = self.invoke('dependency')
@@ -67,6 +98,12 @@ crontab_sync_install_one imagebed "$WORK/task.sh" "0 4 * * * /bin/bash $WORK/tas
 
     def test_ambiguous_reference_before_script_mutation(self):
         result, changed, cron, initial, _, _ = self.invoke(compound=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(changed)
+        self.assertEqual(cron, initial)
+
+    def test_write_failure_removes_new_script(self):
+        result, changed, cron, initial, _, _ = self.invoke('write')
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(changed)
         self.assertEqual(cron, initial)
