@@ -25,6 +25,14 @@ def item():
                       {'Type':'volume','Source':'/voldata','Name':'volume-fixture','Destination':'/db','RW':True}],
             'NetworkSettings':{'Networks':{'none':{}}}}
 class Metadata(unittest.TestCase):
+    def test_context_environment_takes_precedence_over_host_like_docker_cli(self):
+        from unittest.mock import patch
+        context=[{'Endpoints':{'docker':{'Host':'unix:///context.sock'}}}]
+        with patch.dict(os.environ,{'DOCKER_CONTEXT':'selected','DOCKER_HOST':'unix:///wrong.sock'}), \
+             patch.dict(SCOPE,{'cli':lambda *args:json.dumps(context)}), \
+             patch.object(SCOPE['Engine'],'api',return_value={'ApiVersion':'1.47','Os':'linux','Arch':'amd64'}):
+            self.assertEqual(SCOPE['Engine']().socket,'/context.sock')
+
     def test_payload_retains_arrays_udp_multi_bind_mount_type_and_policy(self):
         original=item();data=copy.deepcopy(original)
         result=SCOPE['payload'](data,{'/original':'/restore/data/payload'}, {})

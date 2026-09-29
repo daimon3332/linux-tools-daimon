@@ -13484,7 +13484,7 @@ def cli(*args):
 
 class Engine:
     def __init__(self):
-        endpoint = os.environ.get('DOCKER_HOST')
+        endpoint = None if os.environ.get('DOCKER_CONTEXT') else os.environ.get('DOCKER_HOST')
         if not endpoint:
             context = json.loads(cli('context', 'inspect'))
             endpoint = context[0]['Endpoints']['docker']['Host']
