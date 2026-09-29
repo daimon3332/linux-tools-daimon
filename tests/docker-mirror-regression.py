@@ -36,7 +36,10 @@ docker() {
             if [ "$FAILURE" = inspect ]; then echo 'permission denied' >&2; return 1; fi
             if [ "$FAILURE" = cached ] || [ -f "$WORK/pulled" ]; then
                 if [[ "$*" = *'.Size'* ]]; then echo 123456; elif [ "$FAILURE" = changed ]; then echo sha256:other; else echo sha256:fixture; fi
-            else echo "Error response from daemon: No such image: ${!#}" >&2; return 1; fi ;;
+            else
+                [ "$FAILURE" != blank_stdout ] || printf '\n'
+                echo "Error response from daemon: No such image: ${!#}" >&2; return 1
+            fi ;;
         'image rm') [ "$FAILURE" != cleanup ] || return 1; command rm -f "$WORK/pulled" ;;
         'image prune') : ;;
         'image ls') if [ "$FAILURE" = shared ]; then echo sha256:fixture; fi ;;
@@ -70,6 +73,12 @@ timeout() { shift; "$@"; }
         self.assertNotIn('pull ', calls)
         self.assertNotIn('image rm', calls)
         self.assertNotIn('image prune', calls)
+
+    def test_missing_image_with_blank_inspect_stdout_is_pulled(self):
+        p, calls = self.invoke('blank_stdout')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('pull registry.example/', calls)
+        self.assertFalse((self.work / 'pulled').exists())
 
     def test_pull_failure_is_returned_without_global_cleanup(self):
         p, calls = self.invoke('pull')

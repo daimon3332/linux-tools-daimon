@@ -1036,7 +1036,7 @@ docker_mirror_speed_run() {
 			host="$(docker_mirror_normalize_host "$mirror")"
 			ref="${host}/${image}"
 			echo "round=${round} mirror=${base_url}"
-			if initial=$(docker image inspect -f '{{.Id}}' "$ref" 2>&1); then
+			if initial=$(docker image inspect -f '{{.Id}}' "$ref" 2>&1 >/dev/null); then
 				echo "SKIP(existing) $ref"; continue
 			fi
 			if [[ "$initial" != "Error response from daemon: No such image: $ref" && "$initial" != "Error: No such image: $ref" ]]; then
