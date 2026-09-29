@@ -45,7 +45,11 @@ crontab() {
         cat "$WORK/cron"
     else
         [ "$FAILURE" != write ] || return 1
+        if [ "$FAILURE" = bad_rollback ] && [ -e "$WORK/written" ]; then return 0; fi
         cat > "$WORK/cron.next" && mv "$WORK/cron.next" "$WORK/cron"
+        if [[ "$FAILURE" = after_write || "$FAILURE" = bad_rollback ]] && [ ! -e "$WORK/written" ]; then
+            touch "$WORK/written"; return 1
+        fi
     fi
 }
 crontab_sync_install_one imagebed "$WORK/task.sh" "0 4 * * * /bin/bash $WORK/task.sh"
@@ -83,6 +87,22 @@ crontab_sync_install_one imagebed "$WORK/task.sh" "0 4 * * * /bin/bash $WORK/tas
             self.assertEqual(result.runner_contents, 'original runner\n')
             self.assertEqual(cron, initial)
             self.assertEqual(result.pending, [])
+
+    def test_failed_command_after_cron_commit_restores_everything(self):
+        result, _, cron, initial, _, _ = self.invoke('after_write', preexisting=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.task_contents, 'original task\n')
+        self.assertEqual(result.runner_contents, 'original runner\n')
+        self.assertEqual(cron, initial)
+        self.assertEqual(result.pending, [])
+
+    def test_false_successful_cron_rollback_keeps_recovery_files(self):
+        result, _, cron, initial, _, _ = self.invoke('bad_rollback', preexisting=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertNotEqual(cron, initial)
+        self.assertEqual(result.task_contents, 'changed\n')
+        self.assertEqual(result.runner_contents, 'changed\n')
+        self.assertEqual(len(result.pending), 1)
 
     def test_dependency_failure_before_script_mutation(self):
         result, changed, cron, initial, _, _ = self.invoke('dependency')

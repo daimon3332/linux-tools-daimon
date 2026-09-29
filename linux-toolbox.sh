@@ -20253,6 +20253,7 @@ crontab_sync_install_one() {
 					elif [ "$checked" = "$next" ]; then
 						if [ "$had_cron" = 1 ]; then crontab - < "$stage/cron.old" || restored=0
 						else crontab -r || restored=0; fi
+						checked=$(rsync_cron_read) && [ "$checked" = "$current" ] || restored=0
 					elif [ "$checked" != "$current" ]; then restored=0; fi
 				fi
 				if [ "$restored" = 1 ]; then
