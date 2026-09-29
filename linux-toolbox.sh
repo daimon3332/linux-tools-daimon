@@ -20201,6 +20201,7 @@ crontab_sync_install_one() {
 	local id="$1"
 	local script_file="$2"
 	local cron_line="$3"
+	local current next checked runner
 	root_use
 	if [ "$id" != "nginxdomain" ] && ! command -v rclone >/dev/null 2>&1; then
 		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
@@ -20214,9 +20215,18 @@ crontab_sync_install_one() {
 			fi
 			;;
 	esac
-	check_crontab_installed
+	check_crontab_installed || return 1
+	current=$(rsync_cron_read) || return 1
+	runner=$(crontab_sync_runner_file) || return 1
+	next=$(printf '%s\n' "$current" | server_retire_filter_cron "$script_file" "$runner") || return 1
+	if [ -n "$next" ]; then next+=$'\n'; fi
+	next+="$cron_line"
 	crontab_sync_write_script "$id" "$script_file" || return 1
-	(crontab -l 2>/dev/null | grep -vF "$script_file" || true; echo "$cron_line") | crontab - || return 1
+	checked=$(rsync_cron_read) || return 1
+	[ "$checked" = "$current" ] || { echo "定时任务已被其他进程修改，未覆盖；请核对已生成的脚本。" >&2; return 1; }
+	printf '%s\n' "$next" | crontab - || return 1
+	checked=$(rsync_cron_read) || return 1
+	[ "$checked" = "$next" ] || { echo "定时任务写入后校验失败，请检查 crontab。" >&2; return 1; }
 	if [ "$id" = "nginxdomain" ]; then /bin/bash "$script_file" || return 1; fi
 	echo -e "${gl_lv}已安装: $(basename "$script_file")${gl_bai}"
 	echo "定时任务: $cron_line"
