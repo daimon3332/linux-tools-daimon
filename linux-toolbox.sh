@@ -13675,27 +13675,17 @@ docker_ssh_migration() {
 			[[ -z "$IMAGE" || "$IMAGE" == "null" ]] && { echo -e "${gl_hong}未找到镜像信息，跳过: $container${gl_bai}"; continue; }
 
 			# 端口映射
-			PORT_ARGS=""
 			mapfile -t PORTS < <(jq -r '.[0].HostConfig.PortBindings | to_entries[]? | "\(.value[0].HostPort):\(.key | split("/")[0])"' "$json")
-			for p in "${PORTS[@]}"; do
-				[[ -n "$p" ]] && PORT_ARGS="$PORT_ARGS -p $p"
-			done
 
 			# 环境变量
-			ENV_ARGS=""
 			mapfile -t ENVS < <(jq -r '.[0].Config.Env[]' "$json")
-			for e in "${ENVS[@]}"; do
-				ENV_ARGS="$ENV_ARGS -e \"$e\""
-			done
 
 			# 卷映射 + 卷数据恢复
-			VOL_ARGS=""
 			mapfile -t VOLS < <(jq -r '.[0].Mounts[] | "\(.Source):\(.Destination)"' "$json")
 			for v in "${VOLS[@]}"; do
 				VOL_SRC=$(echo "$v" | cut -d':' -f1)
 				VOL_DST=$(echo "$v" | cut -d':' -f2)
 				mkdir -p "$VOL_SRC"
-				VOL_ARGS="$VOL_ARGS -v $VOL_SRC:$VOL_DST"
 
 				VOL_FILE="$BACKUP_DIR/${container}_$(basename $VOL_SRC).tar.gz"
 				if [[ -f "$VOL_FILE" ]]; then
@@ -13712,7 +13702,7 @@ docker_ssh_migration() {
 			fi
 
 			# 启动容器
-			echo "执行还原命令: docker run -d --name \"$container\" $PORT_ARGS $VOL_ARGS $ENV_ARGS \"$IMAGE\""
+			echo "正在创建容器: $container"
 			local -a run_args=(run -d --name "$container")
 			for p in "${PORTS[@]}"; do [ -n "$p" ] && run_args+=( -p "$p" ); done
 			for e in "${ENVS[@]}"; do [ -n "$e" ] && run_args+=( -e "$e" ); done
