@@ -817,119 +817,119 @@ crontab_sync_write_script	19210	"$id"	root|emby|custom	local backup_name kind so
 crontab_sync_write_script	19210	"$id"	*	return 1	not-run	-
 crontab_sync_reconcile_legacy	20164	"$custom_file"	"$bit_old"|"$via_old"	continue	not-run	-
 crontab_sync_install_one	20210	"$id"	bitwarden|via|root|emby|custom	if ! crontab_sync_remote_ready; then echo -e "${gl_hong}kissska1 连接检查失败，未修改脚本和定时任务。${gl_bai}" return 1 fi	not-run	-
-crontab_sync_get_item_by_number	20277	"$num"	1|2|3|4|5|6	id=$(crontab_sync_builtin_id_by_number "$num") if [ "$id" = root ]; then if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then [ "$action" = install ] || return 1 crontab_sync_prompt_root_name >/dev/null || return 1 file=$(cro	not-run	-
-crontab_sync_handle_numbers	20315	"$action"	install|remove		not-run	-
-crontab_sync_handle_numbers	20315	"$action"	*	return 1	not-run	-
-crontab_sync_manager	20377	"$sub_choice"	1	read -e -p "请输入要安装的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
-crontab_sync_manager	20377	"$sub_choice"	2	read -e -p "请输入要卸载的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers remove "$nums"	not-run	-
-crontab_sync_manager	20377	"$sub_choice"	3	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的脚本编号（默认全选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
-crontab_sync_manager	20377	"$sub_choice"	4	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的脚本编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应脚本和定时任务？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then crontab_sync	not-run	-
-crontab_sync_manager	20377	"$sub_choice"	5	crontab_sync_run_root_once	not-run	-
-crontab_sync_manager	20377	"$sub_choice"	0	return	not-run	-
-crontab_sync_manager	20377	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-server_retire_nginx_remove	20475	"$parent"	/etc/nginx/sites-enabled|/etc/nginx/sites-available|/home/web/conf.d		not-run	-
-server_retire_nginx_remove	20475	"$parent"	*	echo "拒绝非托管配置路径。"; return 1	not-run	-
-server_retire_capture	20692	"$1"	C	docker_compose_update_discover_projects	not-run	-
-server_retire_capture	20692	"$1"	N	server_retire_nginx_items	not-run	-
-server_retire_capture	20692	"$1"	A	server_retire_script_items	not-run	-
-server_retire_capture	20692	"$1"	U	server_retire_update_items	not-run	-
-server_retire_capture	20692	"$1"	R	printf '%s %s\n' "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" "$DAIMON_ROOT_DIR/cert-renew.sh"	not-run	-
-server_retire_capture	20692	"$1"	*	return 1	not-run	-
-server_retire_apply_token	20712	"$token"	C*	IFS=$' ' read -r project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	not-run	-
-server_retire_apply_token	20712	"$token"	N*	IFS=$' ' read -r file domains enabled <<< "$item"; server_retire_nginx_remove "$file" "$domains"	not-run	-
-server_retire_apply_token	20712	"$token"	A*|U*	file=${item%%$' '*}; server_retire_remove_script "$file"	not-run	-
-server_retire_apply_token	20712	"$token"	R1	IFS=$' ' read -r file workdir <<< "$item" server_retire_remove_script "$file" || failure=1 server_retire_remove_script "$workdir" || failure=1 return "$failure"	not-run	-
-server_retire_menu	20835	"$choice"	1	server_retire_bulk	not-run	-
-server_retire_menu	20835	"$choice"	2	server_retire_compose_menu	not-run	-
-server_retire_menu	20835	"$choice"	3	server_retire_nginx_menu	menu-real-vm/partial	7011577; Debian13AMD64 and Ubuntu22ARM64 full main19->3 and actual nginx; five rounds cover cancel/invalid/duplicate selection, shared certificates and remaining HTTPS site, ExecReload failure restores config/link, inactive service preserved; both VMs restored; other retirement not covered
-server_retire_menu	20835	"$choice"	4	server_retire_script_menu sync	not-run	-
-server_retire_menu	20835	"$choice"	5	server_retire_script_menu update	not-run	-
-server_retire_menu	20835	"$choice"	6	server_retire_cert_menu	not-run	-
-server_retire_menu	20835	"$choice"	0	return	not-run	-
-server_retire_menu	20835	"$choice"	*	echo "无效的输入!"	not-run	-
-warp_manager	20871	$sub_choice	1	clear send_stats "warp管理" install wget curl daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"	not-run	-
-warp_manager	20871	$sub_choice	2	clear echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}" read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then send_stats "彻底删除warp" install wget curl 	not-run	-
-warp_manager	20871	$sub_choice	0	return	not-run	-
-warp_manager	20871	$sub_choice	*	echo "无效的输入!"	not-run	-
-debian_basics_install	21003	"$package"	ca-certificates|curl|wget|jq		not-run	-
-debian_basics_install	21003	"$package"	*	echo "无效的 Debian 软件包: $package"; return 1	not-run	-
-debian_basics_menu	21051	"$answer"	''|y|Y		not-run	-
-debian_basics_menu	21051	"$answer"	*	echo "已取消"; return 0	not-run	-
-kejilion_sh	21106	$choice	1	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
-kejilion_sh	21106	$choice	2	clear ; send_stats "系统更新" ; linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-kejilion_sh	21106	$choice	3	clear ; send_stats "系统清理" ; linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-kejilion_sh	21106	$choice	4	one_click_config_manager; pause_after=false	handler-real/partial	2026-09-28; 5ca85df; six hosts; one_click_config_manager handler real apt for items 2/3; main-menu 4 dispatch itself only in guarded regression; other setup items not covered
-kejilion_sh	21106	$choice	5	linux_Settings; pause_after=false	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; selected submenus only
-kejilion_sh	21106	$choice	6	linux_tools thirdparty; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	7	linux_tools programming; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	8	linux_docker; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	9	ssh_config_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	10	ufw_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	11	ssl_nginx_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	12	fail2ban_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	13	linux_bbr; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	14	warp_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	15	rclone_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	16	bitwarden_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	17	crontab_sync_manager; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	18	common_one_click_scripts; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	19	server_retire_menu; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	20	debian_basics_menu; pause_after=false	not-run	-
-kejilion_sh	21106	$choice	00	kejilion_update; pause_after=false	handler-real/scoped	2026-09-28 updater; six hosts; skip backup/helper migration as authorized
-kejilion_sh	21106	$choice	0	clear ; exit	menu-real/partial	2026-09-28; 5ca85df; six hosts; actual menu exits after info/update/clean without a second completion pause
-kejilion_sh	21106	$choice	*	echo "无效的输入!"	not-run	-
-CLI	21169	$1	install|add|安装	shift send_stats "安装软件" install "$@"	not-run	-
-CLI	21169	$1	remove|del|uninstall|卸载	shift send_stats "卸载软件" remove "$@"	not-run	-
-CLI	21169	$1	update|更新	linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-CLI	21169	$1	clean|清理	linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-CLI	21169	$1	bbr3|bbrv3	bbrv3	not-run	-
-CLI	21169	$1	nhyh|内核优化	Kernel_optimize	not-run	-
-CLI	21169	$1	trash|hsz|回收站	linux_trash	not-run	-
-CLI	21169	$1	backup|bf|备份	linux_backup	not-run	-
-CLI	21169	$1	ssh|远程连接	ssh_manager	not-run	-
-CLI	21169	$1	rsync|远程同步	rsync_manager	not-run	-
-CLI	21169	$1	rsync_run	shift send_stats "定时rsync同步" run_task "$@"	not-run	-
-CLI	21169	$1	disk|硬盘管理	disk_manager	not-run	-
-CLI	21169	$1	wp|wordpress	echo "LDNMP建站模块已移除"	not-run	-
-CLI	21169	$1	fd|rp|反代	echo "LDNMP反代模块已移除"	not-run	-
-CLI	21169	$1	loadbalance|负载均衡	echo "LDNMP负载均衡模块已移除"	not-run	-
-CLI	21169	$1	stream|L4负载均衡	echo "LDNMP四层转发模块已移除"	not-run	-
-CLI	21169	$1	swap	shift send_stats "快速设置虚拟内存" add_swap "$@"	cli-real-vm/partial	38629fc; two owned Ubuntu/Debian VMs; actual CLI create/repeat/invalid sizes and reboot activation; not six host swap tests
-CLI	21169	$1	time|时区	shift send_stats "快速设置时区" set_timedate "$@"	not-run	-
-CLI	21169	$1	iptables_open	iptables_open	not-run	-
-CLI	21169	$1	frps	frps_panel	not-run	-
-CLI	21169	$1	frpc	frpc_panel	not-run	-
-CLI	21169	$1	打开端口|dkdk	shift open_port "$@"	not-run	-
-CLI	21169	$1	关闭端口|gbdk	shift close_port "$@"	not-run	-
-CLI	21169	$1	放行IP|fxip	shift allow_ip "$@"	not-run	-
-CLI	21169	$1	阻止IP|zzip	shift block_ip "$@"	not-run	-
-CLI	21169	$1	防火墙|fhq	iptables_panel	not-run	-
-CLI	21169	$1	命令收藏夹|fav	linux_fav	not-run	-
-CLI	21169	$1	status|状态	shift send_stats "软件状态查看" status "$@"	not-run	-
-CLI	21169	$1	start|启动	shift send_stats "软件启动" start "$@"	not-run	-
-CLI	21169	$1	stop|停止	shift send_stats "软件暂停" stop "$@"	not-run	-
-CLI	21169	$1	restart|重启	shift send_stats "软件重启" restart "$@"	not-run	-
-CLI	21169	$1	enable|autostart|开机启动	shift send_stats "软件开机自启" enable "$@"	not-run	-
-CLI	21169	$1	ssl	shift if [ "$1" = "ps" ]; then send_stats "查看证书状态" ssl_ps elif [ -z "$1" ]; then add_ssl send_stats "快速申请证书" elif [ -n "$1" ]; then add_ssl "$1" send_stats "快速申请证书" else k_info fi	not-run	-
-CLI	21169	$1	docker	shift case $1 in install|安装) send_stats "快捷安装docker" install_docker ;; ps|容器) send_stats "快捷容器管理" docker_ps ;; img|镜像) send_stats "快捷镜像管理" docker_image ;; *) linux_docker ;; esac	not-run	-
-CLI	21169	$1	web	echo "LDNMP站点管理模块已移除"	not-run	-
-CLI	21169	$1	info	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
-CLI	21169	$1	fail2ban|f2b	fail2ban_manager	not-run	-
-CLI	21169	$1	rclone|rc	rclone_manager	not-run	-
-CLI	21169	$1	bitwarden|bw	bitwarden_manager	not-run	-
-CLI	21169	$1	cronsync|syncscripts|cron-sync	crontab_sync_manager	not-run	-
-CLI	21169	$1	retire|退役	server_retire_menu	not-run	-
-CLI	21169	$1	sshkey	shift case "$1" in "" ) # sshkey → 交互菜单 send_stats "SSHKey 交互菜单" sshkey_panel ;; github ) shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1" ;; http://*|https://* ) send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1" ;; ss	not-run	-
-CLI	21169	$1	*	k_info	not-run	-
-CLI	21331	$1	install|安装	send_stats "快捷安装docker" install_docker	not-run	-
-CLI	21331	$1	ps|容器	send_stats "快捷容器管理" docker_ps	not-run	-
-CLI	21331	$1	img|镜像	send_stats "快捷镜像管理" docker_image	not-run	-
-CLI	21331	$1	*	linux_docker	not-run	-
-CLI	21385	"$1"	""	send_stats "SSHKey 交互菜单" sshkey_panel	not-run	-
-CLI	21385	"$1"	github	shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1"	not-run	-
-CLI	21385	"$1"	http://*|https://*	send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
-CLI	21385	"$1"	ssh-rsa*|ssh-ed25519*|ssh-ecdsa*	send_stats "公钥直接导入" import_sshkey "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
-CLI	21385	"$1"	*	echo "错误：未知参数 '$1'" echo "用法：" echo " k sshkey 进入交互菜单" echo " k sshkey \"<pubkey>\" 直接导入 SSH 公钥" echo " k sshkey <url> 从 URL 导入 SSH 公钥" echo " k sshkey github <user> 从 GitHub 导入 SSH 公钥"	not-run	-
+crontab_sync_get_item_by_number	20356	"$num"	1|2|3|4|5|6	id=$(crontab_sync_builtin_id_by_number "$num") if [ "$id" = root ]; then if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then [ "$action" = install ] || return 1 crontab_sync_prompt_root_name >/dev/null || return 1 file=$(cro	not-run	-
+crontab_sync_handle_numbers	20394	"$action"	install|remove		not-run	-
+crontab_sync_handle_numbers	20394	"$action"	*	return 1	not-run	-
+crontab_sync_manager	20456	"$sub_choice"	1	read -e -p "请输入要安装的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
+crontab_sync_manager	20456	"$sub_choice"	2	read -e -p "请输入要卸载的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers remove "$nums"	not-run	-
+crontab_sync_manager	20456	"$sub_choice"	3	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的脚本编号（默认全选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
+crontab_sync_manager	20456	"$sub_choice"	4	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的脚本编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应脚本和定时任务？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then crontab_sync	not-run	-
+crontab_sync_manager	20456	"$sub_choice"	5	crontab_sync_run_root_once	not-run	-
+crontab_sync_manager	20456	"$sub_choice"	0	return	not-run	-
+crontab_sync_manager	20456	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+server_retire_nginx_remove	20554	"$parent"	/etc/nginx/sites-enabled|/etc/nginx/sites-available|/home/web/conf.d		not-run	-
+server_retire_nginx_remove	20554	"$parent"	*	echo "拒绝非托管配置路径。"; return 1	not-run	-
+server_retire_capture	20771	"$1"	C	docker_compose_update_discover_projects	not-run	-
+server_retire_capture	20771	"$1"	N	server_retire_nginx_items	not-run	-
+server_retire_capture	20771	"$1"	A	server_retire_script_items	not-run	-
+server_retire_capture	20771	"$1"	U	server_retire_update_items	not-run	-
+server_retire_capture	20771	"$1"	R	printf '%s %s\n' "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" "$DAIMON_ROOT_DIR/cert-renew.sh"	not-run	-
+server_retire_capture	20771	"$1"	*	return 1	not-run	-
+server_retire_apply_token	20791	"$token"	C*	IFS=$' ' read -r project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	not-run	-
+server_retire_apply_token	20791	"$token"	N*	IFS=$' ' read -r file domains enabled <<< "$item"; server_retire_nginx_remove "$file" "$domains"	not-run	-
+server_retire_apply_token	20791	"$token"	A*|U*	file=${item%%$' '*}; server_retire_remove_script "$file"	not-run	-
+server_retire_apply_token	20791	"$token"	R1	IFS=$' ' read -r file workdir <<< "$item" server_retire_remove_script "$file" || failure=1 server_retire_remove_script "$workdir" || failure=1 return "$failure"	not-run	-
+server_retire_menu	20914	"$choice"	1	server_retire_bulk	not-run	-
+server_retire_menu	20914	"$choice"	2	server_retire_compose_menu	not-run	-
+server_retire_menu	20914	"$choice"	3	server_retire_nginx_menu	menu-real-vm/partial	7011577; Debian13AMD64 and Ubuntu22ARM64 full main19->3 and actual nginx; five rounds cover cancel/invalid/duplicate selection, shared certificates and remaining HTTPS site, ExecReload failure restores config/link, inactive service preserved; both VMs restored; other retirement not covered
+server_retire_menu	20914	"$choice"	4	server_retire_script_menu sync	not-run	-
+server_retire_menu	20914	"$choice"	5	server_retire_script_menu update	not-run	-
+server_retire_menu	20914	"$choice"	6	server_retire_cert_menu	not-run	-
+server_retire_menu	20914	"$choice"	0	return	not-run	-
+server_retire_menu	20914	"$choice"	*	echo "无效的输入!"	not-run	-
+warp_manager	20950	$sub_choice	1	clear send_stats "warp管理" install wget curl daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"	not-run	-
+warp_manager	20950	$sub_choice	2	clear echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}" read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then send_stats "彻底删除warp" install wget curl 	not-run	-
+warp_manager	20950	$sub_choice	0	return	not-run	-
+warp_manager	20950	$sub_choice	*	echo "无效的输入!"	not-run	-
+debian_basics_install	21082	"$package"	ca-certificates|curl|wget|jq		not-run	-
+debian_basics_install	21082	"$package"	*	echo "无效的 Debian 软件包: $package"; return 1	not-run	-
+debian_basics_menu	21130	"$answer"	''|y|Y		not-run	-
+debian_basics_menu	21130	"$answer"	*	echo "已取消"; return 0	not-run	-
+kejilion_sh	21185	$choice	1	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
+kejilion_sh	21185	$choice	2	clear ; send_stats "系统更新" ; linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+kejilion_sh	21185	$choice	3	clear ; send_stats "系统清理" ; linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+kejilion_sh	21185	$choice	4	one_click_config_manager; pause_after=false	handler-real/partial	2026-09-28; 5ca85df; six hosts; one_click_config_manager handler real apt for items 2/3; main-menu 4 dispatch itself only in guarded regression; other setup items not covered
+kejilion_sh	21185	$choice	5	linux_Settings; pause_after=false	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; selected submenus only
+kejilion_sh	21185	$choice	6	linux_tools thirdparty; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	7	linux_tools programming; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	8	linux_docker; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	9	ssh_config_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	10	ufw_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	11	ssl_nginx_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	12	fail2ban_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	13	linux_bbr; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	14	warp_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	15	rclone_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	16	bitwarden_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	17	crontab_sync_manager; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	18	common_one_click_scripts; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	19	server_retire_menu; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	20	debian_basics_menu; pause_after=false	not-run	-
+kejilion_sh	21185	$choice	00	kejilion_update; pause_after=false	handler-real/scoped	2026-09-28 updater; six hosts; skip backup/helper migration as authorized
+kejilion_sh	21185	$choice	0	clear ; exit	menu-real/partial	2026-09-28; 5ca85df; six hosts; actual menu exits after info/update/clean without a second completion pause
+kejilion_sh	21185	$choice	*	echo "无效的输入!"	not-run	-
+CLI	21248	$1	install|add|安装	shift send_stats "安装软件" install "$@"	not-run	-
+CLI	21248	$1	remove|del|uninstall|卸载	shift send_stats "卸载软件" remove "$@"	not-run	-
+CLI	21248	$1	update|更新	linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+CLI	21248	$1	clean|清理	linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+CLI	21248	$1	bbr3|bbrv3	bbrv3	not-run	-
+CLI	21248	$1	nhyh|内核优化	Kernel_optimize	not-run	-
+CLI	21248	$1	trash|hsz|回收站	linux_trash	not-run	-
+CLI	21248	$1	backup|bf|备份	linux_backup	not-run	-
+CLI	21248	$1	ssh|远程连接	ssh_manager	not-run	-
+CLI	21248	$1	rsync|远程同步	rsync_manager	not-run	-
+CLI	21248	$1	rsync_run	shift send_stats "定时rsync同步" run_task "$@"	not-run	-
+CLI	21248	$1	disk|硬盘管理	disk_manager	not-run	-
+CLI	21248	$1	wp|wordpress	echo "LDNMP建站模块已移除"	not-run	-
+CLI	21248	$1	fd|rp|反代	echo "LDNMP反代模块已移除"	not-run	-
+CLI	21248	$1	loadbalance|负载均衡	echo "LDNMP负载均衡模块已移除"	not-run	-
+CLI	21248	$1	stream|L4负载均衡	echo "LDNMP四层转发模块已移除"	not-run	-
+CLI	21248	$1	swap	shift send_stats "快速设置虚拟内存" add_swap "$@"	cli-real-vm/partial	38629fc; two owned Ubuntu/Debian VMs; actual CLI create/repeat/invalid sizes and reboot activation; not six host swap tests
+CLI	21248	$1	time|时区	shift send_stats "快速设置时区" set_timedate "$@"	not-run	-
+CLI	21248	$1	iptables_open	iptables_open	not-run	-
+CLI	21248	$1	frps	frps_panel	not-run	-
+CLI	21248	$1	frpc	frpc_panel	not-run	-
+CLI	21248	$1	打开端口|dkdk	shift open_port "$@"	not-run	-
+CLI	21248	$1	关闭端口|gbdk	shift close_port "$@"	not-run	-
+CLI	21248	$1	放行IP|fxip	shift allow_ip "$@"	not-run	-
+CLI	21248	$1	阻止IP|zzip	shift block_ip "$@"	not-run	-
+CLI	21248	$1	防火墙|fhq	iptables_panel	not-run	-
+CLI	21248	$1	命令收藏夹|fav	linux_fav	not-run	-
+CLI	21248	$1	status|状态	shift send_stats "软件状态查看" status "$@"	not-run	-
+CLI	21248	$1	start|启动	shift send_stats "软件启动" start "$@"	not-run	-
+CLI	21248	$1	stop|停止	shift send_stats "软件暂停" stop "$@"	not-run	-
+CLI	21248	$1	restart|重启	shift send_stats "软件重启" restart "$@"	not-run	-
+CLI	21248	$1	enable|autostart|开机启动	shift send_stats "软件开机自启" enable "$@"	not-run	-
+CLI	21248	$1	ssl	shift if [ "$1" = "ps" ]; then send_stats "查看证书状态" ssl_ps elif [ -z "$1" ]; then add_ssl send_stats "快速申请证书" elif [ -n "$1" ]; then add_ssl "$1" send_stats "快速申请证书" else k_info fi	not-run	-
+CLI	21248	$1	docker	shift case $1 in install|安装) send_stats "快捷安装docker" install_docker ;; ps|容器) send_stats "快捷容器管理" docker_ps ;; img|镜像) send_stats "快捷镜像管理" docker_image ;; *) linux_docker ;; esac	not-run	-
+CLI	21248	$1	web	echo "LDNMP站点管理模块已移除"	not-run	-
+CLI	21248	$1	info	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
+CLI	21248	$1	fail2ban|f2b	fail2ban_manager	not-run	-
+CLI	21248	$1	rclone|rc	rclone_manager	not-run	-
+CLI	21248	$1	bitwarden|bw	bitwarden_manager	not-run	-
+CLI	21248	$1	cronsync|syncscripts|cron-sync	crontab_sync_manager	not-run	-
+CLI	21248	$1	retire|退役	server_retire_menu	not-run	-
+CLI	21248	$1	sshkey	shift case "$1" in "" ) # sshkey → 交互菜单 send_stats "SSHKey 交互菜单" sshkey_panel ;; github ) shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1" ;; http://*|https://* ) send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1" ;; ss	not-run	-
+CLI	21248	$1	*	k_info	not-run	-
+CLI	21410	$1	install|安装	send_stats "快捷安装docker" install_docker	not-run	-
+CLI	21410	$1	ps|容器	send_stats "快捷容器管理" docker_ps	not-run	-
+CLI	21410	$1	img|镜像	send_stats "快捷镜像管理" docker_image	not-run	-
+CLI	21410	$1	*	linux_docker	not-run	-
+CLI	21464	"$1"	""	send_stats "SSHKey 交互菜单" sshkey_panel	not-run	-
+CLI	21464	"$1"	github	shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1"	not-run	-
+CLI	21464	"$1"	http://*|https://*	send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
+CLI	21464	"$1"	ssh-rsa*|ssh-ed25519*|ssh-ecdsa*	send_stats "公钥直接导入" import_sshkey "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
+CLI	21464	"$1"	*	echo "错误：未知参数 '$1'" echo "用法：" echo " k sshkey 进入交互菜单" echo " k sshkey \"<pubkey>\" 直接导入 SSH 公钥" echo " k sshkey <url> 从 URL 导入 SSH 公钥" echo " k sshkey github <user> 从 GitHub 导入 SSH 公钥"	not-run	-
 linux_tools/thirdparty/install		tool number	1	install_tool_by_id vim	not-run	-
 linux_tools/thirdparty/remove		tool number	1	remove_tool_by_id vim	not-run	-
 linux_tools/thirdparty/install		tool number	2	install_tool_by_id cpcat	not-run	-
