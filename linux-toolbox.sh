@@ -13598,7 +13598,7 @@ def supported(item):
     require(not str(h.get('NetworkMode','')).startswith('container:'), 'Container-shared networking is unsupported')
     for mount in item.get('Mounts', []):
         require(mount['Type'] in ('bind','volume','tmpfs'), 'Unsupported mount type')
-        require(not any(mode in mount.get('Mode','').split(',') for mode in ('z','Z')), 'SELinux relabel mounts require manual recovery')
+        require(mount['Type'] != 'bind' or not any(mode in mount.get('Mode','').split(',') for mode in ('z','Z')), 'SELinux bind relabel mounts require manual recovery')
         require(mount.get('Propagation','') in ('','rprivate','private'), 'Shared mount propagation is unsupported')
     for mount in h.get('Mounts') or []:
         require(not mount.get('VolumeOptions',{}).get('Subpath') and not mount.get('BindOptions',{}).get('NonRecursive'), 'Advanced mount options require manual recovery')

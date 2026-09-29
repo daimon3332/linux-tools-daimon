@@ -34,6 +34,11 @@ class Metadata(unittest.TestCase):
         self.assertEqual(result['HostConfig']['Mounts'][1]['Type'],'volume')
         self.assertEqual(result['HostConfig']['Mounts'][1]['Source'],'volume-fixture')
         self.assertEqual(data,original)
+    def test_native_volume_default_z_mode_is_not_a_bind_relabel(self):
+        data=item();data['Mounts'][1]['Mode']='z'
+        SCOPE['supported'](data)
+        data['Mounts'][0]['Mode']='z'
+        with self.assertRaises(ValueError):SCOPE['supported'](data)
     def test_network_id_remapped_to_name(self):
         data=item();data['HostConfig']['NetworkMode']='old-id'
         data['NetworkSettings']['Networks']={'project_default':{'NetworkID':'old-id','Aliases':['app',data['Id'][:12]],'IPAMConfig':{'IPv4Address':'172.31.0.4'}}}
