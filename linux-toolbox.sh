@@ -7606,27 +7606,33 @@ list_backups() {
 	ls -1 "$BACKUP_DIR"
 }
 
-# 删除备份
+daimon_backup_delete_target() {
+	local name="$1" root target mode
+	[[ "$name" = *.tar.gz && "$name" != */* && "$name" != *\\* && "$name" != -* && "$name" != *$'\n'* && "$name" != *$'\r'* ]] || return 1
+	[ -d "$BACKUP_DIR" ] && [ ! -L "$BACKUP_DIR" ] && [ -O "$BACKUP_DIR" ] || return 1
+	root=$(realpath -e -- "$BACKUP_DIR") || return 1
+	mode=$(stat -c %a -- "$root") || return 1
+	(( (8#${mode} & 022) == 0 )) || return 1
+	target="$root/$name"
+	[ -f "$target" ] && [ ! -L "$target" ] && [ -O "$target" ] &&
+		[ "$(stat -c %h -- "$target")" = 1 ] || return 1
+	printf '%s\n' "$target"
+}
+
 delete_backup() {
+	local name target checked identity confirm
 	send_stats "删除备份"
-
-	read -e -p "请输入要删除的备份文件名: " BACKUP_NAME || return 1
-
-	# 检查备份文件是否存在
-	if [ ! -f "$BACKUP_DIR/$BACKUP_NAME" ]; then
-		echo "备份文件不存在！"
-		exit 1
-	fi
-
-	# 删除备份
-	rm -f "$BACKUP_DIR/$BACKUP_NAME"
-
-	if [ $? -eq 0 ]; then
-		echo "备份删除成功！"
-	else
-		echo "备份删除失败！"
-		exit 1
-	fi
+	read -r -e -p "请输入要删除的备份文件名: " name || return 1
+	target=$(daimon_backup_delete_target "$name") || { echo "备份不存在或路径、类型、归属不安全，未删除。"; return 1; }
+	identity=$(stat -c '%d:%i:%s:%Y:%Z' -- "$target") || return 1
+	read -r -e -p "确认永久删除 $target？(y/N): " confirm || return 1
+	[[ "$confirm" = y || "$confirm" = Y ]] || { echo "已取消"; return 0; }
+	checked=$(daimon_backup_delete_target "$name") || return 1
+	[ "$checked" = "$target" ] && [ "$(stat -c '%d:%i:%s:%Y:%Z' -- "$target")" = "$identity" ] || {
+		echo "备份在确认期间发生变化，未删除。"; return 1
+	}
+	rm -- "$target" && [ ! -e "$target" ] && [ ! -L "$target" ] || { echo "备份删除失败！"; return 1; }
+	echo "备份删除成功！"
 }
 
 # 备份主菜单
