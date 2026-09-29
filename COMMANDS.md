@@ -1753,3 +1753,5 @@ crontab -l | awk -v path="/root/linux-daimon/backup-sh/脚本名.sh" '/^[[:space
 退役安全约束：选择列表在确认前固定，执行前复核列表，所有编号先校验并去重，不因删除或重复编号选中其他对象；任一项目失败返回非零，已完成的独立项目不自动恢复。脚本仅允许可信目录内直接普通文件，拒绝软/硬链接及运行中或被打开的脚本，cron 读取失败停止。Nginx 配置临时移出后验证并重载，失败尝试恢复配置和启用链接；不启动原先停止的 Nginx。无法证明证书仅供该站点使用，因此退役保留证书，须在证书管理单独核查，不再按 server_name 直接删除目录。
 
 IPv6 持久化：先识别活动 systemd-networkd 及接口实际 .network 文件（含 Netplan 生成文件），对普通动态地址配置添加工具箱独占的 `99-daimon-ipv6.conf` drop-in，禁用 DHCPv6/RA/IPv6 link-local，同时保留 IPv4 DHCP/link-local 选择。原 Netplan YAML 和 .network 不改写；重新生成 Netplan 不删除 /etc 下的 drop-in。开启时只移除本工具拥有的 drop-in，并重新配置接口。静态 IPv6、复杂叠加网络、其他 drop-in、NetworkManager、未识别的物理接口及残留旧 profile 均停止并要求人工审查，不冒充持久化成功。接口重配置也可能中断网络，失败不承诺恢复已丢失的地址、路由或连接。依据：systemd 249 systemd.network 的 drop-in 优先级/DHCP/LinkLocalAddressing 定义与 Netplan YAML 的 renderer/dhcp6/link-local/accept-ra 定义（2026-09-29 查阅）。
+
+crontab 同步脚本多选操作：先校验并去重编号、固定对应脚本，再逐项执行；非法编号不执行安装或卸载，批量中任一操作失败均返回失败。此规则不构成跨脚本原子事务。

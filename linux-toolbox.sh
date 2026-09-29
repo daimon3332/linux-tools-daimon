@@ -20209,23 +20209,34 @@ crontab_sync_get_item_by_number() {
 crontab_sync_handle_numbers() {
 	local action="$1"
 	local nums="$2"
-	local n item id file cron_line
+	local n item id file cron_line status=0
+	local -a items=()
+	local -A selected=()
+	case "$action" in install|remove) ;; *) return 1 ;; esac
 	for n in $nums; do
-		if ! [[ "$n" =~ ^[0-9]+$ ]]; then
-			echo "跳过无效编号: $n"
-			continue
-		fi
-		if ! item=$(crontab_sync_get_item_by_number "$n" "$action"); then
-			echo "跳过无效编号: $n"
-			continue
-		fi
-		IFS='|' read -r id file cron_line <<< "$item"
-		if [ "$action" = "install" ]; then
-			crontab_sync_install_one "$id" "$file" "$cron_line"
-		else
-			crontab_sync_remove_one "$file"
+		if ! [[ "$n" =~ ^[1-9][0-9]{0,5}$ ]]; then
+			echo "无效编号，未执行: $n"
+			return 1
 		fi
 	done
+	for n in $nums; do
+		[ -z "${selected[$n]:-}" ] || continue
+		if ! item=$(crontab_sync_get_item_by_number "$n" "$action"); then
+			echo "编号不可用，未执行: $n"
+			return 1
+		fi
+		selected[$n]=1
+		items+=("$item")
+	done
+	for item in "${items[@]}"; do
+		IFS='|' read -r id file cron_line <<< "$item"
+		if [ "$action" = "install" ]; then
+			crontab_sync_install_one "$id" "$file" "$cron_line" || status=1
+		else
+			crontab_sync_remove_one "$file" || status=1
+		fi
+	done
+	return "$status"
 }
 
 crontab_sync_all_numbers() {
