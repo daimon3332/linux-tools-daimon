@@ -16,6 +16,33 @@ canshu="default"
 permission_granted="false"
 ENABLE_STATS="false"
 
+case "${1:-}" in
+    ssh-confirm|ssh-rollback)
+        [ "$#" -eq 2 ] || { echo "用法: d $1 TOKEN" >&2; exit 1; }
+        exec /usr/bin/python3 -I - "${1#ssh-}" "$2" <<'PYSSH_CONFIRM'
+import os, re, stat, sys
+from pathlib import Path
+try:
+    if os.geteuid() != 0 or not re.fullmatch(r'[a-f0-9]{32}', sys.argv[2]):
+        raise ValueError('Root and a valid transaction token are required')
+    worker = Path('/var/lib/daimon/ssh-change/worker.py')
+    if worker.resolve() != worker:
+        raise ValueError('Untrusted SSH recovery path')
+    for parent in worker.parents:
+        info = parent.stat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            raise ValueError('Untrusted SSH recovery directory')
+    info = worker.stat()
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_nlink != 1 or info.st_mode & 0o022:
+        raise ValueError('Untrusted SSH recovery worker')
+    os.execv('/usr/bin/python3', ['/usr/bin/python3', '-I', str(worker), *sys.argv[1:]])
+except (OSError, ValueError) as error:
+    print('ERROR: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PYSSH_CONFIRM
+        ;;
+esac
+
 validate_domain_name() {
 	[[ "$1" =~ ^([A-Za-z0-9-]+\.)+[A-Za-z]{2,63}$ ]]
 }
@@ -14908,6 +14935,485 @@ ssh_private_key_name_valid() {
 	validate_config_name "$1" || return 1
 	case "$1" in authorized_keys|known_hosts|known_hosts.old|config|*.pub) return 1 ;; esac
 }
+
+ssh_transaction_program() {
+	cat <<'PYSSH_TXN'
+import hashlib
+import json
+import os
+import re
+import secrets
+import shutil
+import signal
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+OPTIONS = {key.lower(): key for key in (
+    'Port', 'PasswordAuthentication', 'KbdInteractiveAuthentication',
+    'PubkeyAuthentication', 'PermitRootLogin', 'PermitEmptyPasswords', 'AuthorizedKeysFile')}
+BEGIN = '# BEGIN DAIMON SSH TRANSACTION OPTIONS'
+END = '# END DAIMON SSH TRANSACTION OPTIONS'
+CONFIG = Path('/etc/ssh/sshd_config')
+PENDING = Path('/var/lib/daimon/ssh-change')
+UNIT = Path('/etc/systemd/system/daimon-ssh-recover.service')
+WANTED = Path('/etc/systemd/system/multi-user.target.wants/daimon-ssh-recover.service')
+
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+
+def option(key, value):
+    key = key.lower()
+    if key == 'challengeresponseauthentication':
+        key = 'kbdinteractiveauthentication'
+    require(key in OPTIONS, 'Unsupported SSH option')
+    if key == 'port':
+        require(value.isascii() and value.isdecimal() and 1 <= int(value) <= 65535, 'Invalid SSH port')
+        value = str(int(value))
+    elif key == 'authorizedkeysfile':
+        require(value == '.ssh/authorized_keys', 'Unsupported managed authorized_keys location')
+    elif key == 'permitrootlogin':
+        require(value in ('yes', 'no', 'prohibit-password', 'without-password'), 'Invalid root-login policy')
+        if value == 'without-password':
+            value = 'prohibit-password'
+    else:
+        require(value in ('yes', 'no'), 'Invalid authentication policy')
+    return key, value
+
+
+def candidate(original, changes):
+    lines = original.splitlines(keepends=True)
+    managed = {}
+    if lines and lines[0].rstrip('\r\n') == BEGIN:
+        end = next((i for i, line in enumerate(lines[1:], 1) if line.rstrip('\r\n') == END), None)
+        require(end is not None, 'Incomplete managed SSH configuration block')
+        for line in lines[1:end]:
+            fields = line.split()
+            require(len(fields) == 2, 'Invalid managed SSH configuration block')
+            key, value = option(*fields)
+            require(key not in managed, 'Duplicate managed SSH option')
+            managed[key] = value
+        lines = lines[end + 1:]
+    for key, value in changes:
+        key, value = option(key, value)
+        managed[key] = value
+    require(managed, 'No SSH changes requested')
+    if 'port' in managed:
+        # Port is forbidden inside Match; the caller first validates the original configuration.
+        lines = [line for line in lines if not re.match(r'^\s*Port\s+', line, re.I)]
+    header = [BEGIN] + [OPTIONS[key] + ' ' + value for key, value in sorted(managed.items())] + [END]
+    return '\n'.join(header) + '\n' + ''.join(lines), managed
+
+
+def trusted_file(path):
+    path = Path(path)
+    require(path.is_absolute() and path.resolve() == path, 'Symlink or non-absolute configuration path')
+    info = path.stat()
+    require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1 and
+            not info.st_mode & 0o022, 'Untrusted configuration file')
+    return info
+
+
+def run(*args, timeout=30):
+    return subprocess.run(args, capture_output=True, text=True, timeout=timeout, cwd='/',
+                          env=dict(os.environ, LC_ALL='C', PATH='/usr/sbin:/usr/bin:/sbin:/bin'))
+
+
+def command(*args, timeout=30):
+    result = run(*args, timeout=timeout)
+    require(result.returncode == 0, 'Command failed: ' + args[0] + ': ' + result.stderr.strip())
+    return result.stdout
+
+
+def connection_context(connection, port=None):
+    fields = connection.split()
+    require(len(fields) == 4 and fields[1].isdecimal() and fields[3].isdecimal(), 'An SSH connection is required')
+    import ipaddress
+    remote = str(ipaddress.ip_address(fields[0]))
+    local = str(ipaddress.ip_address(fields[2]))
+    return 'user=root,host=' + remote + ',addr=' + remote + ',laddr=' + local + ',lport=' + str(port or fields[3])
+
+
+def effective(config, context):
+    output = command('/usr/sbin/sshd', '-T', '-f', str(config), '-C', context)
+    values = {}
+    for line in output.splitlines():
+        key, value = line.split(' ', 1)
+        values.setdefault(key, []).append(value)
+    return values
+
+
+def check_policy(values, desired):
+    for key, expected in desired.items():
+        actual = values.get(key, [])
+        if key == 'permitrootlogin':
+            actual = ['prohibit-password' if value == 'without-password' else value for value in actual]
+        require(actual == [expected], 'An Include, Match or duplicate directive conflicts with requested ' + OPTIONS[key])
+
+
+def trusted_directory(path):
+    path = Path(path)
+    require(path.is_absolute() and path.resolve() == path, 'Untrusted directory path')
+    for parent in (path, *path.parents):
+        info = parent.stat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022,
+                'Untrusted directory owner or permissions')
+
+
+def digest(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def sync_directory(path):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def atomic_write(path, content, mode=0o600, uid=0, gid=0):
+    path = Path(path)
+    trusted_directory(path.parent)
+    fd, temporary = tempfile.mkstemp(prefix='.ssh-change-', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'wb') as stream:
+            os.fchmod(stream.fileno(), mode)
+            os.fchown(stream.fileno(), uid, gid)
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+        sync_directory(path.parent)
+    finally:
+        if os.path.lexists(temporary):
+            os.unlink(temporary)
+
+
+def service_properties(name):
+    result = run('/usr/bin/systemctl', 'show', name, '--no-pager',
+                 '-p', 'Id', '-p', 'LoadState', '-p', 'ActiveState', '-p', 'MainPID',
+                 '-p', 'DropInPaths', '-p', 'UnitFileState')
+    properties = dict(line.split('=', 1) for line in result.stdout.splitlines() if '=' in line)
+    require(result.returncode == 0 or properties.get('LoadState') == 'not-found', 'Cannot inspect systemd unit ' + name)
+    return properties
+
+
+def preflight_service():
+    require(os.geteuid() == 0 and Path('/run/systemd/system').is_dir(), 'Root and systemd are required')
+    service = service_properties('ssh.service')
+    if service.get('LoadState') != 'loaded':
+        service = service_properties('sshd.service')
+    require(service.get('LoadState') == 'loaded' and service.get('ActiveState') == 'active',
+            'SSH must already be active; no inactive service will be started')
+    require(not service.get('DropInPaths'), 'Custom SSH service drop-ins require explicit manual handling')
+    require(service.get('MainPID', '').isdecimal() and int(service['MainPID']) > 1, 'SSH listener PID is unknown')
+    process = Path('/proc') / service['MainPID']
+    title = (process / 'cmdline').read_bytes().rstrip(b'\0')
+    require(re.fullmatch(rb'sshd: /usr/sbin/sshd -D \[listener\](?: [0-9]+ of [0-9-]+ startups)?', title),
+            'Unsupported sshd startup options; no service units were changed')
+    require((process / 'exe').resolve() == Path('/usr/sbin/sshd').resolve(), 'Unexpected SSH listener executable')
+    environment = dict(value.split(b'=', 1) for value in (process / 'environ').read_bytes().split(b'\0') if b'=' in value)
+    require(not environment.get(b'SSHD_OPTS', b'').strip(), 'Nonempty SSHD_OPTS are unsupported')
+    for name in ('ssh.socket', 'sshd.socket'):
+        socket = service_properties(name)
+        require(socket.get('LoadState') == 'not-found' or
+                (socket.get('ActiveState') == 'inactive' and socket.get('UnitFileState') in ('disabled', 'masked', '')),
+                'SSH socket activation is unsupported; existing sockets were not disabled')
+    return service['Id']
+
+
+def root_authentication_available(values):
+    value = lambda key: values.get(key, [''])[0]
+    root_mode = value('permitrootlogin')
+    require(root_mode in ('yes', 'without-password', 'prohibit-password'), 'Root SSH login would be disabled')
+    password_set = False
+    for line in Path('/etc/shadow').read_text().splitlines():
+        fields = line.split(':')
+        if fields[0] == 'root':
+            password_set = bool(fields[1]) and not fields[1].startswith(('!', '*'))
+            break
+    password = password_set and root_mode == 'yes' and value('passwordauthentication') == 'yes'
+    keyboard = password_set and root_mode == 'yes' and value('kbdinteractiveauthentication') == 'yes'
+    publickey = False
+    if value('pubkeyauthentication') == 'yes':
+        for filename in value('authorizedkeysfile').split():
+            filename = filename.replace('%h', '/root').replace('%u', 'root').replace('%U', '0')
+            path = Path(filename)
+            if not path.is_absolute():
+                path = Path('/root') / path
+            try:
+                trusted_directory(path.parent)
+                trusted_file(path)
+                command('/usr/bin/ssh-keygen', '-lf', str(path))
+                publickey = True
+                break
+            except (OSError, ValueError, subprocess.SubprocessError):
+                continue
+    factors = {'publickey': publickey, 'password': password,
+               'keyboard-interactive': keyboard, 'keyboard-interactive:pam': keyboard}
+    methods = value('authenticationmethods')
+    usable = publickey or password or keyboard if methods == 'any' else any(
+        all(factors.get(part, False) for part in alternative.split(',')) for alternative in methods.split())
+    require(usable, 'No supported root authentication method remains; current settings were preserved')
+
+
+def boot_id():
+    return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+
+
+def ssh_session_started():
+    pid = os.getppid()
+    starts = []
+    executables = {Path('/usr/sbin/sshd').resolve(), Path('/usr/lib/openssh/sshd-session').resolve()}
+    for _ in range(64):
+        if pid <= 1:
+            require(starts, 'Cannot identify the independently authenticated SSH session')
+            return min(starts)
+        process = Path('/proc') / str(pid)
+        fields = (process / 'stat').read_text().rsplit(')', 1)[1].split()
+        if (process / 'exe').resolve() in executables and b'[listener]' not in (process / 'cmdline').read_bytes():
+            starts.append(int(fields[19]) / os.sysconf('SC_CLK_TCK'))
+        pid = int(fields[1])
+    raise ValueError('SSH process ancestry exceeded the safety limit')
+
+
+def load_state():
+    trusted_directory(PENDING)
+    trusted_file(PENDING / 'state.json')
+    state = json.loads((PENDING / 'state.json').read_text())
+    require(state.get('version') == 1 and re.fullmatch(r'[a-f0-9]{32}', state.get('token', '')),
+            'Invalid pending SSH transaction')
+    require(state.get('service') in ('ssh.service', 'sshd.service'), 'Invalid pending SSH service')
+    require(state.get('timer') == 'daimon-ssh-rollback-' + state['token'][:12], 'Invalid rollback timer')
+    require(isinstance(state.get('metadata'), list) and len(state['metadata']) == 3 and
+            all(type(value) is int for value in state['metadata']) and
+            0 <= state['metadata'][0] <= 0o777 and not state['metadata'][0] & 0o022 and
+            state['metadata'][1] == 0 and state['metadata'][2] >= 0, 'Invalid recovery file metadata')
+    require(isinstance(state.get('desired'), dict) and state['desired'] and
+            all(option(key, value) == (key, value) for key, value in state['desired'].items()),
+            'Invalid pending SSH policy')
+    require(isinstance(state.get('ports'), list) and state['ports'] and
+            all(option('port', port)[1] == port for port in state['ports']), 'Invalid pending SSH ports')
+    require(all(type(state.get(key)) in (int, float) and 0 < state[key] < float('inf')
+                for key in ('started', 'deadline')) and state['deadline'] > state['started'],
+            'Invalid confirmation window')
+    connection_context(state.get('connection', ''))
+    require(isinstance(state.get('boot_id'), str) and state['boot_id'], 'Invalid pending boot identity')
+    for key in ('original_hash', 'candidate_hash', 'unit_hash'):
+        require(isinstance(state.get(key), str) and re.fullmatch(r'[a-f0-9]{64}', state[key]),
+                'Invalid recovery integrity metadata')
+    for name in ('original', 'candidate'):
+        trusted_file(PENDING / name)
+        require(digest((PENDING / name).read_bytes()) == state[name + '_hash'], 'Recovery file integrity check failed')
+    return state
+
+
+def cleanup(state):
+    allowed = {'worker.py', 'original', 'candidate', 'state.json'}
+    require(set(path.name for path in PENDING.iterdir()) <= allowed, 'Unexpected recovery files; retained for inspection')
+    if UNIT.exists() or UNIT.is_symlink():
+        trusted_file(UNIT)
+        require(digest(UNIT.read_bytes()) == state['unit_hash'], 'Recovery unit changed; it was not removed')
+    if WANTED.exists() or WANTED.is_symlink():
+        require(WANTED.is_symlink() and os.readlink(WANTED) == str(UNIT), 'Recovery dependency changed; it was not removed')
+    timer = state['timer'] + '.timer'
+    if service_properties(timer).get('LoadState') != 'not-found':
+        command('/usr/bin/systemctl', 'stop', timer)
+    if WANTED.is_symlink():
+        WANTED.unlink()
+        sync_directory(WANTED.parent)
+    if UNIT.exists():
+        UNIT.unlink()
+        sync_directory(UNIT.parent)
+    command('/usr/bin/systemctl', 'daemon-reload')
+    for path in PENDING.iterdir():
+        trusted_file(path)
+    for name in ('original', 'candidate', 'worker.py', 'state.json'):
+        path = PENDING / name
+        if path.exists():
+            path.unlink()
+    PENDING.rmdir()
+    sync_directory(PENDING.parent)
+
+
+def recover(state):
+    trusted_file(CONFIG)
+    current = digest(CONFIG.read_bytes())
+    require(current in (state['original_hash'], state['candidate_hash']),
+            'SSH configuration was changed externally; no unknown changes were overwritten')
+    command('/usr/sbin/sshd', '-t', '-f', str(PENDING / 'original'))
+    if current != state['original_hash']:
+        atomic_write(CONFIG, (PENDING / 'original').read_bytes(), *state['metadata'])
+    service = service_properties(state['service'])
+    if service.get('ActiveState') == 'active':
+        require(preflight_service() == state['service'], 'SSH service changed; reload requires manual verification')
+        command('/usr/bin/systemctl', 'reload', state['service'])
+    cleanup(state)
+    print('Unconfirmed SSH configuration restored; inactive services were not started.')
+
+
+def confirm(state, token):
+    require(secrets.compare_digest(token, state['token']), 'Invalid confirmation token')
+    require(boot_id() == state['boot_id'] and time.monotonic() < state['deadline'], 'Confirmation expired; rollback is required')
+    connection = os.environ.get('SSH_CONNECTION', '')
+    require(connection != state['connection'], 'Confirm from a new, independently authenticated SSH connection')
+    require(ssh_session_started() > state['started'], 'The confirming SSH session predates this change')
+    context = connection_context(connection)
+    require(connection.split()[3] in state['ports'], 'The new SSH connection used the wrong destination port')
+    require(preflight_service() == state['service'], 'SSH service changed during confirmation')
+    trusted_file(CONFIG)
+    require(digest(CONFIG.read_bytes()) == state['candidate_hash'], 'SSH configuration changed during confirmation')
+    policy = effective(CONFIG, context)
+    check_policy(policy, state['desired'])
+    root_authentication_available(policy)
+    cleanup(state)
+    print('SSH configuration confirmed from the new connection.')
+
+
+def apply(changes):
+    require(not PENDING.exists() and not PENDING.is_symlink(), 'An earlier SSH transaction still requires confirmation or recovery')
+    require(not UNIT.exists() and not UNIT.is_symlink() and not WANTED.exists() and not WANTED.is_symlink(),
+            'Recovery unit paths are already occupied; no existing units were changed')
+    service = preflight_service()
+    trusted_directory(CONFIG.parent)
+    info = trusted_file(CONFIG)
+    identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns,
+                             item.st_ctime_ns, item.st_mode, item.st_uid, item.st_gid)
+    original = CONFIG.read_bytes()
+    command('/usr/sbin/sshd', '-t', '-f', str(CONFIG))
+    connection = os.environ.get('SSH_CONNECTION', '')
+    old_context = connection_context(connection)
+    old_policy = effective(CONFIG, old_context)
+    text, desired = candidate(original.decode(), changes)
+    requested_port = desired.get('port')
+    if requested_port and old_policy.get('port') != [requested_port]:
+        require(not shutil.which('ufw') or 'Status: inactive' in command('/usr/sbin/ufw', 'status'),
+                'An active UFW port change requires the firewall transaction')
+        require(service_properties('fail2ban.service').get('ActiveState') != 'active',
+                'An active Fail2ban port change requires the jail transaction')
+    descriptor, staged = tempfile.mkstemp(prefix='.ssh-change-', dir=CONFIG.parent)
+    try:
+        with os.fdopen(descriptor, 'w') as stream:
+            stream.write(text)
+        command('/usr/sbin/sshd', '-t', '-f', staged)
+        policy = effective(staged, connection_context(connection, requested_port))
+        check_policy(policy, desired)
+        root_authentication_available(policy)
+    finally:
+        os.unlink(staged)
+    if text.encode() == original:
+        print('SSH configuration is already current; no service reload or recovery units were created.')
+        return
+    if not PENDING.parent.exists():
+        trusted_directory(PENDING.parent.parent)
+        PENDING.parent.mkdir(mode=0o700)
+    trusted_directory(PENDING.parent)
+    trusted_directory(UNIT.parent)
+    trusted_directory(WANTED.parent)
+    PENDING.mkdir(mode=0o700)
+    token = secrets.token_hex(16)
+    unit = ('[Unit]\nDescription=Recover unconfirmed Daimon SSH configuration\nDefaultDependencies=no\n'
+            'After=local-fs.target\nBefore=ssh.service sshd.service ssh.socket sshd.socket\n'
+            'ConditionPathExists=' + str(PENDING / 'state.json') + '\n[Service]\nType=oneshot\n'
+            'ExecStart=/usr/bin/python3 -I ' + str(PENDING / 'worker.py') + ' rollback ' + token + '\n'
+            'TimeoutStartSec=90\n[Install]\nWantedBy=multi-user.target\n').encode()
+    state = {'version': 1, 'token': token, 'timer': 'daimon-ssh-rollback-' + token[:12],
+             'service': service, 'boot_id': boot_id(), 'connection': connection,
+             'started': time.monotonic(), 'deadline': time.monotonic() + 180,
+             'desired': desired, 'ports': policy['port'],
+             'original_hash': digest(original), 'candidate_hash': digest(text.encode()),
+             'unit_hash': digest(unit), 'metadata': [stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid]}
+    try:
+        atomic_write(PENDING / 'worker.py', Path(__file__).read_bytes(), 0o700)
+        atomic_write(PENDING / 'original', original)
+        atomic_write(PENDING / 'candidate', text.encode())
+        atomic_write(PENDING / 'state.json', json.dumps(state).encode())
+        atomic_write(UNIT, unit, 0o644)
+        os.symlink(str(UNIT), WANTED)
+        sync_directory(WANTED.parent)
+        command('/usr/bin/systemctl', 'daemon-reload')
+        require(command('/usr/bin/systemctl', 'is-enabled', UNIT.name).strip() == 'enabled', 'Boot recovery was not enabled')
+        command('/usr/bin/systemd-run', '--quiet', '--collect', '--unit=' + state['timer'], '--on-active=180s',
+                '--timer-property=AccuracySec=1s', '--timer-property=RemainAfterElapse=no', '--property=Type=exec',
+                '/usr/bin/python3', '-I', str(PENDING / 'worker.py'), 'rollback', token)
+        require(service_properties(state['timer'] + '.timer').get('ActiveState') == 'active', 'Rollback timer is not armed')
+        require(identity(trusted_file(CONFIG)) == identity(info) and CONFIG.read_bytes() == original,
+                'SSH configuration changed while preparing recovery')
+        require(preflight_service() == service, 'SSH service changed while preparing recovery')
+        atomic_write(CONFIG, text.encode(), *state['metadata'])
+        command('/usr/bin/systemctl', 'reload', service)
+        require(service_properties(service).get('ActiveState') == 'active', 'SSH reload did not leave the service active')
+    except BaseException:
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(signum, signal.SIG_IGN)
+        try:
+            recover(state)
+        except BaseException as error:
+            print('Recovery incomplete; private recovery state retained at ' + str(PENDING) + ': ' + str(error), file=sys.stderr)
+        raise
+    print('SSH change is pending. Reconnect independently to port(s) ' + ','.join(state['ports']) + ' and run:')
+    print('d ssh-confirm ' + token)
+    print('Unconfirmed changes will roll back after 180 seconds or at the next boot.')
+
+
+def main(arguments):
+    import fcntl
+    require(os.geteuid() == 0, 'Root is required')
+    require(arguments and arguments[0] in ('apply', 'confirm', 'rollback'), 'Invalid SSH transaction action')
+    lock = Path('/run/lock/daimon-ssh-change.lock')
+    require(lock.parent.resolve() == lock.parent and lock.parent.stat().st_uid == 0, 'Untrusted SSH lock directory')
+    mode = lock.parent.stat().st_mode
+    require(not mode & 0o022 or mode & stat.S_ISVTX, 'SSH lock directory is writable without sticky protection')
+    fd = os.open(lock, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    try:
+        info = os.fstat(fd)
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1 and not info.st_mode & 0o022,
+                'Untrusted SSH transaction lock')
+        fcntl.flock(fd, fcntl.LOCK_EX | (0 if arguments[0] == 'rollback' else fcntl.LOCK_NB))
+        def interrupted(signum, frame):
+            raise InterruptedError('SSH transaction interrupted by signal ' + str(signum))
+        for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
+            signal.signal(signum, interrupted)
+        if arguments[0] == 'apply':
+            require(len(arguments) > 1 and len(arguments) % 2 == 1, 'Expected SSH option/value pairs')
+            apply(list(zip(arguments[1::2], arguments[2::2])))
+        else:
+            require(len(arguments) == 2, 'A transaction token is required')
+            state = load_state()
+            require(secrets.compare_digest(arguments[1], state['token']), 'Stale or invalid transaction token')
+            if arguments[0] == 'confirm':
+                confirm(state, arguments[1])
+            else:
+                recover(state)
+    finally:
+        os.close(fd)
+
+
+if __name__ == '__main__':
+    try:
+        main(sys.argv[1:])
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        print('ERROR: ' + str(error), file=sys.stderr)
+        sys.exit(1)
+PYSSH_TXN
+}
+
+ssh_transaction_apply() (
+    umask 077
+    [ "$EUID" -eq 0 ] && [ -x /usr/bin/python3 ] || { echo "SSH 安全事务需要 root 和系统 Python 3。" >&2; return 1; }
+    local program
+    program=$(mktemp /run/daimon-ssh-program.XXXXXX) || return 1
+    trap 'rm -f -- "$program"' EXIT
+    ssh_transaction_program > "$program" || return 1
+    /usr/bin/python3 -I "$program" apply "$@"
+)
 
 ssh_config_manager() {
 	local SSH_CONFIG="/etc/ssh/sshd_config"
