@@ -15808,6 +15808,7 @@ ssl_nginx_manager() {
 			rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
 			rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore crontab_sync_cron_entry || return 1
 	fi
+	declare -f server_retire_nginx_remove server_retire_nginx_reload || return 1
 	cat <<'DAIMON_CERT_NGINX_SCRIPT' || return 1
 #!/bin/bash
 set -e
@@ -16207,31 +16208,104 @@ nginx_domain_cert_dir_for_domain() {
 }
 
 cleanup_nginx_and_cert() {
-    local DOMAIN="$1"
-    local NGINX_NAME="$2"
-    local FOLDER CERT_DIR
-    CERT_DIR=$(nginx_domain_cert_dir_for_domain "$DOMAIN")
-
-    [ -n "$NGINX_NAME" ] && rm -f "/etc/nginx/sites-available/$NGINX_NAME" "/etc/nginx/sites-enabled/$NGINX_NAME"
-    [ -n "$DOMAIN" ] && "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
-    [ -n "$DOMAIN" ] && rm -rf "$HOME/.acme.sh/${DOMAIN}_ecc" "$HOME/.acme.sh/$DOMAIN" 2>/dev/null || true
-    [ -n "$CERT_DIR" ] && rm -rf "$CERT_DIR" 2>/dev/null || true
-
-    if command -v nginx >/dev/null 2>&1; then
-        nginx -t >/dev/null 2>&1 && systemctl reload nginx 2>/dev/null || true
-    fi
-    echo -e "${YELLOW}已清理失败残留：nginx 配置和证书${NC}"
+    echo -e "${YELLOW}申请失败；无法证明旧配置或证书属于本次操作，已保留，请核查。临时挑战配置由申请流程单独清理。${NC}"
 }
 
 cleanup_failed_cert_request() {
-    local domain="$1" nginx_name="$2"
-    if [ "$CERT_EXISTED_BEFORE" = true ]; then
-        [ -n "$nginx_name" ] && rm -f "/etc/nginx/sites-available/$nginx_name" "/etc/nginx/sites-enabled/$nginx_name"
-        nginx -t >/dev/null 2>&1 && systemctl reload nginx >/dev/null 2>&1 || true
-        echo -e "${YELLOW}申请失败，已有证书和 acme.sh 记录已保留${NC}"
-    else
-        cleanup_nginx_and_cert "$domain" "$nginx_name"
-    fi
+    cleanup_nginx_and_cert "$@"
+}
+
+nginx_domain_remove_cert_safe() {
+    python3 - "$1" "$2" "$ACME" "$ACME_RENEW_LOCK" <<'PYCERT_REMOVE'
+import fcntl, hashlib, json, os, re, shutil, stat, subprocess, sys
+from pathlib import Path
+
+def require(ok, message):
+    if not ok: raise ValueError(message)
+
+def run(args):
+    result = subprocess.run(args, capture_output=True, text=True, timeout=60)
+    require(result.returncode == 0, 'Cannot verify certificate usage or remove registration; files retained')
+    return result.stdout
+
+def stamp(path):
+    info = path.lstat()
+    require(path.resolve() == path and stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1 and not info.st_mode & 0o022,
+            'Untrusted certificate file')
+    return (info.st_dev, info.st_ino, info.st_mode, info.st_mtime_ns, hashlib.sha256(path.read_bytes()).digest())
+
+def remove(domain, directory, acme, lock_path):
+    require(os.geteuid() == 0, 'Root required')
+    require(re.fullmatch(r'(?:[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?\.)+[A-Za-z]{2,63}', domain), 'Invalid domain')
+    root = Path('/root/domain')
+    target = Path(directory)
+    require(target.parent == root and target.name in (domain, domain.split('.')[0]) and target.resolve() == target,
+            'Not a direct managed certificate directory')
+    for parent in (target, *target.parents):
+        info = parent.lstat()
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0 and not info.st_mode & 0o022 and parent.resolve() == parent, 'Untrusted certificate directory')
+    lock_path = Path(lock_path)
+    require(lock_path.parent.resolve() == lock_path.parent and lock_path.parent.stat().st_uid == 0, 'Untrusted lock directory')
+    mode = lock_path.parent.stat().st_mode
+    require(not mode & 0o022 or mode & stat.S_ISVTX, 'Unsafe lock directory')
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK, 0o600)
+    info = os.fstat(fd)
+    require(stat.S_ISREG(info.st_mode) and info.st_uid == 0 and info.st_nlink == 1 and not info.st_mode & 0o022, 'Unsafe lock')
+    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    files = sorted(target.iterdir())
+    require(files and all(p.name in ('fullchain.pem', 'privkey.pem', 'cert.pem', 'chain.pem') for p in files), 'Unexpected certificate directory contents')
+    original = {p: stamp(p) for p in files}
+    san = run(['openssl', 'x509', '-in', str(target/'fullchain.pem'), '-noout', '-ext', 'subjectAltName']).splitlines()
+    require(len(san) == 2 and san[1].strip().lower() == 'dns:' + domain.lower(), 'Certificate is shared, wildcard, or not exclusively for this domain')
+    def unused():
+        contents = []
+        for base in (Path('/etc/nginx'), Path('/home/web/conf.d')):
+            if base.exists():
+                for path in base.rglob('*'):
+                    if path.is_symlink(): require(path.exists(), 'Unresolved configuration link')
+                    if path.is_file(): contents.append(path.read_text(errors='replace'))
+        if shutil.which('nginx'): contents.append(run(['nginx', '-T']))
+        for content in contents:
+            require(str(target) not in content and not re.search(r'ssl_certificate(?:_key)?\s+[^;]*\$', content),
+                    'Certificate still referenced by Nginx; remove its configuration first')
+        acme_home = Path(acme).parent
+        for path in acme_home.glob('*/*.conf'):
+            if path.parent.name not in (domain, domain + '_ecc'):
+                require(str(target) not in path.read_text(errors='replace'), 'Another renewal record uses this directory')
+        if shutil.which('docker'):
+            ids = run(['docker', 'ps', '-aq']).split()
+            if ids:
+                containers = json.loads(run(['docker', 'inspect', *ids]))
+                for container in containers:
+                    for mount in container.get('Mounts', []):
+                        source = Path(mount.get('Source') or '/')
+                        require(not (source == target or source in target.parents or target in source.parents), 'Certificate directory is mounted by a container')
+        for proc in Path('/proc').iterdir():
+            if not proc.name.isdecimal(): continue
+            try:
+                for entry in (proc/'fd').iterdir():
+                    try:
+                        path = entry.resolve()
+                        require(path != target and target not in path.parents, 'Certificate files are open')
+                    except FileNotFoundError: pass
+            except (FileNotFoundError, ProcessLookupError): pass
+    unused()
+    require(original == {p: stamp(p) for p in sorted(target.iterdir())}, 'Certificate changed')
+    run([acme, '--remove', '-d', domain])
+    unused()
+    require(original == {p: stamp(p) for p in sorted(target.iterdir())}, 'Certificate changed after deregistration; files retained')
+    for path in files:
+        require(stamp(path) == original[path], 'Certificate changed during removal')
+        path.unlink()
+    target.rmdir()
+    print('Exclusive certificate removed; no shared directory was recursively deleted.')
+
+if __name__ == '__main__':
+    try: remove(*sys.argv[1:])
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
+        print('Certificate removal incomplete: ' + str(error), file=sys.stderr)
+        sys.exit(1)
+PYCERT_REMOVE
 }
 
 remove_cert() {
@@ -16247,13 +16321,9 @@ remove_cert() {
 
     validate_domain "$REMOVE_DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
 
-    "$ACME" --remove -d "$REMOVE_DOMAIN" 2>/dev/null || true
-
     local cert_dir
-    cert_dir=$(nginx_domain_cert_dir_for_domain "$REMOVE_DOMAIN")
-    case "$cert_dir" in /root/domain/*) [ -d "$cert_dir" ] && rm -rf "$cert_dir" ;; esac
-
-    echo -e "${GREEN}证书移除完成！${NC}"
+    cert_dir=$(nginx_domain_cert_dir_for_domain "$REMOVE_DOMAIN") || return 1
+    nginx_domain_remove_cert_safe "$REMOVE_DOMAIN" "$cert_dir"
 }
 
 remove_nginx_config() {
@@ -16285,11 +16355,7 @@ remove_nginx_config() {
     read -p "确认删除 $CONF_NAME？[y/n]: " CONFIRM
     [ "$CONFIRM" != "y" ] && return 0
 
-    rm -f "/etc/nginx/sites-available/$CONF_NAME"
-    rm -f "/etc/nginx/sites-enabled/$CONF_NAME"
-
-    nginx -t && systemctl reload nginx
-    echo -e "${GREEN}配置 $CONF_NAME 已删除${NC}"
+    server_retire_nginx_remove "/etc/nginx/sites-available/$CONF_NAME" ""
 }
 
 remove_nginx_and_cert() {
@@ -16334,18 +16400,11 @@ remove_nginx_and_cert() {
     read -p "确认删除？[y/n]: " CONFIRM
     [ "$CONFIRM" != "y" ] && return 0
 
-    # 删除 nginx 配置
-    rm -f "/etc/nginx/sites-available/$CONF_NAME"
-    rm -f "/etc/nginx/sites-enabled/$CONF_NAME"
-
-    # 仅允许删除受管证书目录，避免误删任意路径
-    case "$CERT_DIR" in /root/domain/*|/etc/letsencrypt/live/*) [ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR" ;; esac
-
-    # 从 acme.sh 移除证书
-    [ -n "$DOMAIN" ] && "$ACME" --remove -d "$DOMAIN" 2>/dev/null || true
-
-    nginx -t && systemctl reload nginx
-    echo -e "${GREEN}nginx 配置和证书已删除${NC}"
+    server_retire_nginx_remove "$CONF_FILE" "$DOMAIN" || return 1
+    nginx_domain_remove_cert_safe "$DOMAIN" "$CERT_DIR" || {
+        echo "Nginx 配置已移除；证书未完整移除，请按上方原因核查，不会强删共享目录。"
+        return 1
+    }
 }
 
 create_test_page() {
@@ -20941,28 +21000,44 @@ crontab_sync_manager() {
 }
 
 server_retire_compose_stop() {
-	local project="$1" workdir="$2" config_files="$3" config_file
-	local -a args=("-p" "$project") compose_files=()
-	root_use
-	if [ ! -d "$workdir" ]; then
-		echo -e "${gl_huang}Compose 工作目录不存在，按项目标签清理容器: $workdir${gl_bai}"
-		local containers
-		containers=$(docker ps -aq --filter "label=com.docker.compose.project=$project") || return 1
-		[ -n "$containers" ] || return 0
-		while IFS= read -r container; do
-			[ -n "$container" ] && docker rm -f -- "$container" || return 1
-		done <<< "$containers"
-		return 0
-	fi
-	if [ -n "$config_files" ]; then
-		IFS=',' read -r -a compose_files <<< "$config_files"
-		for config_file in "${compose_files[@]}"; do
-			[ "${config_file#/}" = "$config_file" ] && config_file="$workdir/$config_file"
-			[ -f "$config_file" ] || { echo -e "${gl_hong}Compose 配置不存在: $config_file${gl_bai}"; return 1; }
-			args+=("-f" "$config_file")
-		done
-	fi
-	( cd "$workdir" && docker compose "${args[@]}" down )
+	[ "$(id -u)" = 0 ] || return 1
+	python3 - "$1" "$2" "$3" <<'PYRETIRE_COMPOSE'
+import json, re, subprocess, sys
+
+def command(*args):
+    result = subprocess.run(['docker', *args], capture_output=True, text=True, timeout=90)
+    if result.returncode: raise ValueError('Docker operation failed: ' + args[0] + '; completed actions are not rolled back')
+    return result.stdout
+
+def main(project, workdir, files):
+    if not re.fullmatch(r'[a-z0-9][a-z0-9_-]*', project) or not workdir.startswith('/') or not files:
+        raise ValueError('Missing or unsupported Compose context; no containers changed')
+    ids = command('ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project=' + project).split()
+    if not ids: return
+    if not all(re.fullmatch(r'[a-f0-9]{64}', item) for item in ids): raise ValueError('Invalid container identity')
+    def inspect(container):
+        data = json.loads(command('inspect', '--type', 'container', container))
+        if len(data) != 1 or data[0]['Id'] != container: raise ValueError('Container identity changed')
+        item = data[0]
+        labels = item['Config'].get('Labels') or {}
+        context = tuple(labels.get('com.docker.compose.' + k) for k in ('project', 'project.working_dir', 'project.config_files'))
+        if context != (project, workdir, files): raise ValueError('Project name is shared by another context; nothing else will be changed')
+        return item
+    for container in ids: inspect(container)
+    if command('ps', '-aq', '--no-trunc', '--filter', 'label=com.docker.compose.project=' + project).split() != ids:
+        raise ValueError('Project membership changed; retry selection')
+    for container in ids:
+        if inspect(container)['State']['Running']: command('stop', '--time', '30', container)
+        if inspect(container)['State']['Running']: raise ValueError('Container is still running; retained')
+        command('rm', container)
+    print('Selected containers retired. Volumes, images, networks and project files preserved.')
+
+if __name__ == '__main__':
+    try: main(*sys.argv[1:])
+    except (ValueError, KeyError, TypeError, OSError, subprocess.SubprocessError) as error:
+        print('Retirement failed: ' + str(error), file=sys.stderr)
+        sys.exit(1)
+PYRETIRE_COMPOSE
 }
 
 server_retire_compose_item() {

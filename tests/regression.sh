@@ -322,6 +322,9 @@ test_nginx_menu_no_install() {
         rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore crontab_sync_cron_entry > "$fixture"
     declare -f crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
         crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools >> "$fixture"
+    load_function server_retire_nginx_remove || return 1
+    load_function server_retire_nginx_reload || return 1
+    declare -f server_retire_nginx_remove server_retire_nginx_reload >> "$fixture"
     awk '/^ssl_nginx_manager\(\)/ {active=1} active {print}
         active && /^DAIMON_CERT_NGINX_SCRIPT$/ {closed=1}
         active && closed && /^}/ {exit}' "$SOURCE" >> "$fixture"
