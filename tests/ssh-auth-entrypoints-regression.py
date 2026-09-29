@@ -50,6 +50,15 @@ command() {
             result.stderr = result.stderr.decode('utf-8')
             return result, trace.read_text(encoding='utf-8').splitlines() if trace.exists() else []
 
+    def test_port_menu_uses_transaction(self):
+        result, trace = self.invoke('1\n2224\n0\n')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(trace, ['transaction Port 2224'])
+
+    def test_invalid_port_never_mutates(self):
+        _, trace = self.invoke('1\ninvalid\n0\n')
+        self.assertEqual(trace, [])
+
     def test_password_disable_is_one_transaction(self):
         result, trace = self.invoke('2\n1\n0\n')
         self.assertEqual(result.returncode, 0, result.stderr)

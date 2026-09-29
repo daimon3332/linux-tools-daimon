@@ -15476,13 +15476,7 @@ ssh_config_manager() {
 				read -e -p "请输入新 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1
 				new_port=${new_port:-$DEFAULT_SSH_PORT}
 				if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1 ] && [ "$new_port" -le 65535 ]; then
-					if command -v ufw >/dev/null 2>&1 && ! ufw_allow_current_ssh "$new_port"; then
-						break_end; continue
-					fi
-					ssh_set_option Port "$new_port"
-					if ! ssh_restart_safe; then
-						echo "新 SSH 配置未能生效，请手动检查 $SSH_CONFIG。"
-					fi
+					ssh_transaction_apply Port "$new_port"
 				else
 					echo "端口不合法"
 				fi
