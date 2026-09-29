@@ -14825,7 +14825,52 @@ ufw_allow_current_ssh() {
 
 ssh_private_key_name_valid() {
 	validate_config_name "$1" || return 1
-	case "$1" in authorized_keys|known_hosts|known_hosts.old|config|*.pub) return 1 ;; esac
+	case "$1" in authorized_keys|authorized_keys2|known_hosts|known_hosts2|known_hosts.old|config|environment|rc|*.pub) return 1 ;; esac
+}
+
+ssh_private_key_directory() {
+	[ "$EUID" -eq 0 ] && [ "$(realpath -e /root)" = /root ] && [ -O /root ] || return 1
+	local mode
+	mode=$(stat -c %a -- /root) || return 1
+	(( (8#${mode} & 022) == 0 )) || return 1
+	[ ! -L /root/.ssh ] || return 1
+	if [ "${1:-}" = create ] && [ ! -e /root/.ssh ]; then (umask 077; mkdir /root/.ssh) || return 1; fi
+	[ -d /root/.ssh ] && [ -O /root/.ssh ] || return 1
+	mode=$(stat -c %a -- /root/.ssh) || return 1
+	(( (8#${mode} & 022) == 0 ))
+}
+
+ssh_private_key_install() (
+	local name="$1" staged target
+	ssh_private_key_name_valid "$name" && ssh_private_key_directory create || { echo "私钥名称或目录不安全。" >&2; return 1; }
+	target="/root/.ssh/$name"
+	[ ! -e "$target" ] && [ ! -L "$target" ] || { echo "文件已存在，未覆盖。" >&2; return 1; }
+	umask 077
+	staged=$(mktemp /root/.ssh/.private-key.XXXXXX) || return 1
+	trap 'rm -f -- "$staged"' EXIT
+	trap 'exit 130' INT
+	trap 'exit 143' TERM
+	trap 'exit 129' HUP
+	cat > "$staged" || return 1
+	if ! ssh-keygen -y -f "$staged" >/dev/null; then
+		echo "私钥内容或口令无效，未保存。" >&2
+		return 1
+	fi
+	ln -- "$staged" "$target" || { echo "无法保存私钥，未覆盖已有文件。" >&2; return 1; }
+	echo "私钥已校验并保存。"
+)
+
+ssh_private_key_remove() {
+	local name="$1" target identity mode
+	ssh_private_key_name_valid "$name" && ssh_private_key_directory || return 1
+	target="/root/.ssh/$name"
+	[ -f "$target" ] && [ ! -L "$target" ] && [ -O "$target" ] && [ "$(stat -c %h -- "$target")" = 1 ] || return 1
+	mode=$(stat -c %a -- "$target") || return 1
+	(( (8#${mode} & 077) == 0 )) || { echo "私钥权限过宽，未读取或删除。" >&2; return 1; }
+	identity=$(stat -c '%d:%i:%s:%Y:%Z:%f:%u:%g' -- "$target") || return 1
+	ssh-keygen -y -f "$target" >/dev/null || { echo "不是可验证的私钥或口令无效，未删除。" >&2; return 1; }
+	[ ! -L "$target" ] && [ "$(stat -c '%d:%i:%s:%Y:%Z:%f:%u:%g' -- "$target")" = "$identity" ] || return 1
+	rm -- "$target"
 }
 
 ssh_transaction_program() {
@@ -15391,14 +15436,13 @@ ssh_config_manager() {
 						echo "文件名无效或文件已存在，未覆盖任何文件。"
 					else
 						echo "请粘贴私钥内容，结束后按 Ctrl+D:"
-						[ ! -L /root/.ssh ] && mkdir -p /root/.ssh && chmod 700 /root/.ssh &&
-							(umask 077; set -o noclobber; cat > "/root/.ssh/$key_name")
+						ssh_private_key_install "$key_name"
 					fi
 					;;
 				4)
 					read -e -p "请输入要删除的私钥文件名: " key_name || return 0
 					if ssh_private_key_name_valid "$key_name" && [ -f "/root/.ssh/$key_name" ] && [ ! -L "/root/.ssh/$key_name" ]; then
-						rm -f -- "/root/.ssh/$key_name"
+						ssh_private_key_remove "$key_name"
 					else
 						echo "文件名无效或不是私钥文件，未删除。"
 					fi
