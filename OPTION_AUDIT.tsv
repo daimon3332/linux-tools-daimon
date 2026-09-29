@@ -585,351 +585,351 @@ linux_tools	13430	$sub_choice	1	tool_category_menu thirdparty "第三方工具"	
 linux_tools	13430	$sub_choice	2	tool_category_menu programming "编程工具"	not-run	-
 linux_tools	13430	$sub_choice	0	return	not-run	-
 linux_tools	13430	$sub_choice	*	echo "无效的输入!"; break_end	not-run	-
-docker_ssh_migration/docker_migration_restore	13724	"$restart_policy"	""|no		not-run	-
-docker_ssh_migration/docker_migration_restore	13724	"$restart_policy"	*	run_args+=(--restart "$restart_policy")	not-run	-
-docker_ssh_migration/main_menu	13817	$choice	1	docker_migration_backup	not-run	-
-docker_ssh_migration/main_menu	13817	$choice	2	docker_migration_migrate	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13817	$choice	3	docker_migration_restore	rejection-real/restore-not-run	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13817	$choice	4	docker_migration_delete_backup	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13817	$choice	0	return	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13817	$choice	*	echo -e "${gl_hong}无效选项${gl_bai}"	not-run	-
-docker_compose_update_cleanup_orphans	14347	"$file"	"${script_dir}"compose_update_*.sh		not-run	-
-docker_compose_update_cleanup_orphans	14347	"$file"	*	echo -e "${gl_hong}跳过非托管路径: $file${gl_bai}"; continue	not-run	-
-docker_compose_auto_update_manager	14401	"$sub_choice"	1	read -e -p "请输入要安装自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
-docker_compose_auto_update_manager	14401	"$sub_choice"	2	read -e -p "请输入要卸载自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers remove "$nums"	not-run	-
-docker_compose_auto_update_manager	14401	"$sub_choice"	3	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的项目编号（默认全选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
-docker_compose_auto_update_manager	14401	"$sub_choice"	4	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的项目编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应自动更新？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then docker	not-run	-
-docker_compose_auto_update_manager	14401	"$sub_choice"	5	docker_compose_update_cleanup_orphans	not-run	-
-docker_compose_auto_update_manager	14401	"$sub_choice"	0	return	not-run	-
-docker_compose_auto_update_manager	14401	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-linux_docker	14470	$sub_choice	1	clear send_stats "安装docker环境" install_add_docker	not-run	-
-linux_docker	14470	$sub_choice	2	clear if ! command -v docker >/dev/null 2>&1; then echo "Docker 未安装，请先选择 1 安装 Docker 环境。" elif ! docker info >/dev/null 2>&1; then echo "Docker 服务不可用，请检查 Docker 状态后重试。" else local container_count=$(docker ps -a -q 2>/dev/null | wc -l) local	not-run	-
-linux_docker	14470	$sub_choice	3	docker_ps [ "$?" -eq 90 ] && continue	not-run	-
-linux_docker	14470	$sub_choice	4	docker_image [ "$?" -eq 90 ] && continue	not-run	-
-linux_docker	14470	$sub_choice	5	while true; do clear send_stats "Docker网络管理" echo "Docker网络列表" echo "------------------------------------------------------------" docker network ls echo "" echo "------------------------------------------------------------" container_ids=$	not-run	-
-linux_docker	14470	$sub_choice	6	while true; do clear send_stats "Docker卷管理" echo "Docker卷列表" docker volume ls echo "" echo "卷操作" echo "------------------------" echo "1. 创建新卷" echo "2. 删除指定卷" echo "3. 删除所有卷" echo "------------------------" echo "0. 返回上一级选单" echo "--------	not-run	-
-linux_docker	14470	$sub_choice	7	clear send_stats "Docker清理" read -e -p "$(echo -e "${gl_huang}提示: ${gl_bai}将清理无用的镜像容器网络，包括停止的容器，确定清理吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker system prune -af --volumes ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
-linux_docker	14470	$sub_choice	8	clear send_stats "Docker源" docker_mirror_menu [ "$?" -eq 90 ] && continue	not-run	-
-linux_docker	14470	$sub_choice	9	clear docker_daemon_json_merge __edit__	not-run	-
-linux_docker	14470	$sub_choice	10	docker_compose_auto_update_manager continue	not-run	-
-linux_docker	14470	$sub_choice	11	clear send_stats "Docker v6 开" docker_ipv6_on	not-run	-
-linux_docker	14470	$sub_choice	12	clear send_stats "Docker v6 关" docker_ipv6_off	not-run	-
-linux_docker	14470	$sub_choice	19	docker_ssh_migration continue	not-run	-
-linux_docker	14470	$sub_choice	20	clear send_stats "Docker卸载" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定卸载docker环境吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker_uninstall_environment || return 1 ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
-linux_docker	14470	$sub_choice	0	return	not-run	-
-linux_docker	14470	$sub_choice	*	echo "无效的输入!"	not-run	-
-linux_docker	14558	$sub_choice	1	send_stats "创建网络" read -e -p "设置新网络名: " dockernetwork || return 1 docker network create $dockernetwork	not-run	-
-linux_docker	14558	$sub_choice	2	send_stats "加入网络" read -e -p "加入网络名: " dockernetwork || return 1 read -e -p "那些容器加入该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network connect $dockernetwork $dockername done	not-run	-
-linux_docker	14558	$sub_choice	3	send_stats "加入网络" read -e -p "退出网络名: " dockernetwork || return 1 read -e -p "那些容器退出该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network disconnect $dockernetwork $dockername done	not-run	-
-linux_docker	14558	$sub_choice	4	send_stats "删除网络" read -e -p "请输入要删除的网络名: " dockernetwork || return 1 docker network rm $dockernetwork	not-run	-
-linux_docker	14558	$sub_choice	0	continue 2	not-run	-
-linux_docker	14558	$sub_choice	*	break	not-run	-
-linux_docker	14617	$sub_choice	1	send_stats "新建卷" read -e -p "设置新卷名: " dockerjuan || return 1 docker volume create $dockerjuan	not-run	-
-linux_docker	14617	$sub_choice	2	read -e -p "输入删除卷名（多个卷名请用空格分隔）: " dockerjuans || return 1 for dockerjuan in $dockerjuans; do docker volume rm $dockerjuan done	not-run	-
-linux_docker	14617	$sub_choice	3	send_stats "删除所有卷" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有未使用的卷吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker volume prune -f ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
-linux_docker	14617	$sub_choice	0	continue 2	not-run	-
-linux_docker	14617	$sub_choice	*	break	not-run	-
-linux_docker	14636	"$choice"	[Yy]	docker volume prune -f	not-run	-
-linux_docker	14636	"$choice"	[Nn]		not-run	-
-linux_docker	14636	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
-linux_docker	14661	"$choice"	[Yy]	docker system prune -af --volumes	not-run	-
-linux_docker	14661	"$choice"	[Nn]		not-run	-
-linux_docker	14661	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
-linux_docker	14714	"$choice"	[Yy]	docker_uninstall_environment || return 1	not-run	-
-linux_docker	14714	"$choice"	[Nn]		not-run	-
-linux_docker	14714	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
-ssh_private_key_name_valid	14839	"$1"	authorized_keys|known_hosts|known_hosts.old|config|*.pub	return 1	not-run	-
-ssh_config_manager/ssh_key_manager	14915	"$sub_choice"	1	read -e -p "请粘贴公钥: " public_key || return 1; ssh_add_public_key "$public_key"	not-run	-
-ssh_config_manager/ssh_key_manager	14915	"$sub_choice"	2	read -e -p "请输入要删除的公钥行号: " line_no || return 1; [[ "$line_no" =~ ^[0-9]+$ ]] && sed -i "${line_no}d" /root/.ssh/authorized_keys	not-run	-
-ssh_config_manager/ssh_key_manager	14915	"$sub_choice"	3	read -e -p "请输入私钥文件名（默认 id_ed25519）: " key_name || return 0 key_name=${key_name:-id_ed25519} if ! ssh_private_key_name_valid "$key_name" || [ -e "/root/.ssh/$key_name" ] || [ -L "/root/.ssh/$key_name" ]; then echo "文件名无效或文件已存在，未覆盖任何文件。" els	not-run	-
-ssh_config_manager/ssh_key_manager	14915	"$sub_choice"	4	read -e -p "请输入要删除的私钥文件名: " key_name || return 0 if ssh_private_key_name_valid "$key_name" && [ -f "/root/.ssh/$key_name" ] && [ ! -L "/root/.ssh/$key_name" ]; then rm -f -- "/root/.ssh/$key_name" else echo "文件名无效或不是私钥文件，未删除。" fi	not-run	-
-ssh_config_manager/ssh_key_manager	14915	"$sub_choice"	0	return	not-run	-
-ssh_config_manager/ssh_key_manager	14915	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-ssh_config_manager	14961	"$sub_choice"	1	read -e -p "请输入新 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1 ] && [ "$new_port" -le 65535 ]; then if command -v ufw >/dev/null 2>&1 && 	not-run	-
-ssh_config_manager	14961	"$sub_choice"	2	echo "1. 禁用密码登录 2. 开启密码登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then ssh_set_option PasswordAuthentication no ssh_set_option KbdInteractiveAuthentication no ssh_set_option ChallengeResponseAuthentication no ssh_set_opti	not-run	-
-ssh_config_manager	14961	"$sub_choice"	3	echo "1. 开启密钥登录 2. 禁用密钥登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then read -e -p "请粘贴公钥（可直接回车跳过）: " public_key || return 1 ssh_add_public_key "$public_key" ssh_set_option PubkeyAuthentication yes ssh_set_option Authorize	not-run	-
-ssh_config_manager	14961	"$sub_choice"	4	read -e -p "请粘贴公钥: " public_key || return 1 ssh_add_public_key "$public_key" || { break_end; continue; } read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if ! validate_tcp_port "$n	not-run	-
-ssh_config_manager	14961	"$sub_choice"	5	ssh_key_manager; continue	menu-real/scoped	e626ea7; six hosts fullmain9->5->0->0 in private root/tmp/run/network and readonly etc/usr/var; absentkeydirectory notcreated, existingmode/contentunchanged; actualcredential writes/authchange nottested; firstfixture mountorder failure retained
-ssh_config_manager	14961	"$sub_choice"	6	install vim; vim "$SSH_CONFIG"; ssh_restart_safe	not-run	-
-ssh_config_manager	14961	"$sub_choice"	0	return	not-run	-
-ssh_config_manager	14961	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-ufw_manager	15080	"$sub_choice"	1	root_use if install ufw && ufw_allow_current_ssh; then ufw --force enable && ufw status fi	not-run	-
-ufw_manager	15080	"$sub_choice"	2	root_use; ufw disable 2>/dev/null || true; remove ufw; rm -rf /etc/ufw /var/lib/ufw	not-run	-
-ufw_manager	15080	"$sub_choice"	3	root_use; read -e -p "请输入要开放的端口/协议: " port_rule || return 1; [ -n "$port_rule" ] && ufw allow "$port_rule"; ufw status numbered	not-run	-
-ufw_manager	15080	"$sub_choice"	4	root_use; read -e -p "请输入要删除的端口/协议: " port_rule || return 1; ufw_delete_allow_safe "$port_rule" && ufw status numbered	menu-real-vm/partial	6a62623; Debian13AMD64 and Ubuntu22ARM64 active UFW fullmain10->4 six rounds each; SSH22/range/app refusal, unrelatedTCP/sameportUDP/range deletion, originalUFWconfig/inactive restored; other firewall operations not covered
-ufw_manager	15080	"$sub_choice"	0	return	not-run	-
-ufw_manager	15080	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-fail2ban_manager/fail2ban_service	15127	"$action"	status	/bin/systemctl --no-pager --full status fail2ban	not-run	-
-fail2ban_manager/fail2ban_service	15127	"$action"	*	/bin/systemctl "$action" fail2ban	not-run	-
-fail2ban_manager	15282	"$sub_choice"	1	fail2ban_install_sshd	not-run	-
-fail2ban_manager	15282	"$sub_choice"	2	fail2ban_uninstall_all	not-run	-
-fail2ban_manager	15282	"$sub_choice"	3	fail2ban_check_sshd_jail	not-run	-
-fail2ban_manager	15282	"$sub_choice"	0	return	not-run	-
-fail2ban_manager	15282	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-embedded@15310/nginx_domain_cert_dir_for_domain	390	"$cert_path"	/root/domain/*/fullchain.pem	dirname "$cert_path"; return 0	not-run	-
-embedded@15310/remove_cert	443	"$cert_dir"	/root/domain/*	[ -d "$cert_dir" ] && rm -rf "$cert_dir"	not-run	-
-embedded@15310/remove_nginx_and_cert	531	"$CERT_DIR"	/root/domain/*|/etc/letsencrypt/live/*	[ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"	not-run	-
-embedded@15310/CLI	1065	$ACTION	1	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
-embedded@15310/CLI	1065	$ACTION	2	remove_nginx_and_cert	not-run	-
-embedded@15310/CLI	1065	$ACTION	3	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } issue_cert "$DOMAIN" restart_nginx_if_needed	not-run	-
-embedded@15310/CLI	1065	$ACTION	4	remove_cert	not-run	-
-embedded@15310/CLI	1065	$ACTION	5	show_cert_list	not-run	-
-embedded@15310/CLI	1065	$ACTION	6	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
-embedded@15310/CLI	1065	$ACTION	7	remove_nginx_config	not-run	-
-embedded@15310/CLI	1065	$ACTION	8	create_test_page	not-run	-
-embedded@15310/CLI	1065	$ACTION	9	remove_test_page	not-run	-
-embedded@15310/CLI	1065	$ACTION	10	install_nginx nginx -v 2>&1 || true systemctl status nginx --no-pager 2>/dev/null || true	not-run	-
-embedded@15310/CLI	1065	$ACTION	11	backup_nginx_domain	not-run	-
-embedded@15310/CLI	1065	$ACTION	12	restore_nginx_domain	not-run	-
-embedded@15310/CLI	1065	$ACTION	13	nginx_domain_migrate_existing_certs	not-run	-
-embedded@15310/CLI	1065	$ACTION	0	echo -e "${GREEN}返回上一级菜单${NC}" exit 0	not-run	-
-embedded@15310/CLI	1065	$ACTION	*	echo -e "${RED}无效选择${NC}"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	1	daimon_exec_cached_script "https://run.NodeQuality.com" "NodeQuality.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	2	daimon_exec_cached_script "https://IP.Check.Place" "IPQuality.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	3	daimon_exec_cached_script "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" "ecs.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	4	daimon_exec_cached_script "https://Net.Check.Place" "NetQuality.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	5	daimon_exec_cached_script "https://check.unlock.media" "RegionRestrictionCheck.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	6	daimon_exec_cached_script "https://bench.sh" "bench.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	7	daimon_exec_cached_script "https://yabs.sh" "yabs.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	8	daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	9	daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	10	exec bash -c 'bash <(curl -sL kejilion.sh)'	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	11	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh" "sing-box-daimon.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	12	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh" "runTcpQuality.sh"	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	0	return	not-run	-
-common_one_click_scripts	16485	"$sub_choice"	*	echo "无效的输入!"; break_end	not-run	-
-rclone_install_cn_release	16523	"$(uname -m)"	x86_64|amd64	arch=amd64	not-run	-
-rclone_install_cn_release	16523	"$(uname -m)"	aarch64|arm64	arch=arm64	not-run	-
-rclone_install_cn_release	16523	"$(uname -m)"	i?86	arch=386	not-run	-
-rclone_install_cn_release	16523	"$(uname -m)"	armv7*	arch=arm-v7	not-run	-
-rclone_install_cn_release	16523	"$(uname -m)"	armv6*	arch=arm-v6	not-run	-
-rclone_install_cn_release	16523	"$(uname -m)"	*	echo "不支持的 rclone 架构: $(uname -m)"; return 1	not-run	-
-rclone_restore_name_valid	16625	"$name"	*/*|*\\*|*[[:cntrl:]]*	return 1	not-run	-
-rclone_state_text	16667	"$1"	valid	echo "有效（读取验证）"	not-run	-
-rclone_state_text	16667	"$1"	invalid	echo "无效（认证失败）"	not-run	-
-rclone_state_text	16667	"$1"	*	echo "无法检测（网络、权限或配置）"	not-run	-
-rclone_restore_remote_folder	16963	"$policy"	1	policy=keep	not-run	-
-rclone_restore_remote_folder	16963	"$policy"	2	policy=replace	not-run	-
-rclone_restore_remote_folder	16963	"$policy"	*	return 0	not-run	-
-rclone_nginx_allow_ports	17020	"$status"	*'Status: active'*|*'Status: inactive'*		not-run	-
-rclone_nginx_allow_ports	17020	"$status"	*	echo "UFW 状态未知，未修改规则。"; return 1	not-run	-
-rclone_nginx_target_for_key	17049	"$key"	sites-available|sites-enabled|conf.d|stream.d|nginx.conf|mime.types	printf '%s/%s\n' "$nginx_dir" "$key"	not-run	-
-rclone_nginx_target_for_key	17049	"$key"	home-web-conf.d	printf '%s/conf.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
-rclone_nginx_target_for_key	17049	"$key"	home-web-stream.d	printf '%s/stream.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
-rclone_nginx_target_for_key	17049	"$key"	domain	printf '%s\n' "${DAIMON_DOMAIN_DIR:-${DAIMON_RESTORE_ROOT:-/root}/domain}"	not-run	-
-rclone_nginx_target_for_key	17049	"$key"	*	return 1	not-run	-
-rclone_nginx_apply	17138	"$policy"	keep|replace		not-run	-
-rclone_nginx_apply	17138	"$policy"	*	return 1	not-run	-
-rclone_nginx_apply	17139	"$mode"	sites	keys=(sites-available)	not-run	-
-rclone_nginx_apply	17139	"$mode"	links	keys=(sites-enabled)	not-run	-
-rclone_nginx_apply	17139	"$mode"	domain	keys=(domain)	not-run	-
-rclone_nginx_apply	17139	"$mode"	all	for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types; do [ ! -e "$backup/$key" ] || keys+=("$key") done [ ! -s "$backup/enabled_sites.txt" ] || keys+=(sites-enabled) [ "${#keys[@]}" -gt 0	not-run	-
-rclone_nginx_apply	17139	"$mode"	*	return 1	not-run	-
-rclone_nginx_apply	17163	"$key"	nginx.conf|mime.types	[ -f "$backup/$key" ] && { [ ! -e "$dst" ] || [ -f "$dst" ]; } || return 1	not-run	-
-rclone_nginx_apply	17163	"$key"	*	[ "$key" = sites-enabled ] || rclone_tree_safe "$dst" || return 1	not-run	-
-rclone_nginx_apply	17200	"$key"	nginx.conf|mime.types		not-run	-
-rclone_nginx_apply	17200	"$key"	*	mkdir "$work/new/$key" || return 1	not-run	-
-rclone_nginx_apply	17203	"$key"	nginx.conf|mime.types	if [ "$policy" = replace ] || [ ! -f "$work/new/$key" ]; then cp -a -- "$backup/$key" "$work/new/$key" || return 1; fi continue	not-run	-
-rclone_restore_nginx_domain_remote	17307	"$choice"	1	mode=sites	not-run	-
-rclone_restore_nginx_domain_remote	17307	"$choice"	2	mode=links	not-run	-
-rclone_restore_nginx_domain_remote	17307	"$choice"	3	mode=domain	not-run	-
-rclone_restore_nginx_domain_remote	17307	"$choice"	4	mode=all	not-run	-
-rclone_restore_nginx_domain_remote	17307	"$choice"	0	return	not-run	-
-rclone_restore_nginx_domain_remote	17307	"$choice"	*	echo "无效的输入!"; continue	not-run	-
-rclone_restore_nginx_domain_remote	17316	"$policy"	1	policy=keep	not-run	-
-rclone_restore_nginx_domain_remote	17316	"$policy"	2	policy=replace	not-run	-
-rclone_restore_nginx_domain_remote	17316	"$policy"	*	continue	not-run	-
-rclone_restore_named_volumes	17864	"$choice"	1	rclone_show_named_volume_inventory; return $?	not-run	-
-rclone_restore_named_volumes	17864	"$choice"	2	rclone_export_named_volumes; return $?	not-run	-
-rclone_restore_named_volumes	17864	"$choice"	3		not-run	-
-rclone_restore_named_volumes	17864	"$choice"	*	return 0	not-run	-
-rclone_migration_verify	17927	",$dns,"	*",$expected,"*		not-run	-
-rclone_migration_verify	17927	",$dns,"	*	echo "DNS 尚未指向指定 IP，或使用了 CDN；请按你的 DNS 配置核对。"	not-run	-
-rclone_migration_verify	17930	"$output"	2??|3??|401|403	code=0	not-run	-
-rclone_migration_verify	17930	"$output"	*	code=1	not-run	-
-rclone_migration_verify	17934	"$output"	2??|3??|401|403		not-run	-
-rclone_migration_verify	17934	"$output"	*	rc=1	not-run	-
-rclone_migration_verify	17945	"$output"	2??|3??|401|403		not-run	-
-rclone_migration_verify	17945	"$output"	*	rc=1	not-run	-
-rclone_restore_docker_compose_projects	17993	"$?"	1	start_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" pending "awaiting startup confirmation" || return 1	not-run	-
-rclone_restore_docker_compose_projects	17993	"$?"	*	check_failed_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" failed "status query/health failed" || return 1	not-run	-
-rclone_manager	18068	$sub_choice	1	rclone_install_tool; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
-rclone_manager	18068	$sub_choice	2	rclone_edit_config; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
-rclone_manager	18068	$sub_choice	3	rclone_uninstall_tool	not-run	-
-rclone_manager	18068	$sub_choice	4	rclone_restore_remote_folder	not-run	-
-rclone_manager	18068	$sub_choice	5	rclone_restore_nginx_domain_remote	not-run	-
-rclone_manager	18068	$sub_choice	6	rclone_restore_docker_compose_projects	not-run	-
-rclone_manager	18068	$sub_choice	7	crontab_sync_log_manager	not-run	-
-rclone_manager	18068	$sub_choice	0	return	not-run	-
-rclone_manager	18068	$sub_choice	*	echo "无效的输入!"	not-run	-
-bitwarden_manager	18491	$sub_choice	1	bitwarden_configure_rclone_conf	not-run	-
-bitwarden_manager	18491	$sub_choice	2	bitwarden_backup_data	not-run	-
-bitwarden_manager	18491	$sub_choice	3	bitwarden_restore_data	not-run	-
-bitwarden_manager	18491	$sub_choice	4	bitwarden_configure_sync_script	not-run	-
-bitwarden_manager	18491	$sub_choice	0	return	not-run	-
-bitwarden_manager	18491	$sub_choice	*	echo "无效的输入!"	not-run	-
-crontab_sync_log_manager	18763	"$choice"	1	filter=""	not-run	-
-crontab_sync_log_manager	18763	"$choice"	2	read -e -p "任务名（如 root、emby、bitwarden）: " filter || return 1	not-run	-
-crontab_sync_log_manager	18763	"$choice"	3|4|5	read -e -p "请输入记录编号（1-15）: " number || return 1 record=$(crontab_sync_log_pick "$number" "$filter") || { echo "记录不存在"; break_end; continue; } IFS=$'\t' read -r _ _ _ _ _ _ _ _ _ _ log _ <<< "$record" [ -f "$log" ] || { echo "日志文件不存在: $log";	not-run	-
-crontab_sync_log_manager	18763	"$choice"	0	return	not-run	-
-crontab_sync_log_manager	18763	"$choice"	*	echo "无效的输入!"; break_end	not-run	-
-crontab_sync_log_manager	18771	"$choice"	3	crontab_sync_log_sanitize "$log"	not-run	-
-crontab_sync_log_manager	18771	"$choice"	4	crontab_sync_log_copy "$log"	not-run	-
-crontab_sync_log_manager	18771	"$choice"	5	crontab_sync_log_export "$log"	not-run	-
-crontab_sync_legacy_script_file_by_id	18802	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Infini.sh"	not-run	-
-crontab_sync_legacy_script_file_by_id	18802	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_Infini_to_OneDrive.sh"	not-run	-
-crontab_sync_script_file_by_id	18984	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Kissska1.sh"	not-run	-
-crontab_sync_script_file_by_id	18984	"$1"	imagebed	echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh"	not-run	-
-crontab_sync_script_file_by_id	18984	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_OneDrive_to_Kissska1.sh"	not-run	-
-crontab_sync_script_file_by_id	18984	"$1"	nginxdomain	echo "$(crontab_sync_backup_dir)/Nginx_Domain_Local_Backup.sh"	not-run	-
-crontab_sync_script_file_by_id	18984	"$1"	root	local name; name=$(crontab_sync_root_name) || return 1; echo "$(crontab_sync_backup_dir)/$name.sh"	not-run	-
-crontab_sync_script_file_by_id	18984	"$1"	emby	echo "$(crontab_sync_backup_dir)/Emby_Root_Backup.sh"	not-run	-
-crontab_sync_script_file_by_id	18984	"$1"	custom	echo "$(crontab_sync_backup_dir)/$2"	not-run	-
-crontab_sync_cron_line_by_id	19001	"$id"	bitwarden	echo "5 5 * * * /bin/bash $runner bitwarden $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	19001	"$id"	imagebed	echo "10 4 * * * /bin/bash $runner imagebed $script_file >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	19001	"$id"	via	echo "15 4 * * * /bin/bash $runner via $script_file >> /var/log/rclone/cron_Via_OneDrive_to_Kissska1.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	19001	"$id"	nginxdomain	echo "0 4 * * * /bin/bash $runner nginxdomain $script_file >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	19001	"$id"	root	echo "25 4 * * * /bin/bash $runner root $script_file >> /var/log/rclone/cron_Root_Backup.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	19001	"$id"	emby	echo "45 5 * * 0 /bin/bash $runner emby $script_file >> /var/log/rclone/cron_Emby_Root_Backup.log 2>&1"	not-run	-
-crontab_sync_cron_line_by_id	19001	"$id"	custom	local script_base script_base=$(basename "$script_file" .sh) echo "45 4 * * * /bin/bash $runner custom:$script_base $script_file >> /var/log/rclone/cron_${script_base}.log 2>&1"	not-run	-
-crontab_sync_script_content_ok	19021	"$id"	bitwarden	grep -q 'SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'DEST_REMOTE="kissska1:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
-crontab_sync_script_content_ok	19021	"$id"	imagebed	grep -q 'qq3303338052@cloudflare:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'qq3303338052@outlook:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
-crontab_sync_script_content_ok	19021	"$id"	via	grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \ && grep -q '"kissska1:Via"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
-crontab_sync_script_content_ok	19021	"$id"	nginxdomain	if grep -q 'BACKUP_DIR="\$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null && grep -Eq 'rclone_nginx_write_bundle|copy_backup_item' "$script_file" 2>/dev/null && grep -q 'manifest.txt' "$script_file" 2>/dev/null; then return 0 fi return	not-run	-
-crontab_sync_script_content_ok	19021	"$id"	root|emby|custom	local stage expected result=1 stage=$(mktemp -d) || return 1 expected="$stage/$(basename "$script_file")" if DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script "$id" "$expected" && cmp -s "$expected" "$script_file"; then result=0; fi rm -	not-run	-
-crontab_sync_builtin_name_by_id	19090	"$1"	bitwarden	echo "bitwarden同步脚本"	not-run	-
-crontab_sync_builtin_name_by_id	19090	"$1"	imagebed	echo "图床同步脚本"	not-run	-
-crontab_sync_builtin_name_by_id	19090	"$1"	via	echo "via同步脚本"	not-run	-
-crontab_sync_builtin_name_by_id	19090	"$1"	nginxdomain	echo "域名和nginx配置备份脚本"	not-run	-
-crontab_sync_builtin_name_by_id	19090	"$1"	root	echo "/root Docker一致性备份脚本"	not-run	-
-crontab_sync_builtin_name_by_id	19090	"$1"	emby	echo "Emby目录备份脚本"	not-run	-
-crontab_sync_builtin_id_by_number	19101	"$1"	1	echo "bitwarden"	not-run	-
-crontab_sync_builtin_id_by_number	19101	"$1"	2	echo "imagebed"	not-run	-
-crontab_sync_builtin_id_by_number	19101	"$1"	3	echo "via"	not-run	-
-crontab_sync_builtin_id_by_number	19101	"$1"	4	echo "nginxdomain"	not-run	-
-crontab_sync_builtin_id_by_number	19101	"$1"	5	echo "emby"	not-run	-
-crontab_sync_builtin_id_by_number	19101	"$1"	6	echo "root"	not-run	-
-crontab_sync_write_script	19140	"$id"	bitwarden	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail # ========= 源与目标 ========= SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup" DEST_REMOTE="kissska1:/BitwardenBackup" # ========= 日志 ========= LOG_DIR="/var/log/rclone" LOG_FILE="${	not-run	-
-crontab_sync_write_script	19140	"$id"	imagebed	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/r2_to_onedrive_imagebed.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
-crontab_sync_write_script	19140	"$id"	via	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/outlook_to_kissska1_via.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
-crontab_sync_write_script	19140	"$id"	nginxdomain	rclone_nginx_write_backup_script "$script_file"	not-run	-
-crontab_sync_write_script	19140	"$id"	root|emby|custom	local backup_name kind source if [ "$id" = emby ]; then backup_name=Emby; kind=emby; source=/root/emby else backup_name=$(basename "$target" .sh) if [ "$backup_name" = Root_Backup ]; then backup_name=$(crontab_sync_root_name) || return 1 fi	not-run	-
-crontab_sync_write_script	19140	"$id"	*	return 1	not-run	-
-crontab_sync_reconcile_legacy	20094	"$custom_file"	"$bit_old"|"$via_old"	continue	not-run	-
-crontab_sync_install_one	20139	"$id"	bitwarden|via|root|emby|custom	if ! crontab_sync_remote_ready; then echo -e "${gl_hong}kissska1 连接检查失败，未修改脚本和定时任务。${gl_bai}" return 1 fi	not-run	-
-crontab_sync_get_item_by_number	20197	"$num"	1|2|3|4|5|6	id=$(crontab_sync_builtin_id_by_number "$num") if [ "$id" = root ]; then if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then [ "$action" = install ] || return 1 crontab_sync_prompt_root_name >/dev/null || return 1 file=$(cro	not-run	-
-crontab_sync_handle_numbers	20235	"$action"	install|remove		not-run	-
-crontab_sync_handle_numbers	20235	"$action"	*	return 1	not-run	-
-crontab_sync_manager	20297	"$sub_choice"	1	read -e -p "请输入要安装的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
-crontab_sync_manager	20297	"$sub_choice"	2	read -e -p "请输入要卸载的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers remove "$nums"	not-run	-
-crontab_sync_manager	20297	"$sub_choice"	3	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的脚本编号（默认全选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
-crontab_sync_manager	20297	"$sub_choice"	4	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的脚本编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应脚本和定时任务？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then crontab_sync	not-run	-
-crontab_sync_manager	20297	"$sub_choice"	5	crontab_sync_run_root_once	not-run	-
-crontab_sync_manager	20297	"$sub_choice"	0	return	not-run	-
-crontab_sync_manager	20297	"$sub_choice"	*	echo "无效的输入!"	not-run	-
-server_retire_nginx_remove	20395	"$parent"	/etc/nginx/sites-enabled|/etc/nginx/sites-available|/home/web/conf.d		not-run	-
-server_retire_nginx_remove	20395	"$parent"	*	echo "拒绝非托管配置路径。"; return 1	not-run	-
-server_retire_capture	20612	"$1"	C	docker_compose_update_discover_projects	not-run	-
-server_retire_capture	20612	"$1"	N	server_retire_nginx_items	not-run	-
-server_retire_capture	20612	"$1"	A	server_retire_script_items	not-run	-
-server_retire_capture	20612	"$1"	U	server_retire_update_items	not-run	-
-server_retire_capture	20612	"$1"	R	printf '%s %s\n' "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" "$DAIMON_ROOT_DIR/cert-renew.sh"	not-run	-
-server_retire_capture	20612	"$1"	*	return 1	not-run	-
-server_retire_apply_token	20632	"$token"	C*	IFS=$' ' read -r project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	not-run	-
-server_retire_apply_token	20632	"$token"	N*	IFS=$' ' read -r file domains enabled <<< "$item"; server_retire_nginx_remove "$file" "$domains"	not-run	-
-server_retire_apply_token	20632	"$token"	A*|U*	file=${item%%$' '*}; server_retire_remove_script "$file"	not-run	-
-server_retire_apply_token	20632	"$token"	R1	IFS=$' ' read -r file workdir <<< "$item" server_retire_remove_script "$file" || failure=1 server_retire_remove_script "$workdir" || failure=1 return "$failure"	not-run	-
-server_retire_menu	20755	"$choice"	1	server_retire_bulk	not-run	-
-server_retire_menu	20755	"$choice"	2	server_retire_compose_menu	not-run	-
-server_retire_menu	20755	"$choice"	3	server_retire_nginx_menu	menu-real-vm/partial	7011577; Debian13AMD64 and Ubuntu22ARM64 full main19->3 and actual nginx; five rounds cover cancel/invalid/duplicate selection, shared certificates and remaining HTTPS site, ExecReload failure restores config/link, inactive service preserved; both VMs restored; other retirement not covered
-server_retire_menu	20755	"$choice"	4	server_retire_script_menu sync	not-run	-
-server_retire_menu	20755	"$choice"	5	server_retire_script_menu update	not-run	-
-server_retire_menu	20755	"$choice"	6	server_retire_cert_menu	not-run	-
-server_retire_menu	20755	"$choice"	0	return	not-run	-
-server_retire_menu	20755	"$choice"	*	echo "无效的输入!"	not-run	-
-warp_manager	20791	$sub_choice	1	clear send_stats "warp管理" install wget curl daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"	not-run	-
-warp_manager	20791	$sub_choice	2	clear echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}" read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then send_stats "彻底删除warp" install wget curl 	not-run	-
-warp_manager	20791	$sub_choice	0	return	not-run	-
-warp_manager	20791	$sub_choice	*	echo "无效的输入!"	not-run	-
-debian_basics_install	20923	"$package"	ca-certificates|curl|wget|jq		not-run	-
-debian_basics_install	20923	"$package"	*	echo "无效的 Debian 软件包: $package"; return 1	not-run	-
-debian_basics_menu	20971	"$answer"	''|y|Y		not-run	-
-debian_basics_menu	20971	"$answer"	*	echo "已取消"; return 0	not-run	-
-kejilion_sh	21026	$choice	1	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
-kejilion_sh	21026	$choice	2	clear ; send_stats "系统更新" ; linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-kejilion_sh	21026	$choice	3	clear ; send_stats "系统清理" ; linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-kejilion_sh	21026	$choice	4	one_click_config_manager; pause_after=false	handler-real/partial	2026-09-28; 5ca85df; six hosts; one_click_config_manager handler real apt for items 2/3; main-menu 4 dispatch itself only in guarded regression; other setup items not covered
-kejilion_sh	21026	$choice	5	linux_Settings; pause_after=false	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; selected submenus only
-kejilion_sh	21026	$choice	6	linux_tools thirdparty; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	7	linux_tools programming; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	8	linux_docker; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	9	ssh_config_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	10	ufw_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	11	ssl_nginx_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	12	fail2ban_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	13	linux_bbr; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	14	warp_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	15	rclone_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	16	bitwarden_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	17	crontab_sync_manager; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	18	common_one_click_scripts; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	19	server_retire_menu; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	20	debian_basics_menu; pause_after=false	not-run	-
-kejilion_sh	21026	$choice	00	kejilion_update; pause_after=false	handler-real/scoped	2026-09-28 updater; six hosts; skip backup/helper migration as authorized
-kejilion_sh	21026	$choice	0	clear ; exit	menu-real/partial	2026-09-28; 5ca85df; six hosts; actual menu exits after info/update/clean without a second completion pause
-kejilion_sh	21026	$choice	*	echo "无效的输入!"	not-run	-
-CLI	21089	$1	install|add|安装	shift send_stats "安装软件" install "$@"	not-run	-
-CLI	21089	$1	remove|del|uninstall|卸载	shift send_stats "卸载软件" remove "$@"	not-run	-
-CLI	21089	$1	update|更新	linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-CLI	21089	$1	clean|清理	linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
-CLI	21089	$1	bbr3|bbrv3	bbrv3	not-run	-
-CLI	21089	$1	nhyh|内核优化	Kernel_optimize	not-run	-
-CLI	21089	$1	trash|hsz|回收站	linux_trash	not-run	-
-CLI	21089	$1	backup|bf|备份	linux_backup	not-run	-
-CLI	21089	$1	ssh|远程连接	ssh_manager	not-run	-
-CLI	21089	$1	rsync|远程同步	rsync_manager	not-run	-
-CLI	21089	$1	rsync_run	shift send_stats "定时rsync同步" run_task "$@"	not-run	-
-CLI	21089	$1	disk|硬盘管理	disk_manager	not-run	-
-CLI	21089	$1	wp|wordpress	echo "LDNMP建站模块已移除"	not-run	-
-CLI	21089	$1	fd|rp|反代	echo "LDNMP反代模块已移除"	not-run	-
-CLI	21089	$1	loadbalance|负载均衡	echo "LDNMP负载均衡模块已移除"	not-run	-
-CLI	21089	$1	stream|L4负载均衡	echo "LDNMP四层转发模块已移除"	not-run	-
-CLI	21089	$1	swap	shift send_stats "快速设置虚拟内存" add_swap "$@"	cli-real-vm/partial	38629fc; two owned Ubuntu/Debian VMs; actual CLI create/repeat/invalid sizes and reboot activation; not six host swap tests
-CLI	21089	$1	time|时区	shift send_stats "快速设置时区" set_timedate "$@"	not-run	-
-CLI	21089	$1	iptables_open	iptables_open	not-run	-
-CLI	21089	$1	frps	frps_panel	not-run	-
-CLI	21089	$1	frpc	frpc_panel	not-run	-
-CLI	21089	$1	打开端口|dkdk	shift open_port "$@"	not-run	-
-CLI	21089	$1	关闭端口|gbdk	shift close_port "$@"	not-run	-
-CLI	21089	$1	放行IP|fxip	shift allow_ip "$@"	not-run	-
-CLI	21089	$1	阻止IP|zzip	shift block_ip "$@"	not-run	-
-CLI	21089	$1	防火墙|fhq	iptables_panel	not-run	-
-CLI	21089	$1	命令收藏夹|fav	linux_fav	not-run	-
-CLI	21089	$1	status|状态	shift send_stats "软件状态查看" status "$@"	not-run	-
-CLI	21089	$1	start|启动	shift send_stats "软件启动" start "$@"	not-run	-
-CLI	21089	$1	stop|停止	shift send_stats "软件暂停" stop "$@"	not-run	-
-CLI	21089	$1	restart|重启	shift send_stats "软件重启" restart "$@"	not-run	-
-CLI	21089	$1	enable|autostart|开机启动	shift send_stats "软件开机自启" enable "$@"	not-run	-
-CLI	21089	$1	ssl	shift if [ "$1" = "ps" ]; then send_stats "查看证书状态" ssl_ps elif [ -z "$1" ]; then add_ssl send_stats "快速申请证书" elif [ -n "$1" ]; then add_ssl "$1" send_stats "快速申请证书" else k_info fi	not-run	-
-CLI	21089	$1	docker	shift case $1 in install|安装) send_stats "快捷安装docker" install_docker ;; ps|容器) send_stats "快捷容器管理" docker_ps ;; img|镜像) send_stats "快捷镜像管理" docker_image ;; *) linux_docker ;; esac	not-run	-
-CLI	21089	$1	web	echo "LDNMP站点管理模块已移除"	not-run	-
-CLI	21089	$1	info	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
-CLI	21089	$1	fail2ban|f2b	fail2ban_manager	not-run	-
-CLI	21089	$1	rclone|rc	rclone_manager	not-run	-
-CLI	21089	$1	bitwarden|bw	bitwarden_manager	not-run	-
-CLI	21089	$1	cronsync|syncscripts|cron-sync	crontab_sync_manager	not-run	-
-CLI	21089	$1	retire|退役	server_retire_menu	not-run	-
-CLI	21089	$1	sshkey	shift case "$1" in "" ) # sshkey → 交互菜单 send_stats "SSHKey 交互菜单" sshkey_panel ;; github ) shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1" ;; http://*|https://* ) send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1" ;; ss	not-run	-
-CLI	21089	$1	*	k_info	not-run	-
-CLI	21251	$1	install|安装	send_stats "快捷安装docker" install_docker	not-run	-
-CLI	21251	$1	ps|容器	send_stats "快捷容器管理" docker_ps	not-run	-
-CLI	21251	$1	img|镜像	send_stats "快捷镜像管理" docker_image	not-run	-
-CLI	21251	$1	*	linux_docker	not-run	-
-CLI	21305	"$1"	""	send_stats "SSHKey 交互菜单" sshkey_panel	not-run	-
-CLI	21305	"$1"	github	shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1"	not-run	-
-CLI	21305	"$1"	http://*|https://*	send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
-CLI	21305	"$1"	ssh-rsa*|ssh-ed25519*|ssh-ecdsa*	send_stats "公钥直接导入" import_sshkey "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
-CLI	21305	"$1"	*	echo "错误：未知参数 '$1'" echo "用法：" echo " k sshkey 进入交互菜单" echo " k sshkey \"<pubkey>\" 直接导入 SSH 公钥" echo " k sshkey <url> 从 URL 导入 SSH 公钥" echo " k sshkey github <user> 从 GitHub 导入 SSH 公钥"	not-run	-
+docker_ssh_migration/docker_migration_restore	13714	"$restart_policy"	""|no		not-run	-
+docker_ssh_migration/docker_migration_restore	13714	"$restart_policy"	*	run_args+=(--restart "$restart_policy")	not-run	-
+docker_ssh_migration/main_menu	13807	$choice	1	docker_migration_backup	not-run	-
+docker_ssh_migration/main_menu	13807	$choice	2	docker_migration_migrate	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
+docker_ssh_migration/main_menu	13807	$choice	3	docker_migration_restore	menu-real-vm/privacy-only	b68aef3; bothVMs actualmain8->19->3 withinspectfixturefromrealDockercreate, busybox1.37 andTOKEN; restoredcontainerretainsENVwithoutconsoleleak; testcontainer/tag/tmpcleanup; NOvolume/archive/Compose/fullfidelityacceptance
+docker_ssh_migration/main_menu	13807	$choice	4	docker_migration_delete_backup	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
+docker_ssh_migration/main_menu	13807	$choice	0	return	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
+docker_ssh_migration/main_menu	13807	$choice	*	echo -e "${gl_hong}无效选项${gl_bai}"	not-run	-
+docker_compose_update_cleanup_orphans	14337	"$file"	"${script_dir}"compose_update_*.sh		not-run	-
+docker_compose_update_cleanup_orphans	14337	"$file"	*	echo -e "${gl_hong}跳过非托管路径: $file${gl_bai}"; continue	not-run	-
+docker_compose_auto_update_manager	14391	"$sub_choice"	1	read -e -p "请输入要安装自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
+docker_compose_auto_update_manager	14391	"$sub_choice"	2	read -e -p "请输入要卸载自动更新的项目编号（支持多选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers remove "$nums"	not-run	-
+docker_compose_auto_update_manager	14391	"$sub_choice"	3	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的项目编号（默认全选，空格分隔）: " nums || return 1 docker_compose_update_handle_numbers install "$nums"	not-run	-
+docker_compose_auto_update_manager	14391	"$sub_choice"	4	local nums nums="$(docker_compose_update_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的项目编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应自动更新？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then docker	not-run	-
+docker_compose_auto_update_manager	14391	"$sub_choice"	5	docker_compose_update_cleanup_orphans	not-run	-
+docker_compose_auto_update_manager	14391	"$sub_choice"	0	return	not-run	-
+docker_compose_auto_update_manager	14391	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+linux_docker	14460	$sub_choice	1	clear send_stats "安装docker环境" install_add_docker	not-run	-
+linux_docker	14460	$sub_choice	2	clear if ! command -v docker >/dev/null 2>&1; then echo "Docker 未安装，请先选择 1 安装 Docker 环境。" elif ! docker info >/dev/null 2>&1; then echo "Docker 服务不可用，请检查 Docker 状态后重试。" else local container_count=$(docker ps -a -q 2>/dev/null | wc -l) local	not-run	-
+linux_docker	14460	$sub_choice	3	docker_ps [ "$?" -eq 90 ] && continue	not-run	-
+linux_docker	14460	$sub_choice	4	docker_image [ "$?" -eq 90 ] && continue	not-run	-
+linux_docker	14460	$sub_choice	5	while true; do clear send_stats "Docker网络管理" echo "Docker网络列表" echo "------------------------------------------------------------" docker network ls echo "" echo "------------------------------------------------------------" container_ids=$	not-run	-
+linux_docker	14460	$sub_choice	6	while true; do clear send_stats "Docker卷管理" echo "Docker卷列表" docker volume ls echo "" echo "卷操作" echo "------------------------" echo "1. 创建新卷" echo "2. 删除指定卷" echo "3. 删除所有卷" echo "------------------------" echo "0. 返回上一级选单" echo "--------	not-run	-
+linux_docker	14460	$sub_choice	7	clear send_stats "Docker清理" read -e -p "$(echo -e "${gl_huang}提示: ${gl_bai}将清理无用的镜像容器网络，包括停止的容器，确定清理吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker system prune -af --volumes ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
+linux_docker	14460	$sub_choice	8	clear send_stats "Docker源" docker_mirror_menu [ "$?" -eq 90 ] && continue	not-run	-
+linux_docker	14460	$sub_choice	9	clear docker_daemon_json_merge __edit__	not-run	-
+linux_docker	14460	$sub_choice	10	docker_compose_auto_update_manager continue	not-run	-
+linux_docker	14460	$sub_choice	11	clear send_stats "Docker v6 开" docker_ipv6_on	not-run	-
+linux_docker	14460	$sub_choice	12	clear send_stats "Docker v6 关" docker_ipv6_off	not-run	-
+linux_docker	14460	$sub_choice	19	docker_ssh_migration continue	not-run	-
+linux_docker	14460	$sub_choice	20	clear send_stats "Docker卸载" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定卸载docker环境吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker_uninstall_environment || return 1 ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
+linux_docker	14460	$sub_choice	0	return	not-run	-
+linux_docker	14460	$sub_choice	*	echo "无效的输入!"	not-run	-
+linux_docker	14548	$sub_choice	1	send_stats "创建网络" read -e -p "设置新网络名: " dockernetwork || return 1 docker network create $dockernetwork	not-run	-
+linux_docker	14548	$sub_choice	2	send_stats "加入网络" read -e -p "加入网络名: " dockernetwork || return 1 read -e -p "那些容器加入该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network connect $dockernetwork $dockername done	not-run	-
+linux_docker	14548	$sub_choice	3	send_stats "加入网络" read -e -p "退出网络名: " dockernetwork || return 1 read -e -p "那些容器退出该网络（多个容器名请用空格分隔）: " dockernames || return 1 for dockername in $dockernames; do docker network disconnect $dockernetwork $dockername done	not-run	-
+linux_docker	14548	$sub_choice	4	send_stats "删除网络" read -e -p "请输入要删除的网络名: " dockernetwork || return 1 docker network rm $dockernetwork	not-run	-
+linux_docker	14548	$sub_choice	0	continue 2	not-run	-
+linux_docker	14548	$sub_choice	*	break	not-run	-
+linux_docker	14607	$sub_choice	1	send_stats "新建卷" read -e -p "设置新卷名: " dockerjuan || return 1 docker volume create $dockerjuan	not-run	-
+linux_docker	14607	$sub_choice	2	read -e -p "输入删除卷名（多个卷名请用空格分隔）: " dockerjuans || return 1 for dockerjuan in $dockerjuans; do docker volume rm $dockerjuan done	not-run	-
+linux_docker	14607	$sub_choice	3	send_stats "删除所有卷" read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有未使用的卷吗？(Y/N): ")" choice || return 1 case "$choice" in [Yy]) docker volume prune -f ;; [Nn]) ;; *) echo "无效的选择，请输入 Y 或 N。" ;; esac	not-run	-
+linux_docker	14607	$sub_choice	0	continue 2	not-run	-
+linux_docker	14607	$sub_choice	*	break	not-run	-
+linux_docker	14626	"$choice"	[Yy]	docker volume prune -f	not-run	-
+linux_docker	14626	"$choice"	[Nn]		not-run	-
+linux_docker	14626	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
+linux_docker	14651	"$choice"	[Yy]	docker system prune -af --volumes	not-run	-
+linux_docker	14651	"$choice"	[Nn]		not-run	-
+linux_docker	14651	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
+linux_docker	14704	"$choice"	[Yy]	docker_uninstall_environment || return 1	not-run	-
+linux_docker	14704	"$choice"	[Nn]		not-run	-
+linux_docker	14704	"$choice"	*	echo "无效的选择，请输入 Y 或 N。"	not-run	-
+ssh_private_key_name_valid	14829	"$1"	authorized_keys|known_hosts|known_hosts.old|config|*.pub	return 1	not-run	-
+ssh_config_manager/ssh_key_manager	14905	"$sub_choice"	1	read -e -p "请粘贴公钥: " public_key || return 1; ssh_add_public_key "$public_key"	not-run	-
+ssh_config_manager/ssh_key_manager	14905	"$sub_choice"	2	read -e -p "请输入要删除的公钥行号: " line_no || return 1; [[ "$line_no" =~ ^[0-9]+$ ]] && sed -i "${line_no}d" /root/.ssh/authorized_keys	not-run	-
+ssh_config_manager/ssh_key_manager	14905	"$sub_choice"	3	read -e -p "请输入私钥文件名（默认 id_ed25519）: " key_name || return 0 key_name=${key_name:-id_ed25519} if ! ssh_private_key_name_valid "$key_name" || [ -e "/root/.ssh/$key_name" ] || [ -L "/root/.ssh/$key_name" ]; then echo "文件名无效或文件已存在，未覆盖任何文件。" els	not-run	-
+ssh_config_manager/ssh_key_manager	14905	"$sub_choice"	4	read -e -p "请输入要删除的私钥文件名: " key_name || return 0 if ssh_private_key_name_valid "$key_name" && [ -f "/root/.ssh/$key_name" ] && [ ! -L "/root/.ssh/$key_name" ]; then rm -f -- "/root/.ssh/$key_name" else echo "文件名无效或不是私钥文件，未删除。" fi	not-run	-
+ssh_config_manager/ssh_key_manager	14905	"$sub_choice"	0	return	not-run	-
+ssh_config_manager/ssh_key_manager	14905	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+ssh_config_manager	14951	"$sub_choice"	1	read -e -p "请输入新 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if [[ "$new_port" =~ ^[0-9]+$ ]] && [ "$new_port" -ge 1 ] && [ "$new_port" -le 65535 ]; then if command -v ufw >/dev/null 2>&1 && 	not-run	-
+ssh_config_manager	14951	"$sub_choice"	2	echo "1. 禁用密码登录 2. 开启密码登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then ssh_set_option PasswordAuthentication no ssh_set_option KbdInteractiveAuthentication no ssh_set_option ChallengeResponseAuthentication no ssh_set_opti	not-run	-
+ssh_config_manager	14951	"$sub_choice"	3	echo "1. 开启密钥登录 2. 禁用密钥登录" read -e -p "请选择: " mode || return 1 if [ "$mode" = "1" ]; then read -e -p "请粘贴公钥（可直接回车跳过）: " public_key || return 1 ssh_add_public_key "$public_key" ssh_set_option PubkeyAuthentication yes ssh_set_option Authorize	not-run	-
+ssh_config_manager	14951	"$sub_choice"	4	read -e -p "请粘贴公钥: " public_key || return 1 ssh_add_public_key "$public_key" || { break_end; continue; } read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1 new_port=${new_port:-$DEFAULT_SSH_PORT} if ! validate_tcp_port "$n	not-run	-
+ssh_config_manager	14951	"$sub_choice"	5	ssh_key_manager; continue	menu-real/scoped	e626ea7; six hosts fullmain9->5->0->0 in private root/tmp/run/network and readonly etc/usr/var; absentkeydirectory notcreated, existingmode/contentunchanged; actualcredential writes/authchange nottested; firstfixture mountorder failure retained
+ssh_config_manager	14951	"$sub_choice"	6	install vim; vim "$SSH_CONFIG"; ssh_restart_safe	not-run	-
+ssh_config_manager	14951	"$sub_choice"	0	return	not-run	-
+ssh_config_manager	14951	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+ufw_manager	15070	"$sub_choice"	1	root_use if install ufw && ufw_allow_current_ssh; then ufw --force enable && ufw status fi	not-run	-
+ufw_manager	15070	"$sub_choice"	2	root_use; ufw disable 2>/dev/null || true; remove ufw; rm -rf /etc/ufw /var/lib/ufw	not-run	-
+ufw_manager	15070	"$sub_choice"	3	root_use; read -e -p "请输入要开放的端口/协议: " port_rule || return 1; [ -n "$port_rule" ] && ufw allow "$port_rule"; ufw status numbered	not-run	-
+ufw_manager	15070	"$sub_choice"	4	root_use; read -e -p "请输入要删除的端口/协议: " port_rule || return 1; ufw_delete_allow_safe "$port_rule" && ufw status numbered	menu-real-vm/partial	6a62623; Debian13AMD64 and Ubuntu22ARM64 active UFW fullmain10->4 six rounds each; SSH22/range/app refusal, unrelatedTCP/sameportUDP/range deletion, originalUFWconfig/inactive restored; other firewall operations not covered
+ufw_manager	15070	"$sub_choice"	0	return	not-run	-
+ufw_manager	15070	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+fail2ban_manager/fail2ban_service	15117	"$action"	status	/bin/systemctl --no-pager --full status fail2ban	not-run	-
+fail2ban_manager/fail2ban_service	15117	"$action"	*	/bin/systemctl "$action" fail2ban	not-run	-
+fail2ban_manager	15272	"$sub_choice"	1	fail2ban_install_sshd	not-run	-
+fail2ban_manager	15272	"$sub_choice"	2	fail2ban_uninstall_all	not-run	-
+fail2ban_manager	15272	"$sub_choice"	3	fail2ban_check_sshd_jail	not-run	-
+fail2ban_manager	15272	"$sub_choice"	0	return	not-run	-
+fail2ban_manager	15272	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+embedded@15300/nginx_domain_cert_dir_for_domain	390	"$cert_path"	/root/domain/*/fullchain.pem	dirname "$cert_path"; return 0	not-run	-
+embedded@15300/remove_cert	443	"$cert_dir"	/root/domain/*	[ -d "$cert_dir" ] && rm -rf "$cert_dir"	not-run	-
+embedded@15300/remove_nginx_and_cert	531	"$CERT_DIR"	/root/domain/*|/etc/letsencrypt/live/*	[ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"	not-run	-
+embedded@15300/CLI	1065	$ACTION	1	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
+embedded@15300/CLI	1065	$ACTION	2	remove_nginx_and_cert	not-run	-
+embedded@15300/CLI	1065	$ACTION	3	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } issue_cert "$DOMAIN" restart_nginx_if_needed	not-run	-
+embedded@15300/CLI	1065	$ACTION	4	remove_cert	not-run	-
+embedded@15300/CLI	1065	$ACTION	5	show_cert_list	not-run	-
+embedded@15300/CLI	1065	$ACTION	6	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
+embedded@15300/CLI	1065	$ACTION	7	remove_nginx_config	not-run	-
+embedded@15300/CLI	1065	$ACTION	8	create_test_page	not-run	-
+embedded@15300/CLI	1065	$ACTION	9	remove_test_page	not-run	-
+embedded@15300/CLI	1065	$ACTION	10	install_nginx nginx -v 2>&1 || true systemctl status nginx --no-pager 2>/dev/null || true	not-run	-
+embedded@15300/CLI	1065	$ACTION	11	backup_nginx_domain	not-run	-
+embedded@15300/CLI	1065	$ACTION	12	restore_nginx_domain	not-run	-
+embedded@15300/CLI	1065	$ACTION	13	nginx_domain_migrate_existing_certs	not-run	-
+embedded@15300/CLI	1065	$ACTION	0	echo -e "${GREEN}返回上一级菜单${NC}" exit 0	not-run	-
+embedded@15300/CLI	1065	$ACTION	*	echo -e "${RED}无效选择${NC}"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	1	daimon_exec_cached_script "https://run.NodeQuality.com" "NodeQuality.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	2	daimon_exec_cached_script "https://IP.Check.Place" "IPQuality.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	3	daimon_exec_cached_script "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" "ecs.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	4	daimon_exec_cached_script "https://Net.Check.Place" "NetQuality.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	5	daimon_exec_cached_script "https://check.unlock.media" "RegionRestrictionCheck.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	6	daimon_exec_cached_script "https://bench.sh" "bench.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	7	daimon_exec_cached_script "https://yabs.sh" "yabs.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	8	daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	9	daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	10	exec bash -c 'bash <(curl -sL kejilion.sh)'	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	11	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh" "sing-box-daimon.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	12	daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh" "runTcpQuality.sh"	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	0	return	not-run	-
+common_one_click_scripts	16475	"$sub_choice"	*	echo "无效的输入!"; break_end	not-run	-
+rclone_install_cn_release	16513	"$(uname -m)"	x86_64|amd64	arch=amd64	not-run	-
+rclone_install_cn_release	16513	"$(uname -m)"	aarch64|arm64	arch=arm64	not-run	-
+rclone_install_cn_release	16513	"$(uname -m)"	i?86	arch=386	not-run	-
+rclone_install_cn_release	16513	"$(uname -m)"	armv7*	arch=arm-v7	not-run	-
+rclone_install_cn_release	16513	"$(uname -m)"	armv6*	arch=arm-v6	not-run	-
+rclone_install_cn_release	16513	"$(uname -m)"	*	echo "不支持的 rclone 架构: $(uname -m)"; return 1	not-run	-
+rclone_restore_name_valid	16615	"$name"	*/*|*\\*|*[[:cntrl:]]*	return 1	not-run	-
+rclone_state_text	16657	"$1"	valid	echo "有效（读取验证）"	not-run	-
+rclone_state_text	16657	"$1"	invalid	echo "无效（认证失败）"	not-run	-
+rclone_state_text	16657	"$1"	*	echo "无法检测（网络、权限或配置）"	not-run	-
+rclone_restore_remote_folder	16953	"$policy"	1	policy=keep	not-run	-
+rclone_restore_remote_folder	16953	"$policy"	2	policy=replace	not-run	-
+rclone_restore_remote_folder	16953	"$policy"	*	return 0	not-run	-
+rclone_nginx_allow_ports	17010	"$status"	*'Status: active'*|*'Status: inactive'*		not-run	-
+rclone_nginx_allow_ports	17010	"$status"	*	echo "UFW 状态未知，未修改规则。"; return 1	not-run	-
+rclone_nginx_target_for_key	17039	"$key"	sites-available|sites-enabled|conf.d|stream.d|nginx.conf|mime.types	printf '%s/%s\n' "$nginx_dir" "$key"	not-run	-
+rclone_nginx_target_for_key	17039	"$key"	home-web-conf.d	printf '%s/conf.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
+rclone_nginx_target_for_key	17039	"$key"	home-web-stream.d	printf '%s/stream.d\n' "${DAIMON_WEB_DIR:-/home/web}"	not-run	-
+rclone_nginx_target_for_key	17039	"$key"	domain	printf '%s\n' "${DAIMON_DOMAIN_DIR:-${DAIMON_RESTORE_ROOT:-/root}/domain}"	not-run	-
+rclone_nginx_target_for_key	17039	"$key"	*	return 1	not-run	-
+rclone_nginx_apply	17128	"$policy"	keep|replace		not-run	-
+rclone_nginx_apply	17128	"$policy"	*	return 1	not-run	-
+rclone_nginx_apply	17129	"$mode"	sites	keys=(sites-available)	not-run	-
+rclone_nginx_apply	17129	"$mode"	links	keys=(sites-enabled)	not-run	-
+rclone_nginx_apply	17129	"$mode"	domain	keys=(domain)	not-run	-
+rclone_nginx_apply	17129	"$mode"	all	for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types; do [ ! -e "$backup/$key" ] || keys+=("$key") done [ ! -s "$backup/enabled_sites.txt" ] || keys+=(sites-enabled) [ "${#keys[@]}" -gt 0	not-run	-
+rclone_nginx_apply	17129	"$mode"	*	return 1	not-run	-
+rclone_nginx_apply	17153	"$key"	nginx.conf|mime.types	[ -f "$backup/$key" ] && { [ ! -e "$dst" ] || [ -f "$dst" ]; } || return 1	not-run	-
+rclone_nginx_apply	17153	"$key"	*	[ "$key" = sites-enabled ] || rclone_tree_safe "$dst" || return 1	not-run	-
+rclone_nginx_apply	17190	"$key"	nginx.conf|mime.types		not-run	-
+rclone_nginx_apply	17190	"$key"	*	mkdir "$work/new/$key" || return 1	not-run	-
+rclone_nginx_apply	17193	"$key"	nginx.conf|mime.types	if [ "$policy" = replace ] || [ ! -f "$work/new/$key" ]; then cp -a -- "$backup/$key" "$work/new/$key" || return 1; fi continue	not-run	-
+rclone_restore_nginx_domain_remote	17297	"$choice"	1	mode=sites	not-run	-
+rclone_restore_nginx_domain_remote	17297	"$choice"	2	mode=links	not-run	-
+rclone_restore_nginx_domain_remote	17297	"$choice"	3	mode=domain	not-run	-
+rclone_restore_nginx_domain_remote	17297	"$choice"	4	mode=all	not-run	-
+rclone_restore_nginx_domain_remote	17297	"$choice"	0	return	not-run	-
+rclone_restore_nginx_domain_remote	17297	"$choice"	*	echo "无效的输入!"; continue	not-run	-
+rclone_restore_nginx_domain_remote	17306	"$policy"	1	policy=keep	not-run	-
+rclone_restore_nginx_domain_remote	17306	"$policy"	2	policy=replace	not-run	-
+rclone_restore_nginx_domain_remote	17306	"$policy"	*	continue	not-run	-
+rclone_restore_named_volumes	17854	"$choice"	1	rclone_show_named_volume_inventory; return $?	not-run	-
+rclone_restore_named_volumes	17854	"$choice"	2	rclone_export_named_volumes; return $?	not-run	-
+rclone_restore_named_volumes	17854	"$choice"	3		not-run	-
+rclone_restore_named_volumes	17854	"$choice"	*	return 0	not-run	-
+rclone_migration_verify	17917	",$dns,"	*",$expected,"*		not-run	-
+rclone_migration_verify	17917	",$dns,"	*	echo "DNS 尚未指向指定 IP，或使用了 CDN；请按你的 DNS 配置核对。"	not-run	-
+rclone_migration_verify	17920	"$output"	2??|3??|401|403	code=0	not-run	-
+rclone_migration_verify	17920	"$output"	*	code=1	not-run	-
+rclone_migration_verify	17924	"$output"	2??|3??|401|403		not-run	-
+rclone_migration_verify	17924	"$output"	*	rc=1	not-run	-
+rclone_migration_verify	17935	"$output"	2??|3??|401|403		not-run	-
+rclone_migration_verify	17935	"$output"	*	rc=1	not-run	-
+rclone_restore_docker_compose_projects	17983	"$?"	1	start_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" pending "awaiting startup confirmation" || return 1	not-run	-
+rclone_restore_docker_compose_projects	17983	"$?"	*	check_failed_dirs+=("$project_dir"); rclone_restore_record compose "$project_dir" failed "status query/health failed" || return 1	not-run	-
+rclone_manager	18058	$sub_choice	1	rclone_install_tool; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
+rclone_manager	18058	$sub_choice	2	rclone_edit_config; remote_status=$(rclone_load_remote_status 2>/dev/null) || true	not-run	-
+rclone_manager	18058	$sub_choice	3	rclone_uninstall_tool	not-run	-
+rclone_manager	18058	$sub_choice	4	rclone_restore_remote_folder	not-run	-
+rclone_manager	18058	$sub_choice	5	rclone_restore_nginx_domain_remote	not-run	-
+rclone_manager	18058	$sub_choice	6	rclone_restore_docker_compose_projects	not-run	-
+rclone_manager	18058	$sub_choice	7	crontab_sync_log_manager	not-run	-
+rclone_manager	18058	$sub_choice	0	return	not-run	-
+rclone_manager	18058	$sub_choice	*	echo "无效的输入!"	not-run	-
+bitwarden_manager	18481	$sub_choice	1	bitwarden_configure_rclone_conf	not-run	-
+bitwarden_manager	18481	$sub_choice	2	bitwarden_backup_data	not-run	-
+bitwarden_manager	18481	$sub_choice	3	bitwarden_restore_data	not-run	-
+bitwarden_manager	18481	$sub_choice	4	bitwarden_configure_sync_script	not-run	-
+bitwarden_manager	18481	$sub_choice	0	return	not-run	-
+bitwarden_manager	18481	$sub_choice	*	echo "无效的输入!"	not-run	-
+crontab_sync_log_manager	18753	"$choice"	1	filter=""	not-run	-
+crontab_sync_log_manager	18753	"$choice"	2	read -e -p "任务名（如 root、emby、bitwarden）: " filter || return 1	not-run	-
+crontab_sync_log_manager	18753	"$choice"	3|4|5	read -e -p "请输入记录编号（1-15）: " number || return 1 record=$(crontab_sync_log_pick "$number" "$filter") || { echo "记录不存在"; break_end; continue; } IFS=$'\t' read -r _ _ _ _ _ _ _ _ _ _ log _ <<< "$record" [ -f "$log" ] || { echo "日志文件不存在: $log";	not-run	-
+crontab_sync_log_manager	18753	"$choice"	0	return	not-run	-
+crontab_sync_log_manager	18753	"$choice"	*	echo "无效的输入!"; break_end	not-run	-
+crontab_sync_log_manager	18761	"$choice"	3	crontab_sync_log_sanitize "$log"	not-run	-
+crontab_sync_log_manager	18761	"$choice"	4	crontab_sync_log_copy "$log"	not-run	-
+crontab_sync_log_manager	18761	"$choice"	5	crontab_sync_log_export "$log"	not-run	-
+crontab_sync_legacy_script_file_by_id	18792	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Infini.sh"	not-run	-
+crontab_sync_legacy_script_file_by_id	18792	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_Infini_to_OneDrive.sh"	not-run	-
+crontab_sync_script_file_by_id	18974	"$1"	bitwarden	echo "$(crontab_sync_backup_dir)/Vaultwarden_OneDrive_to_Kissska1.sh"	not-run	-
+crontab_sync_script_file_by_id	18974	"$1"	imagebed	echo "$(crontab_sync_backup_dir)/ImageBed_CloudFlare-R2_to_OneDrive.sh"	not-run	-
+crontab_sync_script_file_by_id	18974	"$1"	via	echo "$(crontab_sync_backup_dir)/Via_OneDrive_to_Kissska1.sh"	not-run	-
+crontab_sync_script_file_by_id	18974	"$1"	nginxdomain	echo "$(crontab_sync_backup_dir)/Nginx_Domain_Local_Backup.sh"	not-run	-
+crontab_sync_script_file_by_id	18974	"$1"	root	local name; name=$(crontab_sync_root_name) || return 1; echo "$(crontab_sync_backup_dir)/$name.sh"	not-run	-
+crontab_sync_script_file_by_id	18974	"$1"	emby	echo "$(crontab_sync_backup_dir)/Emby_Root_Backup.sh"	not-run	-
+crontab_sync_script_file_by_id	18974	"$1"	custom	echo "$(crontab_sync_backup_dir)/$2"	not-run	-
+crontab_sync_cron_line_by_id	18991	"$id"	bitwarden	echo "5 5 * * * /bin/bash $runner bitwarden $script_file >> /var/log/rclone/cron_Vaultwarden_OneDrive_to_Kissska1.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18991	"$id"	imagebed	echo "10 4 * * * /bin/bash $runner imagebed $script_file >> /var/log/rclone/cron_ImageBed_CloudFlare-R2_to_OneDrive.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18991	"$id"	via	echo "15 4 * * * /bin/bash $runner via $script_file >> /var/log/rclone/cron_Via_OneDrive_to_Kissska1.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18991	"$id"	nginxdomain	echo "0 4 * * * /bin/bash $runner nginxdomain $script_file >> /var/log/rclone/cron_Nginx_Domain_Local_Backup.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18991	"$id"	root	echo "25 4 * * * /bin/bash $runner root $script_file >> /var/log/rclone/cron_Root_Backup.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18991	"$id"	emby	echo "45 5 * * 0 /bin/bash $runner emby $script_file >> /var/log/rclone/cron_Emby_Root_Backup.log 2>&1"	not-run	-
+crontab_sync_cron_line_by_id	18991	"$id"	custom	local script_base script_base=$(basename "$script_file" .sh) echo "45 4 * * * /bin/bash $runner custom:$script_base $script_file >> /var/log/rclone/cron_${script_base}.log 2>&1"	not-run	-
+crontab_sync_script_content_ok	19011	"$id"	bitwarden	grep -q 'SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'DEST_REMOTE="kissska1:/BitwardenBackup"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
+crontab_sync_script_content_ok	19011	"$id"	imagebed	grep -q 'qq3303338052@cloudflare:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'qq3303338052@outlook:image-bed-daimon' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
+crontab_sync_script_content_ok	19011	"$id"	via	grep -q '"qq3303338052@outlook:Via"' "$script_file" 2>/dev/null \ && grep -q '"kissska1:Via"' "$script_file" 2>/dev/null \ && grep -q 'rclone sync' "$script_file" 2>/dev/null	not-run	-
+crontab_sync_script_content_ok	19011	"$id"	nginxdomain	if grep -q 'BACKUP_DIR="\$BACKUP_ROOT/auto_latest"' "$script_file" 2>/dev/null && grep -Eq 'rclone_nginx_write_bundle|copy_backup_item' "$script_file" 2>/dev/null && grep -q 'manifest.txt' "$script_file" 2>/dev/null; then return 0 fi return	not-run	-
+crontab_sync_script_content_ok	19011	"$id"	root|emby|custom	local stage expected result=1 stage=$(mktemp -d) || return 1 expected="$stage/$(basename "$script_file")" if DAIMON_SKIP_RUNNER_WRITE=1 crontab_sync_write_script "$id" "$expected" && cmp -s "$expected" "$script_file"; then result=0; fi rm -	not-run	-
+crontab_sync_builtin_name_by_id	19080	"$1"	bitwarden	echo "bitwarden同步脚本"	not-run	-
+crontab_sync_builtin_name_by_id	19080	"$1"	imagebed	echo "图床同步脚本"	not-run	-
+crontab_sync_builtin_name_by_id	19080	"$1"	via	echo "via同步脚本"	not-run	-
+crontab_sync_builtin_name_by_id	19080	"$1"	nginxdomain	echo "域名和nginx配置备份脚本"	not-run	-
+crontab_sync_builtin_name_by_id	19080	"$1"	root	echo "/root Docker一致性备份脚本"	not-run	-
+crontab_sync_builtin_name_by_id	19080	"$1"	emby	echo "Emby目录备份脚本"	not-run	-
+crontab_sync_builtin_id_by_number	19091	"$1"	1	echo "bitwarden"	not-run	-
+crontab_sync_builtin_id_by_number	19091	"$1"	2	echo "imagebed"	not-run	-
+crontab_sync_builtin_id_by_number	19091	"$1"	3	echo "via"	not-run	-
+crontab_sync_builtin_id_by_number	19091	"$1"	4	echo "nginxdomain"	not-run	-
+crontab_sync_builtin_id_by_number	19091	"$1"	5	echo "emby"	not-run	-
+crontab_sync_builtin_id_by_number	19091	"$1"	6	echo "root"	not-run	-
+crontab_sync_write_script	19130	"$id"	bitwarden	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail # ========= 源与目标 ========= SRC_REMOTE="qq3303338052@outlook:/BitwardenBackup" DEST_REMOTE="kissska1:/BitwardenBackup" # ========= 日志 ========= LOG_DIR="/var/log/rclone" LOG_FILE="${	not-run	-
+crontab_sync_write_script	19130	"$id"	imagebed	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/r2_to_onedrive_imagebed.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
+crontab_sync_write_script	19130	"$id"	via	cat > "$script_file" <<'EOF' #!/bin/bash set -euo pipefail LOG_DIR="/var/log/rclone" LOG_FILE="${DAIMON_RUN_LOG:-$LOG_DIR/outlook_to_kissska1_via.log}" LOCK_FILE="/run/lock/daimon-rclone-backups.lock" install -d -m 700 "$LOG_DIR" "$(dirname	not-run	-
+crontab_sync_write_script	19130	"$id"	nginxdomain	rclone_nginx_write_backup_script "$script_file"	not-run	-
+crontab_sync_write_script	19130	"$id"	root|emby|custom	local backup_name kind source if [ "$id" = emby ]; then backup_name=Emby; kind=emby; source=/root/emby else backup_name=$(basename "$target" .sh) if [ "$backup_name" = Root_Backup ]; then backup_name=$(crontab_sync_root_name) || return 1 fi	not-run	-
+crontab_sync_write_script	19130	"$id"	*	return 1	not-run	-
+crontab_sync_reconcile_legacy	20084	"$custom_file"	"$bit_old"|"$via_old"	continue	not-run	-
+crontab_sync_install_one	20129	"$id"	bitwarden|via|root|emby|custom	if ! crontab_sync_remote_ready; then echo -e "${gl_hong}kissska1 连接检查失败，未修改脚本和定时任务。${gl_bai}" return 1 fi	not-run	-
+crontab_sync_get_item_by_number	20187	"$num"	1|2|3|4|5|6	id=$(crontab_sync_builtin_id_by_number "$num") if [ "$id" = root ]; then if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then [ "$action" = install ] || return 1 crontab_sync_prompt_root_name >/dev/null || return 1 file=$(cro	not-run	-
+crontab_sync_handle_numbers	20225	"$action"	install|remove		not-run	-
+crontab_sync_handle_numbers	20225	"$action"	*	return 1	not-run	-
+crontab_sync_manager	20287	"$sub_choice"	1	read -e -p "请输入要安装的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
+crontab_sync_manager	20287	"$sub_choice"	2	read -e -p "请输入要卸载的脚本编号（支持多选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers remove "$nums"	not-run	-
+crontab_sync_manager	20287	"$sub_choice"	3	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要安装的脚本编号（默认全选，空格分隔）: " nums || return 1 crontab_sync_handle_numbers install "$nums"	not-run	-
+crontab_sync_manager	20287	"$sub_choice"	4	local nums nums="$(crontab_sync_all_numbers)" read -e -i "$nums" -p "请确认/修改要卸载的脚本编号（默认全选，空格分隔）: " nums || return 1 read -e -p "确认卸载以上编号对应脚本和定时任务？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then crontab_sync	not-run	-
+crontab_sync_manager	20287	"$sub_choice"	5	crontab_sync_run_root_once	not-run	-
+crontab_sync_manager	20287	"$sub_choice"	0	return	not-run	-
+crontab_sync_manager	20287	"$sub_choice"	*	echo "无效的输入!"	not-run	-
+server_retire_nginx_remove	20385	"$parent"	/etc/nginx/sites-enabled|/etc/nginx/sites-available|/home/web/conf.d		not-run	-
+server_retire_nginx_remove	20385	"$parent"	*	echo "拒绝非托管配置路径。"; return 1	not-run	-
+server_retire_capture	20602	"$1"	C	docker_compose_update_discover_projects	not-run	-
+server_retire_capture	20602	"$1"	N	server_retire_nginx_items	not-run	-
+server_retire_capture	20602	"$1"	A	server_retire_script_items	not-run	-
+server_retire_capture	20602	"$1"	U	server_retire_update_items	not-run	-
+server_retire_capture	20602	"$1"	R	printf '%s %s\n' "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" "$DAIMON_ROOT_DIR/cert-renew.sh"	not-run	-
+server_retire_capture	20602	"$1"	*	return 1	not-run	-
+server_retire_apply_token	20622	"$token"	C*	IFS=$' ' read -r project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	not-run	-
+server_retire_apply_token	20622	"$token"	N*	IFS=$' ' read -r file domains enabled <<< "$item"; server_retire_nginx_remove "$file" "$domains"	not-run	-
+server_retire_apply_token	20622	"$token"	A*|U*	file=${item%%$' '*}; server_retire_remove_script "$file"	not-run	-
+server_retire_apply_token	20622	"$token"	R1	IFS=$' ' read -r file workdir <<< "$item" server_retire_remove_script "$file" || failure=1 server_retire_remove_script "$workdir" || failure=1 return "$failure"	not-run	-
+server_retire_menu	20745	"$choice"	1	server_retire_bulk	not-run	-
+server_retire_menu	20745	"$choice"	2	server_retire_compose_menu	not-run	-
+server_retire_menu	20745	"$choice"	3	server_retire_nginx_menu	menu-real-vm/partial	7011577; Debian13AMD64 and Ubuntu22ARM64 full main19->3 and actual nginx; five rounds cover cancel/invalid/duplicate selection, shared certificates and remaining HTTPS site, ExecReload failure restores config/link, inactive service preserved; both VMs restored; other retirement not covered
+server_retire_menu	20745	"$choice"	4	server_retire_script_menu sync	not-run	-
+server_retire_menu	20745	"$choice"	5	server_retire_script_menu update	not-run	-
+server_retire_menu	20745	"$choice"	6	server_retire_cert_menu	not-run	-
+server_retire_menu	20745	"$choice"	0	return	not-run	-
+server_retire_menu	20745	"$choice"	*	echo "无效的输入!"	not-run	-
+warp_manager	20781	$sub_choice	1	clear send_stats "warp管理" install wget curl daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"	not-run	-
+warp_manager	20781	$sub_choice	2	clear echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}" read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1 if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then send_stats "彻底删除warp" install wget curl 	not-run	-
+warp_manager	20781	$sub_choice	0	return	not-run	-
+warp_manager	20781	$sub_choice	*	echo "无效的输入!"	not-run	-
+debian_basics_install	20913	"$package"	ca-certificates|curl|wget|jq		not-run	-
+debian_basics_install	20913	"$package"	*	echo "无效的 Debian 软件包: $package"; return 1	not-run	-
+debian_basics_menu	20961	"$answer"	''|y|Y		not-run	-
+debian_basics_menu	20961	"$answer"	*	echo "已取消"; return 0	not-run	-
+kejilion_sh	21016	$choice	1	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
+kejilion_sh	21016	$choice	2	clear ; send_stats "系统更新" ; linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+kejilion_sh	21016	$choice	3	clear ; send_stats "系统清理" ; linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+kejilion_sh	21016	$choice	4	one_click_config_manager; pause_after=false	handler-real/partial	2026-09-28; 5ca85df; six hosts; one_click_config_manager handler real apt for items 2/3; main-menu 4 dispatch itself only in guarded regression; other setup items not covered
+kejilion_sh	21016	$choice	5	linux_Settings; pause_after=false	menu-real/partial	2575b93/system-tools-real.py; six hosts; isolated owned files and network/mount namespaces; selected submenus only
+kejilion_sh	21016	$choice	6	linux_tools thirdparty; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	7	linux_tools programming; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	8	linux_docker; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	9	ssh_config_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	10	ufw_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	11	ssl_nginx_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	12	fail2ban_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	13	linux_bbr; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	14	warp_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	15	rclone_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	16	bitwarden_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	17	crontab_sync_manager; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	18	common_one_click_scripts; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	19	server_retire_menu; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	20	debian_basics_menu; pause_after=false	not-run	-
+kejilion_sh	21016	$choice	00	kejilion_update; pause_after=false	handler-real/scoped	2026-09-28 updater; six hosts; skip backup/helper migration as authorized
+kejilion_sh	21016	$choice	0	clear ; exit	menu-real/partial	2026-09-28; 5ca85df; six hosts; actual menu exits after info/update/clean without a second completion pause
+kejilion_sh	21016	$choice	*	echo "无效的输入!"	not-run	-
+CLI	21079	$1	install|add|安装	shift send_stats "安装软件" install "$@"	not-run	-
+CLI	21079	$1	remove|del|uninstall|卸载	shift send_stats "卸载软件" remove "$@"	not-run	-
+CLI	21079	$1	update|更新	linux_update	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+CLI	21079	$1	clean|清理	linux_clean	menu-real/partial	2026-09-28; 5ca85df; six hosts; native Ubuntu 22.04/Debian 13 disposable rootfs; real apt/dpkg and owned .deb repository; upgrade preserves edited conffile, orphan/cache cleanup and repeat; lock/HTTP503 rejected; no full distro upgrade or journal rotation
+CLI	21079	$1	bbr3|bbrv3	bbrv3	not-run	-
+CLI	21079	$1	nhyh|内核优化	Kernel_optimize	not-run	-
+CLI	21079	$1	trash|hsz|回收站	linux_trash	not-run	-
+CLI	21079	$1	backup|bf|备份	linux_backup	not-run	-
+CLI	21079	$1	ssh|远程连接	ssh_manager	not-run	-
+CLI	21079	$1	rsync|远程同步	rsync_manager	not-run	-
+CLI	21079	$1	rsync_run	shift send_stats "定时rsync同步" run_task "$@"	not-run	-
+CLI	21079	$1	disk|硬盘管理	disk_manager	not-run	-
+CLI	21079	$1	wp|wordpress	echo "LDNMP建站模块已移除"	not-run	-
+CLI	21079	$1	fd|rp|反代	echo "LDNMP反代模块已移除"	not-run	-
+CLI	21079	$1	loadbalance|负载均衡	echo "LDNMP负载均衡模块已移除"	not-run	-
+CLI	21079	$1	stream|L4负载均衡	echo "LDNMP四层转发模块已移除"	not-run	-
+CLI	21079	$1	swap	shift send_stats "快速设置虚拟内存" add_swap "$@"	cli-real-vm/partial	38629fc; two owned Ubuntu/Debian VMs; actual CLI create/repeat/invalid sizes and reboot activation; not six host swap tests
+CLI	21079	$1	time|时区	shift send_stats "快速设置时区" set_timedate "$@"	not-run	-
+CLI	21079	$1	iptables_open	iptables_open	not-run	-
+CLI	21079	$1	frps	frps_panel	not-run	-
+CLI	21079	$1	frpc	frpc_panel	not-run	-
+CLI	21079	$1	打开端口|dkdk	shift open_port "$@"	not-run	-
+CLI	21079	$1	关闭端口|gbdk	shift close_port "$@"	not-run	-
+CLI	21079	$1	放行IP|fxip	shift allow_ip "$@"	not-run	-
+CLI	21079	$1	阻止IP|zzip	shift block_ip "$@"	not-run	-
+CLI	21079	$1	防火墙|fhq	iptables_panel	not-run	-
+CLI	21079	$1	命令收藏夹|fav	linux_fav	not-run	-
+CLI	21079	$1	status|状态	shift send_stats "软件状态查看" status "$@"	not-run	-
+CLI	21079	$1	start|启动	shift send_stats "软件启动" start "$@"	not-run	-
+CLI	21079	$1	stop|停止	shift send_stats "软件暂停" stop "$@"	not-run	-
+CLI	21079	$1	restart|重启	shift send_stats "软件重启" restart "$@"	not-run	-
+CLI	21079	$1	enable|autostart|开机启动	shift send_stats "软件开机自启" enable "$@"	not-run	-
+CLI	21079	$1	ssl	shift if [ "$1" = "ps" ]; then send_stats "查看证书状态" ssl_ps elif [ -z "$1" ]; then add_ssl send_stats "快速申请证书" elif [ -n "$1" ]; then add_ssl "$1" send_stats "快速申请证书" else k_info fi	not-run	-
+CLI	21079	$1	docker	shift case $1 in install|安装) send_stats "快捷安装docker" install_docker ;; ps|容器) send_stats "快捷容器管理" docker_ps ;; img|镜像) send_stats "快捷镜像管理" docker_image ;; *) linux_docker ;; esac	not-run	-
+CLI	21079	$1	web	echo "LDNMP站点管理模块已移除"	not-run	-
+CLI	21079	$1	info	linux_info	menu-real/partial	2026-09-28; 5ca85df; six hosts; installed definitions and actual menu/CLI dispatch, real host queries; isolated sshd precedence/recursive Include and 2 TCP + 1 UDP sockets; startup migrations excluded; not every service state
+CLI	21079	$1	fail2ban|f2b	fail2ban_manager	not-run	-
+CLI	21079	$1	rclone|rc	rclone_manager	not-run	-
+CLI	21079	$1	bitwarden|bw	bitwarden_manager	not-run	-
+CLI	21079	$1	cronsync|syncscripts|cron-sync	crontab_sync_manager	not-run	-
+CLI	21079	$1	retire|退役	server_retire_menu	not-run	-
+CLI	21079	$1	sshkey	shift case "$1" in "" ) # sshkey → 交互菜单 send_stats "SSHKey 交互菜单" sshkey_panel ;; github ) shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1" ;; http://*|https://* ) send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1" ;; ss	not-run	-
+CLI	21079	$1	*	k_info	not-run	-
+CLI	21241	$1	install|安装	send_stats "快捷安装docker" install_docker	not-run	-
+CLI	21241	$1	ps|容器	send_stats "快捷容器管理" docker_ps	not-run	-
+CLI	21241	$1	img|镜像	send_stats "快捷镜像管理" docker_image	not-run	-
+CLI	21241	$1	*	linux_docker	not-run	-
+CLI	21295	"$1"	""	send_stats "SSHKey 交互菜单" sshkey_panel	not-run	-
+CLI	21295	"$1"	github	shift send_stats "从 GitHub 导入 SSH 公钥" fetch_github_ssh_keys "$1"	not-run	-
+CLI	21295	"$1"	http://*|https://*	send_stats "从 URL 导入 SSH 公钥" fetch_remote_ssh_keys "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
+CLI	21295	"$1"	ssh-rsa*|ssh-ed25519*|ssh-ecdsa*	send_stats "公钥直接导入" import_sshkey "$1"	handler-real/partial	2026-09-28 ssh-key; six hosts; isolated sshd; not whole CLI
+CLI	21295	"$1"	*	echo "错误：未知参数 '$1'" echo "用法：" echo " k sshkey 进入交互菜单" echo " k sshkey \"<pubkey>\" 直接导入 SSH 公钥" echo " k sshkey <url> 从 URL 导入 SSH 公钥" echo " k sshkey github <user> 从 GitHub 导入 SSH 公钥"	not-run	-
 linux_tools/thirdparty/install		tool number	1	install_tool_by_id vim	not-run	-
 linux_tools/thirdparty/remove		tool number	1	remove_tool_by_id vim	not-run	-
 linux_tools/thirdparty/install		tool number	2	install_tool_by_id cpcat	not-run	-
