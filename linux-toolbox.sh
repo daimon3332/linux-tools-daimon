@@ -15151,6 +15151,7 @@ OPTIONS = {key.lower(): key for key in (
 BEGIN = '# BEGIN DAIMON SSH TRANSACTION OPTIONS'
 END = '# END DAIMON SSH TRANSACTION OPTIONS'
 CONFIG = Path('/etc/ssh/sshd_config')
+KEYS = Path('/root/.ssh/authorized_keys')
 PENDING = Path('/var/lib/daimon/ssh-change')
 UNIT = Path('/etc/systemd/system/daimon-ssh-recover.service')
 WANTED = Path('/etc/systemd/system/multi-user.target.wants/daimon-ssh-recover.service')
@@ -15367,6 +15368,89 @@ def root_authentication_available(values):
     require(usable, 'No supported root authentication method remains; current settings were preserved')
 
 
+def key_candidate(original, number):
+    lines = original.splitlines(keepends=True)
+    require(number.isascii() and number.isdecimal() and 1 <= int(number) <= len(lines), 'Invalid public-key line')
+    selected = lines[int(number) - 1].strip()
+    require(selected and not selected.startswith(b'#'), 'Selected line is not a public key')
+    del lines[int(number) - 1]
+    require(any(line.strip() and not line.lstrip().startswith(b'#') for line in lines), 'The last public key cannot be deleted')
+    return b''.join(lines)
+
+
+def target_file(state):
+    return KEYS if state.get('kind') == 'keys' else CONFIG
+
+
+def ufw_snapshot():
+    import shlex
+    require(shutil.which('ufw') == '/usr/sbin/ufw', 'The standard UFW executable is required')
+    trusted_directory('/etc/ufw')
+    config = {}
+    for name in ('/etc/default/ufw', '/etc/ufw/ufw.conf', '/etc/ufw/before.rules', '/etc/ufw/after.rules',
+                 '/etc/ufw/before6.rules', '/etc/ufw/after6.rules', '/etc/ufw/sysctl.conf'):
+        path = Path(name)
+        trusted_file(path)
+        config[name] = digest(path.read_bytes())
+    for name in ('ufw.conf', 'user.rules', 'user6.rules'):
+        trusted_file(Path('/etc/ufw') / name)
+    status = command('/usr/sbin/ufw', 'status')
+    require(status.startswith(('Status: active\n', 'Status: inactive\n')), 'Unknown UFW status')
+    rules = []
+    for line in command('/usr/sbin/ufw', 'show', 'added').splitlines():
+        if line.startswith('ufw '):
+            rules.append(shlex.split(line)[1:])
+    return {'active': status.startswith('Status: active'), 'rules': rules, 'config': config}
+
+
+def firewall_plan(old_ports, ports, enable, token):
+    baseline = ufw_snapshot()
+    if not baseline['active'] and not enable:
+        return None
+    require(baseline['active'], 'Enable and review UFW separately before the SSH one-click transaction')
+    missing = []
+    for port in dict.fromkeys(ports):
+        require(option('port', port)[1] == port, 'Invalid firewall port')
+        if not any(rule[:2] == ['allow', port + '/tcp'] for rule in baseline['rules']):
+            missing.append(port)
+    return {'baseline': baseline, 'ports': missing, 'tag': 'daimon-ssh-' + token, 'enable': enable}
+
+
+def firewall_check(fw, complete=False, boot=False):
+    baseline = fw['baseline']
+    current = ufw_snapshot()
+    require(current['config'] == baseline['config'] and (boot or current['active'] == baseline['active']),
+            'UFW policy or active state changed externally; recovery retained')
+    owned = [['allow', port + '/tcp', 'comment', fw['tag']] for port in fw['ports']]
+    remaining = [rule for rule in current['rules'] if rule not in owned]
+    require(remaining == baseline['rules'], 'UFW rules changed externally; recovery retained')
+    require(all(current['rules'].count(rule) <= 1 for rule in owned), 'Duplicate owned UFW rule')
+    if complete:
+        require(all(rule in current['rules'] for rule in owned), 'An expected SSH firewall rule is missing')
+    return current, owned
+
+
+def firewall_apply(fw):
+    if fw is None:
+        return
+    firewall_check(fw)
+    for port in fw['ports']:
+        command('/usr/sbin/ufw', 'insert', '1', 'allow', port + '/tcp', 'comment', fw['tag'])
+        firewall_check(fw)
+    firewall_check(fw, True)
+
+
+def firewall_restore(fw, boot=False):
+    if fw is None:
+        return
+    current, owned = firewall_check(fw, boot=boot)
+    for rule in owned:
+        if rule in current['rules']:
+            command('/usr/sbin/ufw', '--force', 'delete', *rule)
+            current, _ = firewall_check(fw, boot=boot)
+    require(current['rules'] == fw['baseline']['rules'], 'UFW restore verification failed')
+
+
 def boot_id():
     return Path('/proc/sys/kernel/random/boot_id').read_text().strip()
 
@@ -15399,6 +15483,15 @@ def load_state():
             all(type(value) is int for value in state['metadata']) and
             0 <= state['metadata'][0] <= 0o777 and not state['metadata'][0] & 0o022 and
             state['metadata'][1] == 0 and state['metadata'][2] >= 0, 'Invalid recovery file metadata')
+    require(state.get('kind', 'config') in ('config', 'keys'), 'Invalid transaction resource')
+    fw = state.get('firewall')
+    if fw is not None:
+        require(isinstance(fw, dict) and fw.get('tag') == 'daimon-ssh-' + state['token'] and
+                isinstance(fw.get('ports'), list) and len(set(fw['ports'])) == len(fw['ports']) and
+                all(option('port', port)[1] == port for port in fw['ports']) and
+                isinstance(fw.get('baseline'), dict) and fw['baseline'].get('active') is True and
+                isinstance(fw['baseline'].get('config'), dict) and isinstance(fw['baseline'].get('rules'), list),
+                'Invalid firewall recovery intent')
     require(isinstance(state.get('desired'), dict) and state['desired'] and
             all(option(key, value) == (key, value) for key, value in state['desired'].items()),
             'Invalid pending SSH policy')
@@ -15447,19 +15540,22 @@ def cleanup(state):
 
 
 def recover(state):
-    trusted_file(CONFIG)
-    current = digest(CONFIG.read_bytes())
+    target = target_file(state)
+    trusted_file(target)
+    current = digest(target.read_bytes())
     require(current in (state['original_hash'], state['candidate_hash']),
             'SSH configuration was changed externally; no unknown changes were overwritten')
-    command('/usr/sbin/sshd', '-t', '-f', str(PENDING / 'original'))
+    command('/usr/sbin/sshd', '-t', '-f', str(CONFIG if state.get('kind') == 'keys' else PENDING / 'original'))
     if current != state['original_hash']:
-        atomic_write(CONFIG, (PENDING / 'original').read_bytes(), *state['metadata'])
+        atomic_write(target, (PENDING / 'original').read_bytes(), *state['metadata'])
     service = settled_service(state['service'])
     if service.get('ActiveState') == 'active':
         require(preflight_service() == state['service'], 'SSH service changed; reload requires manual verification')
         command('/usr/bin/systemctl', 'reload', state['service'])
         require(settled_service(state['service']).get('ActiveState') == 'active',
                 'Restored SSH configuration did not leave an active service; recovery state was retained')
+    if state.get('firewall'):
+        firewall_restore(state['firewall'], boot=boot_id() != state['boot_id'])
     cleanup(state)
     print('Unconfirmed SSH configuration restored; inactive services were not started.')
 
@@ -15473,47 +15569,76 @@ def confirm(state, token):
     context = connection_context(connection)
     require(connection.split()[3] in state['ports'], 'The new SSH connection used the wrong destination port')
     require(preflight_service() == state['service'], 'SSH service changed during confirmation')
-    trusted_file(CONFIG)
-    require(digest(CONFIG.read_bytes()) == state['candidate_hash'], 'SSH configuration changed during confirmation')
+    target = target_file(state)
+    trusted_file(target)
+    require(digest(target.read_bytes()) == state['candidate_hash'], 'SSH configuration changed during confirmation')
     policy = effective(CONFIG, context)
     check_policy(policy, state['desired'])
     root_authentication_available(policy)
+    if state.get('firewall'):
+        firewall_check(state['firewall'], True)
     cleanup(state)
     print('SSH configuration confirmed from the new connection.')
 
 
-def apply(changes):
+def apply(changes, edited=None, base_hash=None, key_line=None, enable_ufw=False):
     require(not PENDING.exists() and not PENDING.is_symlink(), 'An earlier SSH transaction still requires confirmation or recovery')
     require(not UNIT.exists() and not UNIT.is_symlink() and not WANTED.exists() and not WANTED.is_symlink(),
             'Recovery unit paths are already occupied; no existing units were changed')
     service = preflight_service()
+    target = KEYS if key_line is not None else CONFIG
     trusted_directory(CONFIG.parent)
-    info = trusted_file(CONFIG)
+    trusted_directory(target.parent)
+    info = trusted_file(target)
     identity = lambda item: (item.st_dev, item.st_ino, item.st_size, item.st_mtime_ns,
                              item.st_ctime_ns, item.st_mode, item.st_uid, item.st_gid)
-    original = CONFIG.read_bytes()
+    original = target.read_bytes()
+    if base_hash is not None:
+        require(digest(original) == base_hash, 'The file changed after it was displayed or opened; retry')
     command('/usr/sbin/sshd', '-t', '-f', str(CONFIG))
     connection = os.environ.get('SSH_CONNECTION', '')
     old_context = connection_context(connection)
     old_policy = effective(CONFIG, old_context)
-    text, desired = candidate(original.decode(), changes)
-    requested_port = desired.get('port')
-    if requested_port and old_policy.get('port') != [requested_port]:
-        require(not shutil.which('ufw') or 'Status: inactive' in command('/usr/sbin/ufw', 'status'),
-                'An active UFW port change requires the firewall transaction')
-        require(service_properties('fail2ban.service').get('ActiveState') != 'active',
-                'An active Fail2ban port change requires the jail transaction')
-    descriptor, staged = tempfile.mkstemp(prefix='.ssh-change-', dir=CONFIG.parent)
+    if edited is not None:
+        edited = Path(edited)
+        trusted_file(edited)
+        text = edited.read_text()
+        desired = None
+    elif key_line is not None:
+        require(old_policy.get('authorizedkeysfile') == ['.ssh/authorized_keys'] and
+                old_policy.get('pubkeyauthentication') == ['yes'], 'Only the standard active root authorized_keys file is supported')
+        text = key_candidate(original, key_line).decode()
+        desired = {'pubkeyauthentication': 'yes', 'authorizedkeysfile': '.ssh/authorized_keys'}
+    else:
+        text, desired = candidate(original.decode(), changes)
+    descriptor, staged = tempfile.mkstemp(prefix='.ssh-change-', dir=target.parent)
     try:
         with os.fdopen(descriptor, 'w') as stream:
             stream.write(text)
-        command('/usr/sbin/sshd', '-t', '-f', staged)
-        policy = effective(staged, connection_context(connection, requested_port))
-        check_policy(policy, desired)
-        root_authentication_available(policy)
+        if key_line is not None:
+            command('/usr/bin/ssh-keygen', '-lf', staged)
+            policy = old_policy
+        else:
+            command('/usr/sbin/sshd', '-t', '-f', staged)
+            provisional = effective(staged, old_context)
+            ports = provisional.get('port', [])
+            require(ports and all(option('port', port)[1] == port for port in ports), 'No valid SSH port')
+            if desired is None:
+                desired = {key: option(key, values[0])[1] for key, values in provisional.items()
+                           if key in OPTIONS and key != 'port' and len(values) == 1}
+            policy = effective(staged, connection_context(connection, ports[0]))
+            check_policy(policy, desired)
+            root_authentication_available(policy)
     finally:
         os.unlink(staged)
-    if text.encode() == original:
+    if policy['port'] != old_policy['port']:
+        require(service_properties('fail2ban.service').get('ActiveState') != 'active',
+                'An active Fail2ban port change requires the jail transaction')
+    token = secrets.token_hex(16)
+    firewall = None
+    if enable_ufw or (policy['port'] != old_policy['port'] and shutil.which('ufw')):
+        firewall = firewall_plan(old_policy['port'], policy['port'], enable_ufw, token)
+    if text.encode() == original and not (firewall and firewall['ports']):
         print('SSH configuration is already current; no service reload or recovery units were created.')
         return
     if not PENDING.parent.exists():
@@ -15523,9 +15648,8 @@ def apply(changes):
     trusted_directory(UNIT.parent)
     trusted_directory(WANTED.parent)
     PENDING.mkdir(mode=0o700)
-    token = secrets.token_hex(16)
     unit = ('[Unit]\nDescription=Recover unconfirmed Daimon SSH configuration\nDefaultDependencies=no\n'
-            'After=local-fs.target\nBefore=ssh.service sshd.service ssh.socket sshd.socket\n'
+            'After=local-fs.target\nBefore=ssh.service sshd.service ssh.socket sshd.socket ufw.service\n'
             'ConditionPathExists=' + str(PENDING / 'state.json') + '\n[Service]\nType=oneshot\n'
             'RuntimeDirectory=sshd\nRuntimeDirectoryMode=0755\nRuntimeDirectoryPreserve=yes\n'
             'ExecStart=/usr/bin/python3 -I ' + str(PENDING / 'worker.py') + ' rollback ' + token + '\n'
@@ -15533,7 +15657,8 @@ def apply(changes):
     state = {'version': 1, 'token': token, 'timer': 'daimon-ssh-rollback-' + token[:12],
              'service': service, 'boot_id': boot_id(), 'connection': connection,
              'started': time.monotonic(), 'deadline': time.monotonic() + 180,
-             'desired': desired, 'ports': policy['port'],
+             'desired': desired, 'ports': [port for port in policy['port'] if port not in old_policy['port']] or policy['port'],
+             'kind': 'keys' if key_line is not None else 'config', 'firewall': firewall,
              'original_hash': digest(original), 'candidate_hash': digest(text.encode()),
              'unit_hash': digest(unit), 'metadata': [stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid]}
     try:
@@ -15550,10 +15675,11 @@ def apply(changes):
                 '--timer-property=AccuracySec=1s', '--timer-property=RemainAfterElapse=no', '--property=Type=exec',
                 '/usr/bin/python3', '-I', str(PENDING / 'worker.py'), 'rollback', token)
         require(service_properties(state['timer'] + '.timer').get('ActiveState') == 'active', 'Rollback timer is not armed')
-        require(identity(trusted_file(CONFIG)) == identity(info) and CONFIG.read_bytes() == original,
+        require(identity(trusted_file(target)) == identity(info) and target.read_bytes() == original,
                 'SSH configuration changed while preparing recovery')
         require(preflight_service() == service, 'SSH service changed while preparing recovery')
-        atomic_write(CONFIG, text.encode(), *state['metadata'])
+        firewall_apply(firewall)
+        atomic_write(target, text.encode(), *state['metadata'])
         command('/usr/bin/systemctl', 'reload', service)
         require(settled_service(service).get('ActiveState') == 'active', 'SSH reload did not leave the service active')
     except BaseException:
@@ -15588,8 +15714,19 @@ def main(arguments):
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(signum, interrupted)
         if arguments[0] == 'apply':
-            require(len(arguments) > 1 and len(arguments) % 2 == 1, 'Expected SSH option/value pairs')
-            apply(list(zip(arguments[1::2], arguments[2::2])))
+            args = arguments[1:]
+            if args and args[0] == '--edit':
+                require(len(args) == 3, 'Expected staged file and original hash')
+                apply([], edited=args[1], base_hash=args[2])
+            elif args and args[0] == '--delete-key':
+                require(len(args) == 3, 'Expected public-key line and original hash')
+                apply([], key_line=args[1], base_hash=args[2])
+            else:
+                enable = bool(args and args[0] == '--ufw')
+                if enable:
+                    args = args[1:]
+                require(args and len(args) % 2 == 0, 'Expected SSH option/value pairs')
+                apply(list(zip(args[::2], args[1::2])), enable_ufw=enable)
         else:
             require(len(arguments) == 2, 'A transaction token is required')
             state = load_state()
@@ -15621,34 +15758,24 @@ ssh_transaction_apply() (
     /usr/bin/python3 -I "$program" apply "$@"
 )
 
+
+ssh_config_edit() (
+    umask 077
+    local work original
+    [ ! -e /var/lib/daimon/ssh-change ] || { echo "已有 SSH 变更待确认或恢复。" >&2; return 1; }
+    command -v vim >/dev/null || { echo "请先安装 vim，未修改配置。" >&2; return 1; }
+    work=$(mktemp -d /run/daimon-ssh-edit.XXXXXX) || return 1
+    trap 'rm -f -- "$work/sshd_config"; rmdir -- "$work"' EXIT
+    cp -- /etc/ssh/sshd_config "$work/sshd_config" || return 1
+    original=$(sha256sum "$work/sshd_config") || return 1
+    original=${original%% *}
+    vim -n -i NONE -u NONE -- "$work/sshd_config" || return 1
+    ssh_transaction_apply --edit "$work/sshd_config" "$original"
+)
+
 ssh_config_manager() {
 	local SSH_CONFIG="/etc/ssh/sshd_config"
 	local DEFAULT_SSH_PORT="64400"
-
-	ssh_set_option() {
-		local key="$1" value="$2"
-		if grep -qiE "^[#[:space:]]*${key}[[:space:]]+" "$SSH_CONFIG" 2>/dev/null; then
-			sed -i "s|^[#[:space:]]*${key}[[:space:]].*|${key} ${value}|I" "$SSH_CONFIG"
-		else
-			echo "${key} ${value}" >> "$SSH_CONFIG"
-		fi
-	}
-
-	ssh_restart_safe() {
-		if ! sshd -t; then
-			echo -e "${gl_hong}SSH 配置语法错误，未重启 SSH。请检查 $SSH_CONFIG${gl_bai}"
-			return 1
-		fi
-		command systemctl stop ssh.socket sshd.socket 2>/dev/null || true
-		command systemctl disable ssh.socket sshd.socket 2>/dev/null || true
-		if command systemctl list-unit-files 2>/dev/null | grep -q '^sshd\.service'; then
-			systemctl restart sshd
-		elif command systemctl list-unit-files 2>/dev/null | grep -q '^ssh\.service'; then
-			systemctl restart ssh
-		else
-			service sshd restart 2>/dev/null || service ssh restart 2>/dev/null
-		fi
-	}
 
 	ssh_auth_status() {
 		local key="$1"
@@ -15671,6 +15798,9 @@ ssh_config_manager() {
 			echo "SSH 公钥和私钥管理"
 			echo "------------------------"
 			echo "当前公钥:"
+			local key_hash
+			key_hash=$(sha256sum /root/.ssh/authorized_keys 2>/dev/null)
+			key_hash=${key_hash%% *}
 			nl -ba /root/.ssh/authorized_keys 2>/dev/null || true
 			echo "------------------------"
 			echo "当前私钥:"
@@ -15684,7 +15814,7 @@ ssh_config_manager() {
 			read -e -p "请输入你的选择: " sub_choice || return 1
 			case "$sub_choice" in
 				1) read -e -p "请粘贴公钥: " public_key || return 1; ssh_add_public_key "$public_key" ;;
-				2) read -e -p "请输入要删除的公钥行号: " line_no || return 1; [[ "$line_no" =~ ^[0-9]+$ ]] && sed -i "${line_no}d" /root/.ssh/authorized_keys ;;
+				2) read -e -p "请输入要删除的公钥行号: " line_no || return 1; ssh_transaction_apply --delete-key "$line_no" "$key_hash" ;;
 				3)
 					read -e -p "请输入私钥文件名（默认 id_ed25519）: " key_name || return 0
 					key_name=${key_name:-id_ed25519}
@@ -15722,7 +15852,7 @@ ssh_config_manager() {
 		echo -e "${gl_kjlan}1.   ${gl_bai}修改 SSH 端口"
 		echo -e "${gl_kjlan}2.   ${gl_bai}禁用/开启密码登录"
 		echo -e "${gl_kjlan}3.   ${gl_bai}开启/禁用密钥登录"
-		echo -e "${gl_kjlan}4.   ${gl_bai}一键配置（关闭密码登录、关闭 22、改用 $DEFAULT_SSH_PORT、开启密钥登录、配置 UFW）"
+		echo -e "${gl_kjlan}4.   ${gl_bai}安全配置（密钥登录、新端口、联动已启用 UFW；保留旧防火墙规则）"
 		echo -e "${gl_kjlan}5.   ${gl_bai}公钥和私钥管理"
 		echo -e "${gl_kjlan}6.   ${gl_bai}修改 sshd_config 配置文件"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
@@ -15760,31 +15890,15 @@ ssh_config_manager() {
 				esac
 				;;
 			4)
-				read -e -p "请粘贴公钥: " public_key || return 1
-				ssh_add_public_key "$public_key" || { break_end; continue; }
+				read -e -p "请粘贴公钥（回车使用已有公钥）: " public_key || return 1
+				if [ -n "$public_key" ] && ! ssh_add_public_key "$public_key"; then break_end; continue; fi
 				read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1
 				new_port=${new_port:-$DEFAULT_SSH_PORT}
 				if ! validate_tcp_port "$new_port"; then echo "端口不合法"; break_end; continue; fi
-				ssh_set_option Port "$new_port"
-				ssh_set_option PubkeyAuthentication yes
-				ssh_set_option AuthorizedKeysFile ".ssh/authorized_keys"
-				ssh_set_option PasswordAuthentication no
-				ssh_set_option KbdInteractiveAuthentication no
-				ssh_set_option ChallengeResponseAuthentication no
-				ssh_set_option PermitEmptyPasswords no
-				ssh_set_option PermitRootLogin prohibit-password
-				if ! install ufw || ! ufw_allow_current_ssh "$new_port"; then
-					break_end; continue
-				fi
-				if ssh_restart_safe && ufw --force enable; then
-					[ "$new_port" = "22" ] || ufw deny 22/tcp
-					ufw status
-				else
-					echo "SSH 或 UFW 应用失败，请手动检查 $SSH_CONFIG。"
-				fi
+				ssh_transaction_apply --ufw Port "$new_port" PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password
 				;;
 			5) ssh_key_manager; continue ;;
-			6) install vim; vim "$SSH_CONFIG"; ssh_restart_safe ;;
+			6) ssh_config_edit ;;
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac

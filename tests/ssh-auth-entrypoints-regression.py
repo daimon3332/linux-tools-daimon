@@ -50,6 +50,16 @@ command() {
             result.stderr = result.stderr.decode('utf-8')
             return result, trace.read_text(encoding='utf-8').splitlines() if trace.exists() else []
 
+    def test_one_click_uses_transaction_without_live_editor(self):
+        extra = "validate_tcp_port() { return 0; }; install() { echo unsafe-install >> \"$TRACE\"; return 90; }"
+        _, trace = self.invoke('4\n\n64400\n0\n', extra=extra)
+        self.assertEqual(trace, ['transaction --ufw Port 64400 PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password'])
+
+    def test_editor_delegates_to_staged_transaction(self):
+        extra = 'ssh_config_edit() { echo staged-editor >> "$TRACE"; }; install() { echo unsafe-install >> "$TRACE"; return 90; }; vim() { echo unsafe-live-editor >> "$TRACE"; }'
+        _, trace = self.invoke('6\n0\n', extra=extra)
+        self.assertEqual(trace, ['staged-editor'])
+
     def test_port_menu_uses_transaction(self):
         result, trace = self.invoke('1\n2224\n0\n')
         self.assertEqual(result.returncode, 0, result.stderr)
