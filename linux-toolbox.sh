@@ -5832,120 +5832,13 @@ done
 
 
 
-restart_ssh() {
-	systemctl restart sshd > /dev/null 2>&1 || systemctl restart ssh > /dev/null 2>&1
-
-}
-
-
-
-correct_ssh_config() {
-
-	local sshd_config="/etc/ssh/sshd_config"
-
-
-	if grep -Eq "^\s*PasswordAuthentication\s+no" "$sshd_config"; then
-		sed -i -e 's/^\s*#\?\s*PermitRootLogin .*/PermitRootLogin prohibit-password/' \
-			   -e 's/^\s*#\?\s*PasswordAuthentication .*/PasswordAuthentication no/' \
-			   -e 's/^\s*#\?\s*PubkeyAuthentication .*/PubkeyAuthentication yes/' \
-			   -e 's/^\s*#\?\s*ChallengeResponseAuthentication .*/ChallengeResponseAuthentication no/' "$sshd_config"
-	else
-		sed -i -e 's/^\s*#\?\s*PermitRootLogin .*/PermitRootLogin yes/' \
-			   -e 's/^\s*#\?\s*PasswordAuthentication .*/PasswordAuthentication yes/' \
-			   -e 's/^\s*#\?\s*PubkeyAuthentication .*/PubkeyAuthentication yes/' "$sshd_config"
-	fi
-
-	rm -rf /etc/ssh/sshd_config.d/* /etc/ssh/ssh_config.d/*
-}
-
-
 new_ssh_port() {
-
-  local new_port=$1
-
-  sed -i '/^\s*#\?\s*Port\s\+/d' /etc/ssh/sshd_config
-  echo "Port $new_port" >> /etc/ssh/sshd_config
-
-  correct_ssh_config
-
-  restart_ssh
-  open_port $new_port
-  remove iptables-persistent ufw firewalld iptables-services > /dev/null 2>&1
-
-  echo "SSH 端口已修改为: $new_port"
-
-  sleep 1
-
+	ssh_transaction_apply Port "$1"
 }
-
-
 
 sshkey_on() {
-	(
-	local config=/etc/ssh/sshd_config staged='' rollback='' applied=0 committed=0 effective context connection="${SSH_CONNECTION:-}"
-	[ -f "$config" ] && [ ! -L "$config" ] &&
-		ssh-keygen -lf "$HOME/.ssh/authorized_keys" >/dev/null 2>&1 || {
-		echo "SSH 配置或 authorized_keys 无效，未切换登录模式。" >&2; return 1
-	}
-	trap '
-		status=$?
-		if [ "$applied" = 1 ] && [ "$committed" = 0 ]; then
-			if mv -f -- "$rollback" "$config"; then
-				rollback=""
-				restart_ssh || echo "原配置已恢复，但 SSH 服务恢复失败，请检查服务。" >&2
-			else
-				echo "无法恢复 SSH 配置，临时恢复文件保留在 $rollback" >&2
-				rollback=""
-			fi
-		fi
-		[ -z "$staged" ] || rm -f -- "$staged"
-		[ -z "$rollback" ] || rm -f -- "$rollback"
-		exit "$status"
-	' EXIT
-	trap 'exit 130' INT
-	trap 'exit 143' TERM
-	trap 'exit 129' HUP
-	staged=$(mktemp "${config}.tmp.XXXXXX") || return 1
-	rollback=$(mktemp "${config}.rollback.XXXXXX") || return 1
-	cp -p -- "$config" "$rollback" || return 1
-	{
-		printf '%s\n' '# BEGIN DAIMON SSH KEY MODE' 'PermitRootLogin prohibit-password' \
-			'PasswordAuthentication no' 'KbdInteractiveAuthentication no' \
-			'PubkeyAuthentication yes' '# END DAIMON SSH KEY MODE'
-		awk '
-			$0 == "# BEGIN DAIMON SSH KEY MODE" {if (block) exit 1; block=1; next}
-			$0 == "# END DAIMON SSH KEY MODE" {if (!block) exit 1; block=0; next}
-			!block {print}
-			END {if (block) exit 1}
-		' "$rollback"
-	} > "$staged" || return 1
-	chmod --reference="$config" "$staged" && chown --reference="$config" "$staged" || return 1
-	sshd -t -f "$staged" || { echo "SSH 候选配置校验失败，未修改原配置。" >&2; return 1; }
-	context="user=root,host=$(hostname),addr=${connection%% *}"
-	[ -n "$connection" ] || context="user=root,host=$(hostname),addr=127.0.0.1"
-	effective=$(sshd -T -f "$staged" -C "$context") || return 1
-	if ! awk '
-		$1=="permitrootlogin" && ($2=="prohibit-password" || $2=="without-password") {root=1}
-		$1=="passwordauthentication" && $2=="no" {password=1}
-		$1=="kbdinteractiveauthentication" && $2=="no" {kbd=1}
-		$1=="pubkeyauthentication" && $2=="yes" {pubkey=1}
-		$1=="authenticationmethods" && ($2=="any" || $2=="publickey") {methods=1}
-		$1=="authorizedkeysfile" {
-			for (i=2;i<=NF;i++) if ($i==".ssh/authorized_keys" || $i=="%h/.ssh/authorized_keys" || $i=="/root/.ssh/authorized_keys") keys=1
-		}
-		END {exit !(root && password && kbd && pubkey && methods && keys)}
-	' <<< "$effective"; then
-		echo "SSH Match 规则、认证组合或密钥路径与密钥登录模式冲突，未修改配置。" >&2
-		return 1
-	fi
-	cmp -s -- "$config" "$rollback" || { echo "SSH 配置已被其他进程修改，已取消。" >&2; return 1; }
-	cmp -s -- "$staged" "$rollback" && { echo "密钥登录配置已生效，无需重复修改。"; return 0; }
-	applied=1
-	mv -f -- "$staged" "$config" || return 1
-	restart_ssh || { echo "SSH 应用失败，正在恢复原配置。" >&2; return 1; }
-	committed=1
-	echo -e "${gl_lv}用户密钥登录模式已开启，已关闭密码登录模式，重连将会生效${gl_bai}"
-	)
+	ssh_transaction_apply PermitRootLogin prohibit-password PasswordAuthentication no \
+		KbdInteractiveAuthentication no PubkeyAuthentication yes PermitEmptyPasswords no
 }
 
 
@@ -5958,7 +5851,9 @@ ssh_public_key_valid() {
 
 ssh_import_key_file() {
 	(
-	local file="$1" base_dir="${2:-$HOME}" ssh_dir auth_keys tmp='' line added=0
+	local file="$1" base_dir="${2:-$HOME}" mode="${3:-configure}" ssh_dir auth_keys tmp='' line added=0
+	[[ "$mode" = configure || "$mode" = keys-only ]] || return 1
+	[ ! -e /var/lib/daimon/ssh-change ] || { echo "SSH 事务尚未确认，暂不修改公钥。" >&2; return 1; }
 	local -a keys=()
 	while IFS= read -r line || [ -n "$line" ]; do
 		line=${line%$'\r'}
@@ -5994,10 +5889,10 @@ ssh_import_key_file() {
 	else
 		echo "公钥已存在，无需重复添加。"
 	fi
-	if [ "$(realpath -e -- "$base_dir")" = "$(realpath -e -- "$HOME")" ]; then
+	if [ "$mode" = configure ] && [ "$(realpath -e -- "$base_dir")" = "$(realpath -e -- "$HOME")" ]; then
 		sshkey_on
 	else
-		echo "仅导入目标用户公钥，未修改全局 SSH 登录策略。"
+		echo "仅导入公钥，未修改全局 SSH 登录策略。"
 	fi
 	)
 }
@@ -6247,18 +6142,15 @@ add_sshpasswd() {
 		return 1
 	fi
 
-	passwd "$target_user"
-
-	if [[ "$target_user" == "root" ]]; then
-		sed -i 's/^\s*#\?\s*PermitRootLogin.*/PermitRootLogin yes/g' /etc/ssh/sshd_config
+	[ ! -e /var/lib/daimon/ssh-change ] || { echo "SSH 事务尚未确认，暂不修改密码。" >&2; return 1; }
+	passwd "$target_user" || { echo "密码修改失败，SSH 配置未变更。" >&2; return 1; }
+	local -a policy=(PasswordAuthentication yes)
+	[ "$target_user" != root ] || policy+=(PermitRootLogin yes)
+	if ! ssh_transaction_apply "${policy[@]}"; then
+		echo "密码已修改，但 SSH 策略未完成应用；请按上方错误处理。" >&2
+		return 1
 	fi
 
-	sed -i 's/^\s*#\?\s*PasswordAuthentication.*/PasswordAuthentication yes/g' /etc/ssh/sshd_config
-	rm -rf /etc/ssh/sshd_config.d/* /etc/ssh/ssh_config.d/*
-
-	restart_ssh
-
-	echo -e "${gl_lv}密码设置完毕，已更改为密码登录模式！${gl_bai}"
 }
 
 
@@ -15462,27 +15354,15 @@ ssh_config_manager() {
 		sshd -T 2>/dev/null | awk -v k="$key" '$1==k{print $2; found=1} END{if(!found) print "unknown"}'
 	}
 
-	ssh_add_public_key() {
-		local public_key="$1"
-		if [ -z "$public_key" ]; then
-			echo "未提供公钥，已取消"
-			return 1
-		fi
-		if ! printf '%s\n' "$public_key" | ssh-keygen -lf /dev/stdin >/dev/null 2>&1; then
-			echo -e "${gl_hong}公钥格式或内容无效，未写入 authorized_keys。${gl_bai}"
-			return 1
-		fi
-		mkdir -p /root/.ssh
-		chmod 700 /root/.ssh
-		touch /root/.ssh/authorized_keys
-		if grep -qxF "$public_key" /root/.ssh/authorized_keys 2>/dev/null; then
-			echo "公钥已存在，跳过添加"
-		else
-			echo "$public_key" >> /root/.ssh/authorized_keys
-			echo "公钥已添加"
-		fi
-		chmod 600 /root/.ssh/authorized_keys
-	}
+	ssh_add_public_key() (
+		local public_key="$1" staged
+		ssh_public_key_valid "$public_key" || { echo "公钥格式或内容无效，未写入。" >&2; return 1; }
+		umask 077
+		staged=$(mktemp) || return 1
+		trap 'rm -f -- "$staged"' EXIT
+		printf '%s\n' "$public_key" > "$staged" || return 1
+		ssh_import_key_file "$staged" /root keys-only
+	)
 
 	ssh_key_manager() {
 		while true; do
@@ -15566,30 +15446,24 @@ ssh_config_manager() {
 			2)
 				echo "1. 禁用密码登录    2. 开启密码登录"
 				read -e -p "请选择: " mode || return 1
-				if [ "$mode" = "1" ]; then
-					ssh_set_option PasswordAuthentication no
-					ssh_set_option KbdInteractiveAuthentication no
-					ssh_set_option ChallengeResponseAuthentication no
-					ssh_set_option PermitEmptyPasswords no
-				elif [ "$mode" = "2" ]; then
-					ssh_set_option PasswordAuthentication yes
-					ssh_set_option KbdInteractiveAuthentication yes
-					ssh_set_option ChallengeResponseAuthentication yes
-				fi
-				ssh_restart_safe
+				case "$mode" in
+					1) ssh_transaction_apply PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no ;;
+					2) ssh_transaction_apply PasswordAuthentication yes KbdInteractiveAuthentication yes PermitRootLogin yes ;;
+					*) echo "无效的输入，未修改 SSH。" ;;
+				esac
 				;;
 			3)
 				echo "1. 开启密钥登录    2. 禁用密钥登录"
 				read -e -p "请选择: " mode || return 1
-				if [ "$mode" = "1" ]; then
-					read -e -p "请粘贴公钥（可直接回车跳过）: " public_key || return 1
-					ssh_add_public_key "$public_key"
-					ssh_set_option PubkeyAuthentication yes
-					ssh_set_option AuthorizedKeysFile ".ssh/authorized_keys"
-				elif [ "$mode" = "2" ]; then
-					ssh_set_option PubkeyAuthentication no
-				fi
-				ssh_restart_safe
+				case "$mode" in
+					1)
+						read -e -p "请粘贴公钥（可直接回车跳过）: " public_key || return 1
+						if [ -n "$public_key" ] && ! ssh_add_public_key "$public_key"; then break_end; continue; fi
+						ssh_transaction_apply PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys
+						;;
+					2) ssh_transaction_apply PubkeyAuthentication no ;;
+					*) echo "无效的输入，未修改 SSH。" ;;
+				esac
 				;;
 			4)
 				read -e -p "请粘贴公钥: " public_key || return 1

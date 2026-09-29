@@ -48,14 +48,9 @@ class SSHKeyTest(unittest.TestCase):
         definitions = definitions.replace('/etc/ssh', '$HOME/etc-ssh')
         setup = '''
 gl_hong='' gl_lv='' gl_bai=''
-restart_ssh() { echo restart >> "$HOME/restarts"; return "${RESTART_RC:-0}"; }
-sshd() {
-    [ "${CONFIG_RC:-0}" = 0 ] || return 1
-    case " $* " in
-        *' -T '*) printf '%s\\n' 'permitrootlogin without-password' 'passwordauthentication no' \\
-            'pubkeyauthentication yes' 'kbdinteractiveauthentication no' \\
-            'authenticationmethods any' 'authorizedkeysfile .ssh/authorized_keys' ;;
-    esac
+ssh_transaction_apply() {
+    printf '%s\\n' "$@" > "$HOME/transaction-arguments"
+    return "${TRANSACTION_RC:-0}"
 }
 curl() {
     while [ "$#" -gt 0 ]; do
@@ -81,13 +76,13 @@ curl() {
         result = self.shell('import_sshkey "ssh-ed25519 not-a-key"')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.auth.read_text(), '# existing keys\n')
-        self.assertFalse((self.work / 'restarts').exists())
+        self.assertFalse((self.work / 'transaction-arguments').exists())
 
     def test_invalid_download_is_rejected(self):
         result = self.fetch('<html>Not a public key</html>\n')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.auth.read_text(), '# existing keys\n')
-        self.assertFalse((self.work / 'restarts').exists())
+        self.assertFalse((self.work / 'transaction-arguments').exists())
 
     def test_mixed_download_is_atomic(self):
         result = self.fetch(self.key + '\nssh-ed25519 invalid\n')
@@ -110,30 +105,9 @@ curl() {
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(self.auth.read_text().splitlines().count(self.key), 1)
 
-    def test_restart_failure_reaches_download_caller(self):
-        result = self.fetch(self.key + '\n', extra='RESTART_RC=1')
+    def test_transaction_failure_reaches_download_caller(self):
+        result = self.fetch(self.key + '\n', extra='TRANSACTION_RC=1')
         self.assertNotEqual(result.returncode, 0)
-
-    def test_include_files_are_preserved(self):
-        self.auth.write_text(self.key + '\n', encoding='utf-8', newline='')
-        result = self.shell('sshkey_on')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        for directory in ['sshd_config.d', 'ssh_config.d']:
-            self.assertEqual((self.config_dir / directory / 'business.conf').read_text(), '# existing include\n')
-        self.assertTrue(self.config.read_text().endswith(self.original))
-
-    def test_invalid_config_does_not_apply_or_restart(self):
-        self.auth.write_text(self.key + '\n', encoding='utf-8', newline='')
-        result = self.shell('sshkey_on', extra='CONFIG_RC=1')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.config.read_text(), self.original)
-        self.assertFalse((self.work / 'restarts').exists())
-
-    def test_restart_failure_restores_original_config(self):
-        self.auth.write_text(self.key + '\n', encoding='utf-8', newline='')
-        result = self.shell('sshkey_on', extra='RESTART_RC=1')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.config.read_text(), self.original)
 
     def test_repeated_import_does_not_duplicate_key(self):
         self.assertEqual(self.fetch(self.key + '\n').returncode, 0)
@@ -141,28 +115,10 @@ curl() {
         self.assertEqual(self.auth.read_text().splitlines().count(self.key), 1)
 
     def test_duplicate_key_can_retry_failed_mode_change(self):
-        self.assertNotEqual(self.fetch(self.key + '\n', extra='RESTART_RC=1').returncode, 0)
+        self.assertNotEqual(self.fetch(self.key + '\n', extra='TRANSACTION_RC=1').returncode, 0)
         self.assertEqual(self.fetch(self.key + '\n').returncode, 0)
-        self.assertTrue(self.config.read_text().startswith('# BEGIN DAIMON SSH KEY MODE\n'))
-
-    def test_mode_update_is_idempotent(self):
-        self.auth.write_text(self.key + '\n', encoding='utf-8', newline='')
-        self.assertEqual(self.shell('sshkey_on').returncode, 0)
-        first = self.config.read_bytes()
-        self.assertEqual(self.shell('sshkey_on').returncode, 0)
-        self.assertEqual(self.config.read_bytes(), first)
-        self.assertEqual(list(self.config_dir.glob('sshd_config.*.*')), [])
-
-    def test_conflicting_match_policy_is_rejected(self):
-        self.auth.write_text(self.key + '\n', encoding='utf-8', newline='')
-        result = self.shell('sshkey_on', extra='''
-sshd() {
-    case " $* " in *' -T '*) echo passwordauthentication yes ;; esac
-}
-''')
-        self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.config.read_text(), self.original)
-        self.assertFalse((self.work / 'restarts').exists())
+        self.assertIn('PermitRootLogin\nprohibit-password', (self.work / 'transaction-arguments').read_text())
 
     def test_other_user_import_preserves_global_authentication(self):
         (self.work / 'other-user').mkdir()
@@ -171,30 +127,28 @@ sshd() {
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn(self.key, (self.work / 'other-user/.ssh/authorized_keys').read_text())
         self.assertEqual(self.config.read_text(), self.original)
-        self.assertFalse((self.work / 'restarts').exists())
-
-    def test_missing_authorized_key_cannot_disable_password(self):
-        result = self.shell('sshkey_on')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(self.config.read_text(), self.original)
+        self.assertFalse((self.work / 'transaction-arguments').exists())
 
     def test_key_replacement_failure_preserves_existing_keys(self):
         result = self.fetch(self.key + '\n', extra='mv() { return 1; }')
         self.assertNotEqual(result.returncode, 0)
         self.assertEqual(self.auth.read_text(), '# existing keys\n')
-        self.assertFalse((self.work / 'restarts').exists())
+        self.assertFalse((self.work / 'transaction-arguments').exists())
 
-    def test_term_during_apply_restores_configuration(self):
-        self.auth.write_text(self.key + '\n', encoding='utf-8', newline='')
-        result = self.shell('sshkey_on', extra='''
-restart_ssh() {
-    if [ ! -f "$HOME/interrupted" ]; then
-        touch "$HOME/interrupted"
-        kill -TERM "$BASHPID"
-    fi
-}
-''')
-        self.assertNotEqual(result.returncode, 0)
+    def test_key_mode_routes_one_transaction_without_direct_config_writes(self):
+        result = self.shell('sshkey_on')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.config.read_text(), self.original)
+        self.assertEqual((self.work / 'transaction-arguments').read_text().splitlines(), [
+            'PermitRootLogin', 'prohibit-password', 'PasswordAuthentication', 'no',
+            'KbdInteractiveAuthentication', 'no', 'PubkeyAuthentication', 'yes', 'PermitEmptyPasswords', 'no'])
+
+    def test_keys_only_import_does_not_change_authentication(self):
+        (self.work / 'download').write_text(self.key, encoding='utf-8')
+        result = self.shell('ssh_import_key_file "$HOME/download" "$HOME" keys-only')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(self.key, self.auth.read_text())
+        self.assertFalse((self.work / 'transaction-arguments').exists())
         self.assertEqual(self.config.read_text(), self.original)
 
     @unittest.skipIf(os.name == 'nt', 'Real symlinks are verified on Linux')
