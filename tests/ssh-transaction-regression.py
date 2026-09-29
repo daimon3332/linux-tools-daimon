@@ -182,6 +182,14 @@ class RecoveryTests(unittest.TestCase):
         self.w.atomic_write.assert_called_once()
         self.w.cleanup.assert_not_called()
 
+    def test_reloading_service_not_treated_as_inactive(self):
+        self.w.service_properties.side_effect = [{'ActiveState': 'reloading'}, {'ActiveState': 'active'},
+                                                 {'ActiveState': 'active'}]
+        with patch.object(self.w.time, 'sleep'):
+            self.w.recover(self.state)
+        self.w.command.assert_any_call('/usr/bin/systemctl', 'reload', 'ssh.service')
+        self.w.cleanup.assert_called_once()
+
 
 class MockPath:
     def __init__(self, child):

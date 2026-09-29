@@ -15105,6 +15105,16 @@ def service_properties(name):
     return properties
 
 
+def settled_service(name):
+    deadline = time.monotonic() + 20
+    while True:
+        service = service_properties(name)
+        if service.get('ActiveState') != 'reloading':
+            return service
+        require(time.monotonic() < deadline, 'SSH reload has not settled; recovery state was retained')
+        time.sleep(0.25)
+
+
 def preflight_service():
     require(os.geteuid() == 0 and Path('/run/systemd/system').is_dir(), 'Root and systemd are required')
     service = service_properties('ssh.service')
@@ -15251,10 +15261,12 @@ def recover(state):
     command('/usr/sbin/sshd', '-t', '-f', str(PENDING / 'original'))
     if current != state['original_hash']:
         atomic_write(CONFIG, (PENDING / 'original').read_bytes(), *state['metadata'])
-    service = service_properties(state['service'])
+    service = settled_service(state['service'])
     if service.get('ActiveState') == 'active':
         require(preflight_service() == state['service'], 'SSH service changed; reload requires manual verification')
         command('/usr/bin/systemctl', 'reload', state['service'])
+        require(settled_service(state['service']).get('ActiveState') == 'active',
+                'Restored SSH configuration did not leave an active service; recovery state was retained')
     cleanup(state)
     print('Unconfirmed SSH configuration restored; inactive services were not started.')
 
@@ -15349,7 +15361,7 @@ def apply(changes):
         require(preflight_service() == service, 'SSH service changed while preparing recovery')
         atomic_write(CONFIG, text.encode(), *state['metadata'])
         command('/usr/bin/systemctl', 'reload', service)
-        require(service_properties(service).get('ActiveState') == 'active', 'SSH reload did not leave the service active')
+        require(settled_service(service).get('ActiveState') == 'active', 'SSH reload did not leave the service active')
     except BaseException:
         for signum in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP):
             signal.signal(signum, signal.SIG_IGN)
