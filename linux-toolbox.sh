@@ -15334,6 +15334,7 @@ def apply(changes):
     unit = ('[Unit]\nDescription=Recover unconfirmed Daimon SSH configuration\nDefaultDependencies=no\n'
             'After=local-fs.target\nBefore=ssh.service sshd.service ssh.socket sshd.socket\n'
             'ConditionPathExists=' + str(PENDING / 'state.json') + '\n[Service]\nType=oneshot\n'
+            'RuntimeDirectory=sshd\nRuntimeDirectoryMode=0755\nRuntimeDirectoryPreserve=yes\n'
             'ExecStart=/usr/bin/python3 -I ' + str(PENDING / 'worker.py') + ' rollback ' + token + '\n'
             'TimeoutStartSec=90\n[Install]\nWantedBy=multi-user.target\n').encode()
     state = {'version': 1, 'token': token, 'timer': 'daimon-ssh-rollback-' + token[:12],
