@@ -7503,27 +7503,107 @@ create_backup() {
 	fi
 }
 
+daimon_backup_extract_safe() {
+	python3 - "$1" "$2" <<'PY'
+import fcntl, os, shutil, stat, sys, tarfile
+from contextlib import ExitStack
+
+def require(condition, message):
+    if not condition:
+        raise ValueError(message)
+
+def directory(path, stack):
+    require(path.startswith('/') and '\\' not in path, 'Destination must be an absolute directory')
+    parts = path.split('/')[1:]
+    require(all(part not in ('.', '..') for part in parts), 'Unsafe directory path')
+    fd = os.open('/', os.O_RDONLY | os.O_DIRECTORY)
+    stack.callback(os.close, fd)
+    for part in filter(None, parts):
+        fd = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        stack.callback(os.close, fd)
+    info = os.fstat(fd)
+    require(info.st_uid == os.geteuid() and not info.st_mode & 0o022, 'Destination ownership or permissions are unsafe')
+    return fd
+
+try:
+    with ExitStack() as stack:
+        destination = directory(sys.argv[2], stack)
+        fcntl.flock(destination, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        require(not os.listdir(destination), 'Destination must be empty')
+        source = os.open(sys.argv[1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        stream = stack.enter_context(os.fdopen(source, 'rb'))
+        original = os.fstat(source)
+        require(stat.S_ISREG(original.st_mode) and original.st_uid == os.geteuid() and
+                original.st_nlink == 1 and not original.st_mode & 0o022, 'Unsafe archive file')
+        archive = stack.enter_context(tarfile.open(fileobj=stream, mode='r:gz'))
+        entries = {}
+        for member in archive:
+            name = member.name
+            require(not name.startswith('/') and '\\' not in name and
+                    not any(ord(char) < 32 or ord(char) == 127 for char in name), 'Unsafe archive path')
+            parts = name.split('/')
+            require('..' not in parts, 'Archive path traversal refused')
+            parts = tuple(part for part in parts if part not in ('', '.'))
+            require(member.isdir() or (member.isfile() and not member.sparse), 'Only regular files and directories are supported')
+            if not parts:
+                require(member.isdir(), 'Invalid archive root entry')
+                continue
+            require(parts not in entries, 'Duplicate archive path')
+            entries[parts] = member
+        require(entries, 'Archive is empty')
+        for parts in entries:
+            for depth in range(1, len(parts)):
+                parent = entries.get(parts[:depth])
+                require(parent is None or parent.isdir(), 'Archive file/directory conflict')
+        space = os.fstatvfs(destination)
+        require(sum(member.size for member in entries.values()) <= space.f_bavail * space.f_frsize,
+                'Insufficient free space')
+        require(not os.listdir(destination), 'Destination changed during validation')
+        directories = {(): destination}
+        for parts, member in sorted(entries.items()):
+            count = len(parts) if member.isdir() else len(parts) - 1
+            for depth in range(1, count + 1):
+                key = parts[:depth]
+                if key not in directories:
+                    parent = directories[key[:-1]]
+                    os.mkdir(key[-1], mode=0o700, dir_fd=parent)
+                    fd = os.open(key[-1], os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=parent)
+                    stack.callback(os.close, fd)
+                    directories[key] = fd
+            if member.isfile():
+                fd = os.open(parts[-1], os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                             0o600, dir_fd=directories[parts[:-1]])
+                with os.fdopen(fd, 'wb') as output, archive.extractfile(member) as data:
+                    shutil.copyfileobj(data, output)
+                    output.flush()
+                    require(output.tell() == member.size, 'Incomplete archive member')
+                    os.fchmod(output.fileno(), member.mode & 0o777)
+        current = os.fstat(source)
+        require((original.st_size, original.st_mtime_ns, original.st_ctime_ns) ==
+                (current.st_size, current.st_mtime_ns, current.st_ctime_ns), 'Archive changed during extraction')
+        for parts, fd in sorted(directories.items(), reverse=True):
+            if parts:
+                member = entries.get(parts)
+                os.fchmod(fd, member.mode & 0o777 if member else 0o755)
+except (OSError, ValueError, tarfile.TarError, EOFError) as error:
+    print('ERROR: Restore failed; any partial output remains only in the selected directory: ' + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 # 恢复备份
 restore_backup() {
+	local name archive destination confirm
 	send_stats "恢复备份"
-	# 选择要恢复的备份
-	read -e -p "请输入要恢复的备份文件名: " BACKUP_NAME || return 1
-
-	# 检查备份文件是否存在
-	if [ ! -f "$BACKUP_DIR/$BACKUP_NAME" ]; then
-		echo "备份文件不存在！"
-		exit 1
-	fi
-
-	echo "正在恢复备份 $BACKUP_NAME..."
-	tar -xzvf "$BACKUP_DIR/$BACKUP_NAME" -C /
-
-	if [ $? -eq 0 ]; then
-		echo "备份恢复成功！"
-	else
-		echo "备份恢复失败！"
-		exit 1
-	fi
+	command -v python3 >/dev/null 2>&1 || { echo "需要 python3，未恢复任何文件。"; return 1; }
+	read -r -e -p "请输入要恢复的备份文件名: " name || return 1
+	archive=$(daimon_backup_delete_target "$name") || { echo "备份不存在或路径、类型、归属不安全。"; return 1; }
+	read -r -e -p "请输入已存在的空目录绝对路径（不覆盖原位置）: " destination || return 1
+	printf '将仅向 %s 恢复普通文件和目录；不恢复链接、设备、属主或特殊权限。\n' "$destination"
+	read -r -e -p "确认恢复？(y/N): " confirm || return 1
+	[[ "$confirm" = y || "$confirm" = Y ]] || { echo "已取消"; return 0; }
+	daimon_backup_extract_safe "$archive" "$destination" || return 1
+	echo "备份已恢复到指定目录；未覆盖系统原位置。"
 }
 
 # 列出备份
