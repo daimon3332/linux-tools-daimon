@@ -39,6 +39,12 @@ class Metadata(unittest.TestCase):
         SCOPE['supported'](data)
         data['Mounts'][0]['Mode']='z'
         with self.assertRaises(ValueError):SCOPE['supported'](data)
+    def test_api_tmpfs_mount_options_are_preserved(self):
+        data=item();tmpfs={'Type':'tmpfs','Target':'/scratch','TmpfsOptions':{'SizeBytes':1048576,'Mode':448}}
+        data['HostConfig']['Mounts']=[tmpfs]
+        data['Mounts'].append({'Type':'tmpfs','Destination':'/scratch','RW':True})
+        result=SCOPE['payload'](data,{'/original':'/restore'}, {})
+        self.assertIn(tmpfs,result['HostConfig']['Mounts'])
     def test_network_id_remapped_to_name(self):
         data=item();data['HostConfig']['NetworkMode']='old-id'
         data['NetworkSettings']['Networks']={'project_default':{'NetworkID':'old-id','Aliases':['app',data['Id'][:12]],'IPAMConfig':{'IPv4Address':'172.31.0.4'}}}

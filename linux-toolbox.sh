@@ -13741,7 +13741,8 @@ def payload(item, relocated, project_dirs):
     config['Image']=item['Image']
     for name, endpoint in (item.get('NetworkSettings',{}).get('Networks') or {}).items():
         if host.get('NetworkMode') == endpoint.get('NetworkID'): host['NetworkMode']=name
-    host['Binds']=None;host['Mounts']=[]
+    host['Binds']=None
+    host['Mounts']=[m for m in (host.get('Mounts') or []) if m['Type']=='tmpfs']
     for mount in item.get('Mounts',[]):
         kind=mount['Type']
         if kind=='tmpfs':continue
