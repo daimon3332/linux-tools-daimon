@@ -81,6 +81,17 @@ class Archives(unittest.TestCase):
         for entries in cases:
             with self.subTest(entries=entries):
                 with self.assertRaises(ValueError):SCOPE['archive_members'](self.archive(entries))
+    def test_unrepresentable_ownership_rejected_before_extraction(self):
+        p=self.work/'bad-owner.tar'
+        with tarfile.open(p,'w') as archive:
+            member=tarfile.TarInfo('payload/file');member.uid=-1;archive.addfile(member)
+        with self.assertRaises(ValueError):SCOPE['archive_members'](p)
+    @unittest.skipUnless(os.name=='posix' and hasattr(os,'setxattr'),'Native xattr support required')
+    def test_backup_does_not_silently_drop_extended_attributes(self):
+        data=self.work/'data';data.mkdir();file=data/'file';file.write_text('data')
+        try:os.setxattr(file,'user.daimon-fixture',b'metadata')
+        except OSError:self.skipTest('Filesystem lacks user xattrs')
+        with self.assertRaises(ValueError):SCOPE['pack'](data,self.work/'data.tar.gz')
     def test_corrupt_archive_rejected(self):
         p=self.work/'bad';p.write_bytes(b'not tar')
         with self.assertRaises(tarfile.TarError):SCOPE['archive_members'](p)

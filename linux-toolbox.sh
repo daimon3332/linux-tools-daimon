@@ -13548,6 +13548,8 @@ def archive_members(path):
         require(name not in seen, 'Duplicate archive path')
         require(item.isdir() or item.isfile() or item.issym() or item.islnk(), 'Special archive entry rejected')
         require(not item.mode & 0o6000 and not item.sparse, 'Set-ID or sparse archive requires a dedicated backup tool')
+        require(0 <= item.uid < 2**32-1 and 0 <= item.gid < 2**32-1, 'Unrepresentable archive ownership')
+        require(not any('xattr' in key.lower() or 'acl' in key.lower() for key in item.pax_headers), 'Extended archive metadata requires a dedicated backup tool')
         seen[name] = item
     for name, item in seen.items():
         for parent in PurePosixPath(name).parents:
@@ -13583,8 +13585,13 @@ def pack(source, destination):
     require(source.is_absolute() and source.resolve() == source, 'Symlink source root is unsupported')
     require(str(source) not in ('/', '/root', '/home', '/etc', '/usr', '/var', '/proc', '/sys', '/dev', '/run', '/tmp'), 'Refusing a whole-system directory')
     require(source.is_dir() or source.is_file(), 'Unsupported mount source')
+    def metadata(info):
+        relative = PurePosixPath(info.name).relative_to('payload')
+        original = source.joinpath(*relative.parts)
+        require(not os.listxattr(original, follow_symlinks=False), 'ACL/xattrs require a dedicated backup tool; not silently discarded')
+        return info
     with tarfile.open(destination, 'x:gz', compresslevel=1) as archive:
-        archive.add(source, arcname='payload', recursive=True)
+        archive.add(source, arcname='payload', recursive=True, filter=metadata)
     os.chmod(destination, 0o600)
     archive_members(destination)
 
@@ -16507,7 +16514,7 @@ def remove(domain, directory, acme, lock_path):
         for base in (Path('/etc/nginx'), Path('/home/web/conf.d')):
             if base.exists():
                 for path in base.rglob('*'):
-                    if path.is_symlink(): require(path.exists(), 'Unresolved configuration link')
+                    if path.is_symlink(): require(path.exists() and not path.is_dir(), 'Linked configuration directory or unresolved link requires manual checking')
                     if path.is_file(): contents.append(path.read_text(errors='replace'))
         if shutil.which('nginx'): contents.append(run(['nginx', '-T']))
         for content in contents:
@@ -16536,7 +16543,10 @@ def remove(domain, directory, acme, lock_path):
             except (FileNotFoundError, ProcessLookupError): pass
     unused()
     require(original == {p: stamp(p) for p in sorted(target.iterdir())}, 'Certificate changed')
-    run([acme, '--remove', '-d', domain])
+    home = Path(acme).parent
+    ecc = (home/(domain + '_ecc')).is_dir()
+    require(not (ecc and (home/domain).is_dir()), 'Both RSA and ECC renewal records exist; choose the exact record manually')
+    run([acme, '--remove', '-d', domain] + (['--ecc'] if ecc else []))
     unused()
     require(original == {p: stamp(p) for p in sorted(target.iterdir())}, 'Certificate changed after deregistration; files retained')
     for path in files:

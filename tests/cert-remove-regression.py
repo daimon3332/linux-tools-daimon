@@ -55,6 +55,15 @@ class Certificates(unittest.TestCase):
         (self.target/'privkey.pem').rename(self.work/'sentinel');(self.target/'privkey.pem').symlink_to(self.work/'sentinel');self.rejected()
     def test_open_certificate_retained(self):
         with (self.target/'fullchain.pem').open('rb'):self.rejected()
+    def test_ecc_registration_is_removed_explicitly(self):
+        (self.work/'acme/example.test_ecc').mkdir()
+        self.acme.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "'+str(self.work/'args')+'"\n')
+        self.invoke()
+        self.assertIn('--ecc',(self.work/'args').read_text().splitlines())
+    def test_linked_configuration_directory_is_not_silently_ignored(self):
+        outside=self.work/'outside';outside.mkdir();(outside/'site.conf').write_text(str(self.target))
+        (self.nginx/'linked').symlink_to(outside,target_is_directory=True)
+        self.rejected()
     def test_acme_failure_preserves_files(self):
         self.acme.write_text('#!/bin/sh\nexit 1\n');self.rejected()
     def test_lock_conflict(self):
