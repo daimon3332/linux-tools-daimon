@@ -11154,9 +11154,121 @@ system_ipv6_status() {
 	ip -6 addr show scope global
 }
 
+daimon_ipv6_network_policy() {
+	python3 - "$@" <<'PY'
+import hashlib, json, os, re, stat, subprocess, sys, tempfile
+from pathlib import Path
+action, directory, value = sys.argv[1:]
+work = Path(directory)
+marker = "# Managed by daimon IPv6 policy v1\n"
+roots = [Path(p) for p in ("/usr/lib/systemd/network", "/usr/local/lib/systemd/network", "/run/systemd/network", "/etc/systemd/network")]
+name = "99-daimon-ipv6.conf"
+def command(*args):
+    return subprocess.run(args, text=True, capture_output=True, timeout=30, env=dict(os.environ, LC_ALL="C", SYSTEMD_COLORS="0"))
+def safe(path):
+    if path.is_symlink() or path.resolve() != path: raise ValueError("Unsafe network path: " + str(path))
+    for entry in (path, *path.parents):
+        if entry.exists():
+            st = entry.stat()
+            if st.st_uid or st.st_mode & 0o022: raise ValueError("Untrusted network path: " + str(entry))
+def contents(path):
+    safe(path)
+    if not path.exists(): return None
+    st = path.stat()
+    if not stat.S_ISREG(st.st_mode) or st.st_nlink != 1: raise ValueError("Not a private regular network file")
+    return path.read_text()
+def save(path, text):
+    safe(path)
+    if text is None:
+        path.unlink(missing_ok=True)
+        try: path.parent.rmdir()
+        except OSError: pass
+        return
+    path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".daimon-ipv6-", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w") as f: f.write(text)
+        os.chmod(tmp, 0o644); os.replace(tmp, path)
+    finally:
+        Path(tmp).unlink(missing_ok=True)
+try:
+    planfile = work / "network-plan.json"
+    if action == "plan":
+        if command("systemctl", "is-active", "--quiet", "NetworkManager").returncode == 0:
+            raise ValueError("NetworkManager ownership requires explicit per-connection configuration; no changes")
+        if command("systemctl", "is-active", "--quiet", "systemd-networkd").returncode != 0:
+            raise ValueError("No supported active network manager; persistent IPv6 change refused")
+        records = {}; interfaces = []
+        for interface in sorted(Path("/sys/class/net").iterdir()):
+            if interface.name == "lo": continue
+            status = command("networkctl", "status", "--no-pager", "--no-legend", interface.name)
+            if status.returncode: raise ValueError("Cannot inspect network ownership: " + interface.name)
+            match = re.search(r"Network File:\s+(/[^\n]+)", status.stdout)
+            if not match:
+                if (interface / "device").exists(): raise ValueError("Unmanaged physical interface: " + interface.name)
+                continue
+            main = Path(match[1].strip())
+            if main.parent not in roots or main.suffix != ".network": raise ValueError("Unknown network profile")
+            text = contents(main)
+            if text is None or "\\\n" in text: raise ValueError("Unsupported network profile syntax")
+            override = roots[-1] / (main.name + ".d") / name
+            old = contents(override)
+            if old is not None and not re.fullmatch(re.escape(marker) + r"\[Network\]\nDHCP=(?:ipv4|no)\nLinkLocalAddressing=(?:ipv4|no)\nIPv6AcceptRA=no\n", old):
+                raise ValueError("Foreign IPv6 override retained")
+            for root in roots:
+                for folder in [root / (main.name + ".d"), root / ".network.d", root / "10-.network.d", root / "10-netplan-.network.d"]:
+                    for drop in folder.glob("*.conf"):
+                        if drop != override: raise ValueError("Additional network drop-ins require manual review: " + str(drop))
+            options = {}; section = ""
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or line.startswith(("#", ";")): continue
+                if line.startswith("["): section = line; continue
+                if "=" not in line: raise ValueError("Unknown network directive")
+                key, val = (part.strip() for part in line.split("=", 1))
+                if key in ("Address", "Gateway", "Destination", "Source", "PreferredSource") and ":" in val:
+                    raise ValueError("Static IPv6 must be reviewed before disabling")
+                if section == "[Network]": options[key] = val
+            if any(options.get(k) for k in ("Bridge", "Bond", "VLAN", "Tunnel")) or options.get("IPv6SendRA", "no") not in ("no", "false", "0"):
+                raise ValueError("Routed or stacked network profile requires manual review")
+            dhcp = options.get("DHCP", "no"); link = options.get("LinkLocalAddressing", "ipv6")
+            if dhcp not in ("yes", "true", "1", "no", "false", "0", "ipv4", "ipv6") or link not in ("yes", "true", "1", "no", "false", "0", "ipv4", "ipv6"):
+                raise ValueError("Unsupported dynamic addressing mode")
+            new = marker + "[Network]\nDHCP=" + ("ipv4" if dhcp in ("yes", "true", "1", "ipv4") else "no") + "\nLinkLocalAddressing=" + ("ipv4" if link in ("yes", "true", "1", "ipv4") else "no") + "\nIPv6AcceptRA=no\n"
+            records[str(override)] = {"old": old, "new": new if value == "1" else None, "source": str(main), "hash": hashlib.sha256(text.encode()).hexdigest()}
+            interfaces.append(interface.name)
+        if not interfaces: raise ValueError("No supported managed interface found")
+        # Do not silently leave a policy attached to an old renamed profile.
+        for old in roots[-1].glob("*.network.d/" + name):
+            if str(old) not in records: raise ValueError("Stale IPv6 policy needs explicit review: " + str(old))
+        planfile.write_text(json.dumps({"records": records, "interfaces": interfaces}))
+    elif action in ("apply", "restore"):
+        plan = json.loads(planfile.read_text())
+        if action == "apply":
+            for target, record in plan["records"].items():
+                if contents(Path(target)) != record["old"] or hashlib.sha256(contents(Path(record["source"])).encode()).hexdigest() != record["hash"]:
+                    raise ValueError("Network configuration changed concurrently")
+        for target, record in plan["records"].items():
+            path = Path(target); current = contents(path)
+            if action == "restore" and current not in (record["old"], record["new"]):
+                raise ValueError("Concurrent network policy retained instead of overwriting")
+            wanted = record["new" if action == "apply" else "old"]
+            if current != wanted: save(path, wanted)
+        result = command("networkctl", "reload")
+        if result.returncode: raise ValueError("networkctl reload failed")
+        for interface in plan["interfaces"]:
+            result = command("networkctl", "reconfigure", interface)
+            if result.returncode: raise ValueError("networkctl reconfigure failed: " + interface)
+    else: raise ValueError("Unknown network policy action")
+except (OSError, ValueError, subprocess.TimeoutExpired) as error:
+    print("IPv6 network policy: " + str(error), file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
 daimon_ipv6_configure() (
 	local value="$1" file=/etc/sysctl.d/99-daimon-ipv6.conf work lockfd path current status
-	local had_file=0 mutating=0 runtime_started=0 committed=0 restore_failed=0
+	local had_file=0 mutating=0 runtime_started=0 committed=0 restore_failed=0 network_started=0
 	local -a paths=()
 	local -A original=()
 	[[ "$value" = 0 || "$value" = 1 ]] || return 1
@@ -11188,6 +11300,7 @@ daimon_ipv6_configure() (
 			else
 				rm -f -- "$file" || restore_failed=1
 			fi
+			if [ "$network_started" = 1 ]; then daimon_ipv6_network_policy restore "$work" "$value" || restore_failed=1; fi
 			if [ "$runtime_started" = 1 ]; then
 				for path in "${paths[@]}"; do
 					if read -r current < "$path" && [ "$current" != "${original[$path]}" ]; then
@@ -11199,7 +11312,7 @@ daimon_ipv6_configure() (
 			fi
 		fi
 		if [ "$restore_failed" = 1 ]; then echo "IPv6 恢复失败，请核查临时恢复文件: $work"; exit 1; fi
-		rm -f -- "$work/original" "$work/config" "$work/apply" "$work/restore" && rmdir -- "$work" || status=1
+		rm -f -- "$work/original" "$work/config" "$work/apply" "$work/restore" "$work/network-plan.json" && rmdir -- "$work" || status=1
 		exit "$status"
 	' EXIT
 	trap 'exit 1' INT TERM HUP
@@ -11211,10 +11324,14 @@ daimon_ipv6_configure() (
 	' "$work/original" > "$work/config" || { echo "IPv6 配置包含非工具箱设置，未修改。"; return 1; }
 	printf "net.ipv6.conf.all.disable_ipv6 = %s\nnet.ipv6.conf.default.disable_ipv6 = %s\nnet.ipv6.conf.lo.disable_ipv6 = %s\n" "$value" "$value" "$value" > "$work/apply" || return 1
 	cat "$work/apply" >> "$work/config" || return 1
+	daimon_ipv6_network_policy plan "$work" "$value" || return 1
 	mutating=1
 	daimon_config_commit "$file" "$work/config" || return 1
+	network_started=1
+	if [ "$value" = 1 ]; then daimon_ipv6_network_policy apply "$work" "$value" || return 1; fi
 	runtime_started=1
 	sysctl -p "$work/apply" || return 1
+	if [ "$value" = 0 ]; then daimon_ipv6_network_policy apply "$work" "$value" || return 1; fi
 	for path in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
 		read -r current < "$path" && [ "$current" = "$value" ] || { echo "IPv6 状态校验失败: $path"; return 1; }
 	done

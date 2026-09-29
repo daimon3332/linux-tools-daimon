@@ -46,6 +46,10 @@ class IPv6(unittest.TestCase):
             body = body.replace(path, self.work.as_posix() + path)
         body += r'''
 root_use() { :; }; send_stats() { :; }
+daimon_ipv6_network_policy() {
+    echo "$1" >> "$WORK/network-calls"
+    [ "$FAILURE" != "network-$1" ]
+}
 sysctl() {
     echo "$*" >> "$WORK/sysctl-calls"
     [ "$FAILURE" != apply ] || return 1
@@ -101,6 +105,15 @@ mv() {
         self.assertNotIn('IPv6 已禁用', result.stdout.decode())
         self.assertNotIn('--system', (self.work / 'sysctl-calls').read_text(encoding='utf-8'))
         self.assertEqual(self.config.read_bytes(), self.initial)
+
+    def test_network_policy_failure_is_not_success(self):
+        for failure in ['network-plan', 'network-apply']:
+            with self.subTest(failure=failure):
+                before = self.flags()
+                result = self.invoke(failure=failure)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.flags(), before)
+                self.assertEqual(self.config.read_bytes(), self.initial)
 
     def test_ipv6_ssh_refused(self):
         before = self.flags()
