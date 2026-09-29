@@ -811,3 +811,23 @@ APT 测试使用 Docker 官方 Ubuntu 22.04 ARM64/x86_64、Debian 13 slim x86_64
 当前清单 974 行，116 行登记了有限真实证据（含 IPv6 重启失败），858 行仍为 not-run；不能把行数当完整通过的功能数。静态菜单审计仍为 669 patterns / 83 case blocks / 9 内嵌 Bash。
 
 本轮结束检查：六台宿主状态比较无变化、脚本 hash 匹配，无测试进程或 loop 残留。两个原有 VM 均已恢复配置、升级工具箱并通过 guest systemctl poweroff 关机，已核对 QEMU 退出。Ubuntu 关机曾等待原有 shutdown pivot root 任务超时并输出 guest udev/loop 警告，不将其描述为无系统告警。VM 自有目录保留供剩余测试复用，尚未删除；没有创建额外 VM。
+
+#### 备份删除与退役 cron（2026-09-29，有限范围验收）
+
+`6715ec5` 将普通备份删除限制为可信备份根目录内直接 `.tar.gz` 普通文件，拒绝越界、软/硬链接、外来所有者和共享可写根目录；增加确认及确认前后身份比较，取消、EOF、变化和删除失败不假报成功。六台授权宿主每台完成 17 项原生 tar/rm/chattr 检查，使用已安装的 `linux_backup` 子菜单，但将固定 `/backups` 映射至隔离任务目录，**不是完整 CLI 端到端测试**。证据：`backup-delete-real-first.jsonl`、`backup-delete-real-rest.jsonl`，均无采集到的宿主状态变化。
+
+`1ac9612` 修复退役 cron 读取失败后覆盖、模糊字符串删任务问题。解析直接命令、bash/sh 和已知上海时区 runner；目标出现在未知包装或复合命令时拒绝整项修改，保留无关任务、注释和内部空行。写前复读及写后验证不等于原子 CAS，仍有并发窗口，命令替换会规范化末尾空行。六台每台 10 项私有 mount namespace cron spool 原生测试通过，包括 ELOOP 读失败、immutable 写失败、重复执行和复杂命令拒绝；未修改宿主 cron。证据：`retire-cron-all-r2.jsonl`。此前目录夹具不能制造原生 crontab 读错误，其失败证据保留；**仅 helper 验收，退役批量选择、运行中脚本和共享证书保护仍未完成**。
+
+`ccb2b65` 六台均经已安装更新器部署，归一化 SHA256 为 `eccdc43d838d635d43ef4496e7367a5831e2b3419f935fb9c9e2146764a84489`。六台各通过 16 套受副作用 guard 保护的回归，包含备份删除 10、退役 cron 10、镜像测速 12 项；外层/内层退出均为 0，采集状态不变。这里的 mock 回归不能替代各功能实测。部署仍跳过证书辅助更新和备份迁移，不新增更新模式。
+
+#### 镜像测速清理与真实 Docker 兼容性
+
+`d7bc3ee` 移除全局 prune 和强制删镜像，跳过已有引用，仅在镜像 ID 未变化且无容器占用时非强制删除本轮引用；错误返回非零，限制超时和轮数，结果改为拉取耗时/逻辑大小而非伪带宽。`5ab5a38` 进一步保留拉取前已存在的镜像数据，避免最后一个新 tag 删除原有 dangling image。`ccb2b65` 修复实机发现的 Docker inspect stdout 空行污染错误匹配：只捕获 stderr，未知错误仍拒绝拉取。新回归先失败后通过。并发检查不是 Docker 引用的原子锁，不承诺恶意并发下绝对无竞态。
+
+两台原有 VM 在 `ccb2b65` 各完成 9 项原生 Docker 检查：真实 Registry 拉取及局部清理、已有引用不重拉、停止态容器占用保护、引用变化保护、HTTP 503、超时、第三方子菜单 2、相同 dangling image 保留、非法轮数拒绝。Debian 13 AMD64 使用 Docker 26.1.5；Ubuntu 22.04 ARM64 使用 Docker 29.1.3。证据为 `ccb2b65-debian-mirror-r3.jsonl`、`ccb2b65-ubuntu-mirror-tls-r2.jsonl`，均 complete=true、failure=null、外层/内层退出 0；预期失败场景返回非零属于断言通过。
+
+夹具曾错误使用 manifest 媒体类型 `v2.json`；修正为 `v2+json`。Ubuntu HTTP Registry 在该 Docker 配置下仍遭 TLS 拒绝，临时 insecure registry 实验已恢复，最终改用 guest 专用 TLS 证书，结束后移除。Docker 29 与旧存储后端对离线导入镜像 ID 的假设不一致，最终用真实 pull/tag 替换构造 dangling image，不修改产品代码迎合夹具。旧失败记录保留，不能当通过。测试未访问公共镜像源测速，不代表公网吞吐或所有菜单选项验收。
+
+当前静态清单 974 行，118 行登记有限证据（含既有 IPv6 重启失败），856 行仍为 not-run。静态菜单检查通过 669 patterns / 83 case blocks / 9 内嵌 Bash；首次本地检查因未设置 Git Bash 路径失败，设置 BASH_BIN 后通过。SSH/UFW 事务、IPv6 网络管理器及重启持久性、Docker 配置与完整恢复保真、普通系统恢复安全和退役剩余问题仍未完成，**整个修复计划没有完成**。
+
+按用户最新要求，本批测试结束后已正常关闭两 VM，核对任务 owner、绝对路径、进程、打开文件和挂载引用后，删除日本 `vm-debian` 与西班牙 `vm-ubuntu` 的完整自有目录，包括下载镜像、QEMU 隔离运行环境、guest 密钥和虚拟磁盘，释放约 3.94 GiB 实占空间。删除证据为 `ccb2b65-vms-removed.jsonl`。Ubuntu 关机仍有既有 pivot-root 等待及 guest udev/loop 告警，最终输出 Power down，未强杀。六台最终检查 hash 匹配、采集状态无变化、远端本轮任务目录无文件、无测试进程或 loop 残留；本地保留测试报告和可复现夹具，不删除历史无关项目。未完成模块不因本批清理而变成已完成，后续破坏性测试不得转移到业务宿主执行。
