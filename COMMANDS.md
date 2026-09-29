@@ -33,7 +33,7 @@ mkdir -p /root/linux-daimon/daimon
 
 - Nginx/域名菜单统一使用宿主机 Nginx + acme.sh webroot；挑战目录为 `/var/www/acme-challenge`，证书目录为 `/root/domain/<完整域名>`，证书续期会自动 reload Nginx。
 - 申请证书不会杀死未知进程，若 80 端口被占用会提示处理；域名、配置名、端口输入非法时停留在当前菜单。
-- SSH 菜单 1/2/3 通过候选配置验证、reload、180 秒定时/重启回滚和 `d ssh-confirm <token>` 新连接确认应用配置。改端口遇活动 UFW/fail2ban 会拒绝；一键配置、直接编辑和公钥删除尚无同等保护，不能视为安全事务。
+- SSH 配置菜单和公钥删除共用候选验证、原子发布、180 秒定时/重启回滚与新连接确认。活动 UFW 采用新增规则事务；不自动开启防火墙或删除旧规则，活动 fail2ban 改端口仍拒绝。
 - Docker 备份删除需确认；迁移、恢复、删除仅接受 `/tmp/docker_backup_*` 直接目录，拒绝符号链接、子路径和 `..` 跳转。
 
 进入主菜单主要是 `echo/read/case` 交互，不会主动修改系统。主菜单选项为：
@@ -1114,104 +1114,40 @@ sshd -T | awk '$1 == "pubkeyauthentication" {print $2}'
 
 ### 9.1 修改 SSH 端口
 
+菜单委托 `ssh_transaction_apply Port 端口`，保留 Include/Match，使用 `sshd -t -f 候选文件` 和 `sshd -T -f 候选文件 -C 连接上下文` 验证。先建立私有恢复材料、systemd 定时器和启动恢复单元，再原子发布并 reload；不停止或禁用 socket 单元。
+
+已启用 UFW 时，通过 `ufw insert 1 allow 端口/tcp comment 事务标识` 增量添加缺少的放行规则。已有规则不改备注、不删旧端口；恢复通过完整规则表达式删除本次规则，不使用编号删除、reset 或整套防火墙恢复。规则/策略发生未知改动时保留材料并报错。活动 fail2ban 改端口仍拒绝。
+
 ```bash
-sed -i 's|^[#[:space:]]*Port[[:space:]].*|Port 64400|' /etc/ssh/sshd_config
-sshd -t
-systemctl stop ssh.socket sshd.socket
-systemctl disable ssh.socket sshd.socket
-systemctl restart sshd || systemctl restart ssh
-ufw allow 64400/tcp
+# 在变更后的新独立连接中执行屏幕显示的命令：
+d ssh-confirm TOKEN
+# 主动恢复尚未确认的变更：
+d ssh-rollback TOKEN
 ```
-说明：脚本不会在修改前创建持久化 SSH 配置备份。
-解释：备份配置、修改端口、校验配置、重启 SSH、放行新端口。
+
+新增监听端口时必须从新增端口确认，旧管理端口不能代替验证。未确认在 180 秒后或下次启动恢复；确认或恢复完成后删除短生命周期恢复文件，不生成持久化 `.bak`。
 
 ### 9.2 禁用/开启密码登录
 
-```bash
-sed -i 's|^[#[:space:]]*PasswordAuthentication[[:space:]].*|PasswordAuthentication no|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*KbdInteractiveAuthentication[[:space:]].*|KbdInteractiveAuthentication no|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*ChallengeResponseAuthentication[[:space:]].*|ChallengeResponseAuthentication no|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*PermitEmptyPasswords[[:space:]].*|PermitEmptyPasswords no|' /etc/ssh/sshd_config
-sshd -t && systemctl restart sshd
-```
-解释：关闭密码和交互式认证。
-
-```bash
-sed -i 's|^[#[:space:]]*PasswordAuthentication[[:space:]].*|PasswordAuthentication yes|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*KbdInteractiveAuthentication[[:space:]].*|KbdInteractiveAuthentication yes|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*ChallengeResponseAuthentication[[:space:]].*|ChallengeResponseAuthentication yes|' /etc/ssh/sshd_config
-sshd -t && systemctl restart sshd
-```
-解释：开启密码登录。
+禁用使用同一事务设置 `PasswordAuthentication no`、`KbdInteractiveAuthentication no`、`PermitEmptyPasswords no`；启用设置密码/交互认证及 `PermitRootLogin yes`。检查至少存在受支持的 root 认证方式，再等待新连接确认。
 
 ### 9.3 开启/禁用密钥登录
 
-```bash
-mkdir -p /root/.ssh
-chmod 700 /root/.ssh
-echo "你的公钥" >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
-sed -i 's|^[#[:space:]]*PubkeyAuthentication[[:space:]].*|PubkeyAuthentication yes|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*AuthorizedKeysFile[[:space:]].*|AuthorizedKeysFile .ssh/authorized_keys|' /etc/ssh/sshd_config
-sshd -t && systemctl restart sshd
-```
-解释：写入公钥并开启密钥登录。
+可选公钥先校验、去重并安全导入，再事务化设置 `PubkeyAuthentication` 和标准 `AuthorizedKeysFile`。禁用密钥认证也须通过剩余认证方式检查和新连接确认。导入公钥是独立操作，后续配置失败不会撤销成功添加的公钥。
 
-```bash
-sed -i 's|^[#[:space:]]*PubkeyAuthentication[[:space:]].*|PubkeyAuthentication no|' /etc/ssh/sshd_config
-sshd -t && systemctl restart sshd
-```
-解释：禁用密钥登录。
+### 9.4 安全配置
 
-### 9.4 一键配置
-
-```bash
-mkdir -p /root/.ssh
-chmod 700 /root/.ssh
-echo "你的公钥" >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
-sed -i 's|^[#[:space:]]*Port[[:space:]].*|Port 64400|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*PubkeyAuthentication[[:space:]].*|PubkeyAuthentication yes|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*AuthorizedKeysFile[[:space:]].*|AuthorizedKeysFile .ssh/authorized_keys|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*PasswordAuthentication[[:space:]].*|PasswordAuthentication no|' /etc/ssh/sshd_config
-sed -i 's|^[#[:space:]]*PermitRootLogin[[:space:]].*|PermitRootLogin prohibit-password|' /etc/ssh/sshd_config
-sshd -t && systemctl restart sshd
-apt install -y ufw
-ufw allow 64400/tcp
-yes | ufw delete allow 22/tcp
-ufw deny 22/tcp
-ufw --force enable
-ufw reload
-```
-解释：端口改为 64400、关闭密码、开启密钥、root 只允许密钥、UFW 放行新端口并关闭 22。
+一次事务设置所选端口、开启密钥、关闭密码/交互认证、root 仅公钥认证，并联动已启用的 UFW。公钥输入留空可使用已有公钥。不会顺带安装/启用 UFW，不会自动封禁 22 或移除旧放行规则；不满足前置条件时拒绝。
 
 ### 9.5 公钥和私钥管理
 
-默认展示：
+查看不创建 `.ssh` 或修改权限。公钥删除固定显示时的 SHA256 与行号，拒绝越界、空行/注释、最后一把公钥及无法通过 `ssh-keygen -lf` 的剩余文件；通过同一回滚事务替换 `authorized_keys`，新连接确认后才清理恢复材料。
 
-```bash
-nl -ba /root/.ssh/authorized_keys
-find /root/.ssh -maxdepth 1 -type f ! -name '*.pub' ! -name 'authorized_keys' ! -name 'known_hosts' ! -name 'config' -printf '%f\n' | nl -ba
-```
-解释：显示公钥和私钥文件。
-
-```bash
-echo "你的公钥" >> /root/.ssh/authorized_keys
-chmod 600 /root/.ssh/authorized_keys
-sed -i '行号d' /root/.ssh/authorized_keys
-cat > /root/.ssh/id_ed25519
-chmod 600 /root/.ssh/id_ed25519
-rm -f /root/.ssh/私钥文件名
-```
-解释：添加公钥、删除公钥、添加私钥、删除私钥。
+私钥导入保持原流程：暂存并用 `ssh-keygen -y` 验证，可验证加密私钥，不覆盖已有文件；删除核对名称、内容、权限、链接和身份。测试密钥与业务密钥分开，不输出私钥内容。
 
 ### 9.6 修改 sshd_config 配置文件
 
-```bash
-vim /etc/ssh/sshd_config
-sshd -t && systemctl restart sshd
-```
-解释：手动编辑 SSH 服务端配置，并校验重启。
+Vim 编辑 `/run/daimon-ssh-edit.*` 下的私有副本，关闭 swap/viminfo/用户配置写入。退出后复核在线文件摘要，完整语法和有效认证检查通过后进入同一安全事务，不直接编辑 `/etc/ssh/sshd_config`。Vim 不存在时提示先安装，不自动安装软件。
 
 ## 10. UFW 管理
 
