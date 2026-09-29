@@ -33,6 +33,14 @@ class Metadata(unittest.TestCase):
              patch.object(SCOPE['Engine'],'api',return_value={'ApiVersion':'1.47','Os':'linux','Arch':'amd64'}):
             self.assertEqual(SCOPE['Engine']().socket,'/context.sock')
 
+    def test_cli_explicitly_pins_selected_context(self):
+        from unittest.mock import patch
+        import subprocess
+        with patch.dict(os.environ,{'DOCKER_CONTEXT':'selected','DOCKER_HOST':'unix:///wrong.sock'}), \
+             patch.object(subprocess,'run',return_value=subprocess.CompletedProcess([],0,b'ok')) as run:
+            self.assertEqual(SCOPE['cli']('version'),'ok')
+            self.assertEqual(run.call_args.args[0],['docker','--context','selected','version'])
+
     def test_payload_retains_arrays_udp_multi_bind_mount_type_and_policy(self):
         original=item();data=copy.deepcopy(original)
         result=SCOPE['payload'](data,{'/original':'/restore/data/payload'}, {})

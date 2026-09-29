@@ -13478,15 +13478,18 @@ def require(ok, message):
     if not ok: raise ValueError(message)
 
 def cli(*args):
-    p = subprocess.run(['docker', *args], capture_output=True, timeout=1800)
+    context = os.environ.get('DOCKER_CONTEXT')
+    command = ['docker', '--context', context] if context else ['docker']
+    p = subprocess.run([*command, *args], capture_output=True, timeout=1800)
     require(p.returncode == 0, 'Docker command failed: ' + args[0])
     return p.stdout.decode()
 
 class Engine:
     def __init__(self):
-        endpoint = None if os.environ.get('DOCKER_CONTEXT') else os.environ.get('DOCKER_HOST')
+        selected = os.environ.get('DOCKER_CONTEXT')
+        endpoint = None if selected else os.environ.get('DOCKER_HOST')
         if not endpoint:
-            context = json.loads(cli('context', 'inspect'))
+            context = json.loads(cli('context', 'inspect', *([selected] if selected else [])))
             endpoint = context[0]['Endpoints']['docker']['Host']
         require(endpoint.startswith('unix:///'), 'Only a local Unix-socket Docker context is supported')
         self.socket = endpoint[7:]
