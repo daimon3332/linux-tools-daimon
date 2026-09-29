@@ -13468,6 +13468,463 @@ linux_bbr() {
 
 
 
+docker_migration_program() {
+    cat <<'PYDOCKER_BACKUP'
+import copy, time, uuid, fcntl, hashlib, http.client, json, os, posixpath, re, shutil, signal, socket, stat, subprocess, sys, tarfile, tempfile
+from pathlib import Path, PurePosixPath
+from urllib.parse import quote
+
+def require(ok, message):
+    if not ok: raise ValueError(message)
+
+def cli(*args):
+    p = subprocess.run(['docker', *args], capture_output=True, timeout=1800)
+    require(p.returncode == 0, 'Docker command failed: ' + args[0])
+    return p.stdout.decode()
+
+class Engine:
+    def __init__(self):
+        endpoint = os.environ.get('DOCKER_HOST')
+        if not endpoint:
+            context = json.loads(cli('context', 'inspect'))
+            endpoint = context[0]['Endpoints']['docker']['Host']
+        require(endpoint.startswith('unix:///'), 'Only a local Unix-socket Docker context is supported')
+        self.socket = endpoint[7:]
+        self.version = ''
+        version = self.api('GET', '/version')
+        self.version = '/v' + version['ApiVersion']
+        self.platform = version['Os'] + '/' + version['Arch']
+        require(version['Os'] == 'linux', 'Linux Docker required')
+    def api(self, method, path, data=None, missing=False):
+        connection = http.client.HTTPConnection('localhost', timeout=180)
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        sock.settimeout(180)
+        sock.connect(self.socket)
+        connection.sock = sock
+        try:
+            body = None if data is None else json.dumps(data).encode()
+            connection.request(method, self.version + path, body=body, headers={'Content-Type':'application/json'})
+            response = connection.getresponse()
+            raw = response.read()
+            if missing and response.status == 404: return None
+            require(200 <= response.status < 300, 'Docker API failed: ' + method + ' ' + path.split('?')[0] + ' HTTP ' + str(response.status))
+            return json.loads(raw) if raw else None
+        finally: connection.close()
+    def container(self, name, missing=False):
+        return self.api('GET', '/containers/' + quote(name, safe='') + '/json', missing=missing)
+
+def digest(path):
+    h = hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda: stream.read(1024*1024), b''): h.update(chunk)
+    return h.hexdigest()
+
+def private(path, directory=False):
+    i = path.lstat()
+    require(path.is_absolute() and path.resolve() == path and i.st_uid == 0 and not i.st_mode & 0o022, 'Untrusted backup or restore path')
+    require(stat.S_ISDIR(i.st_mode) if directory else stat.S_ISREG(i.st_mode) and i.st_nlink == 1, 'Not a regular private backup file/directory')
+    return (i.st_dev, i.st_ino, i.st_mode, i.st_size, i.st_mtime_ns)
+
+def empty_target(path):
+    private(path, True)
+    require(not any(path.iterdir()), 'Restore directory must already exist and be empty')
+    for parent in path.parents:
+        i = parent.stat()
+        require(parent.resolve() == parent and i.st_uid == 0 and (not i.st_mode & 0o022 or i.st_mode & stat.S_ISVTX), 'Untrusted restore parent')
+    return private(path, True)
+
+def member_name(name):
+    require(name and not name.startswith('/') and '\\' not in name and not any(ord(c)<32 for c in name), 'Unsafe archive path')
+    parts = PurePosixPath(name).parts
+    require('..' not in parts, 'Archive path traversal')
+    return posixpath.normpath(name)
+
+def archive_members(path):
+    with tarfile.open(path, 'r:*') as archive:
+        members = archive.getmembers()
+    seen = {}
+    for item in members:
+        name = member_name(item.name)
+        require(name not in seen, 'Duplicate archive path')
+        require(item.isdir() or item.isfile() or item.issym() or item.islnk(), 'Special archive entry rejected')
+        require(not item.mode & 0o6000 and not item.sparse, 'Set-ID or sparse archive requires a dedicated backup tool')
+        seen[name] = item
+    for name, item in seen.items():
+        for parent in PurePosixPath(name).parents:
+            prior = seen.get(str(parent))
+            require(prior is None or prior.isdir(), 'Archive member has a non-directory parent')
+        if item.issym():
+            require(item.linkname and not item.linkname.startswith('/') and '\\' not in item.linkname and '..' not in PurePosixPath(item.linkname).parts, 'Absolute or parent-traversing archive symlink')
+            target = posixpath.normpath(posixpath.join(posixpath.dirname(name), item.linkname))
+            require(target != '..' and not target.startswith('../'), 'Escaping archive symlink')
+        if item.islnk():
+            target = member_name(item.linkname)
+            require(target in seen and seen[target].isfile(), 'Invalid archive hardlink')
+    return members
+
+def unpack(path, target, volume=False):
+    require(target.is_dir() and not any(target.iterdir()), 'Extraction requires an empty directory')
+    members = archive_members(path)
+    require(all(PurePosixPath(m.name).parts[0] == 'payload' for m in members), 'Data archive has an unexpected root')
+    if volume:
+        members = copy.deepcopy(members)
+        for m in members:
+            m.name = m.name.removeprefix('payload').lstrip('/') or '.'
+            if m.islnk(): m.linkname = m.linkname.removeprefix('payload').lstrip('/') or '.'
+    # All parents and link targets were checked before the first write; links are last.
+    ordered = [m for m in members if not(m.issym() or m.islnk())] + [m for m in members if m.issym() or m.islnk()]
+    with tarfile.open(path, 'r:*') as archive:
+        if hasattr(tarfile, 'fully_trusted_filter'):
+            archive.extractall(target, members=ordered, numeric_owner=True, filter='fully_trusted')
+        else:
+            archive.extractall(target, members=ordered, numeric_owner=True)
+
+def pack(source, destination):
+    require(source.is_absolute() and source.resolve() == source, 'Symlink source root is unsupported')
+    require(str(source) not in ('/', '/root', '/home', '/etc', '/usr', '/var', '/proc', '/sys', '/dev', '/run', '/tmp'), 'Refusing a whole-system directory')
+    require(source.is_dir() or source.is_file(), 'Unsupported mount source')
+    with tarfile.open(destination, 'x:gz', compresslevel=1) as archive:
+        archive.add(source, arcname='payload', recursive=True)
+    os.chmod(destination, 0o600)
+    archive_members(destination)
+
+def supported(item):
+    h = item['HostConfig']
+    require(not item['State'].get('Paused') and not item['State'].get('Restarting') and not item['State'].get('Dead'), 'Paused/restarting/dead containers are unsupported')
+    for key in ('Privileged', 'AutoRemove', 'VolumesFrom', 'Devices', 'DeviceRequests', 'DeviceCgroupRules', 'Links', 'ContainerIDFile', 'CgroupParent'):
+        require(not h.get(key), 'Unsupported container setting: ' + key)
+    for key in ('PidMode','IpcMode','UTSMode','UsernsMode'):
+        require(h.get(key) in ('',None,'private','shareable'), 'Shared namespace setting is unsupported: ' + key)
+    require(not str(h.get('NetworkMode','')).startswith('container:'), 'Container-shared networking is unsupported')
+    for mount in item.get('Mounts', []):
+        require(mount['Type'] in ('bind','volume','tmpfs'), 'Unsupported mount type')
+        require(not any(mode in mount.get('Mode','').split(',') for mode in ('z','Z')), 'SELinux relabel mounts require manual recovery')
+        require(mount.get('Propagation','') in ('','rprivate','private'), 'Shared mount propagation is unsupported')
+    for mount in h.get('Mounts') or []:
+        require(not mount.get('VolumeOptions',{}).get('Subpath') and not mount.get('BindOptions',{}).get('NonRecursive'), 'Advanced mount options require manual recovery')
+    labels = item['Config'].get('Labels') or {}
+    require(not any(k.startswith('com.docker.swarm.') for k in labels), 'Swarm workloads require Swarm recovery')
+
+def project_context(item):
+    labels = item['Config'].get('Labels') or {}
+    name = labels.get('com.docker.compose.project')
+    if not name: return None
+    require(re.fullmatch(r'[a-z0-9][a-z0-9_-]*',name), 'Invalid Compose project name')
+    work = Path(labels.get('com.docker.compose.project.working_dir',''))
+    files = labels.get('com.docker.compose.project.config_files','').split(',')
+    require(work.is_absolute() and work.resolve() == work and files and all(files), 'Missing Compose context')
+    files = [str(Path(f) if Path(f).is_absolute() else work/f) for f in files]
+    require(all(Path(f).resolve() == Path(f) and work in Path(f).parents for f in files), 'Compose files outside the project directory are unsupported')
+    return name, str(work), files
+
+def resources(engine, items):
+    volumes, networks, projects, sources = {}, {}, {}, {}
+    for item in items:
+        supported(item)
+        context = project_context(item)
+        if context:
+            name, work, files = context
+            if name in projects: require(projects[name]['work']==work and projects[name]['files']==files, 'Compose project name collision')
+            else:
+                args=['compose','--project-directory',work,'-p',name]
+                for f in files: args+=['-f',f]
+                cfg=json.loads(cli(*args,'config','--format','json'))
+                for section in ('configs','secrets'):
+                    require(not cfg.get(section), 'Compose configs/secrets require a dedicated recovery workflow')
+                for service in cfg['services'].values():
+                    build=service.get('build') or {}
+                    if isinstance(build,str): build={'context':build}
+                    if build:
+                        context_path=Path(build.get('context',''))
+                        require(context_path==Path(work) or Path(work) in context_path.parents, 'Build context outside project is unsupported')
+                    require(not service.get('env_file'), 'Unresolved Compose env_file is unsupported')
+                projects[name]={'work':work,'files':files,'config':cfg}
+                sources[work]={'kind':'project'}
+        for mount in item.get('Mounts',[]):
+            if mount['Type']=='tmpfs': continue
+            source=mount['Source']
+            sources.setdefault(source,{'kind':'data'})
+            if mount['Type']=='volume':
+                name=mount['Name'];v=engine.api('GET','/volumes/'+quote(name,safe=''))
+                require(v['Driver']=='local' and not v.get('Options'), 'Only plain local volumes are supported')
+                require(v['Mountpoint']==source, 'Volume source mismatch')
+                volumes[name]=v
+        for name,endpoint in (item.get('NetworkSettings',{}).get('Networks') or {}).items():
+            if name in ('bridge','host','none'): continue
+            n=engine.api('GET','/networks/'+quote(name,safe=''))
+            require(n['Driver']=='bridge' and not n.get('Ingress') and n.get('Scope')=='local' and not (n.get('Options') or {}).get('com.docker.network.bridge.name'), 'Only local bridge networks are supported')
+            require(not endpoint.get('Links'), 'Linked endpoints are unsupported')
+            networks[name]=n
+    services=[]
+    for item in items:
+        ctx=project_context(item)
+        if ctx:
+            service=(item['Config'].get('Labels') or {}).get('com.docker.compose.service')
+            require(service, 'Compose service label missing')
+            services.append((ctx[0],service))
+    require(len(services)==len(set(services)), 'Scaled Compose services require a dedicated recovery workflow')
+    # Each project is archived as a whole; keep mount snapshots separate for exact container data.
+    for index,(source,record) in enumerate(sources.items()):
+        record.update({'archive':'data-'+str(index)+'.tar.gz','source':source})
+    return volumes,networks,projects,sources
+
+def backup(engine, directory, names):
+    require(not directory.exists() and not directory.is_symlink(), 'Backup destination already exists')
+    all_items=[engine.container(x['Id']) for x in engine.api('GET','/containers/json?all=1')]
+    wanted={x['Id'] for x in all_items if not names and x['State']['Running']}
+    for name in names: wanted.add(engine.container(name)['Id'])
+    for item in all_items:
+        if item['Id'] in wanted:
+            ctx=project_context(item)
+            if ctx:
+                for other in all_items:
+                    if project_context(other) and project_context(other)[0]==ctx[0]:wanted.add(other['Id'])
+    items=[x for x in all_items if x['Id'] in wanted]
+    require(items,'No containers selected')
+    volumes,networks,projects,sources=resources(engine,items)
+    for item in all_items:
+        if item['Id'] in wanted:continue
+        for mount in item.get('Mounts',[]):
+            if mount.get('Source'):
+                a=Path(mount['Source'])
+                require(not any(a==Path(s) or a in Path(s).parents or Path(s) in a.parents for s in sources), 'Data is also used by an unselected container')
+    hypothetical={source:'/restore/data-'+str(i)+'/payload' for i,source in enumerate(sources)}
+    for project in projects.values():canonical_project(project,hypothetical,items)
+    directory.mkdir(mode=0o700)
+    state={'containers':items,'platform':engine.platform,'volumes':volumes,'networks':networks,'projects':projects,'sources':sources,'version':2}
+    (directory/'incomplete.json').write_text(json.dumps(state))
+    stopped=[];created_images=[]
+    known_images={x['Id'] for x in engine.api('GET','/images/json?all=1')}
+    try:
+        for item in items:
+            require(engine.container(item['Id'])['Config']==item['Config'], 'Container configuration changed')
+            if item['State']['Running']:
+                stopped.append(item['Id'])
+                engine.api('POST','/containers/'+item['Id']+'/stop?t=60')
+        for item in items:require(not engine.container(item['Id'])['State']['Running'],'Container did not stop')
+        for source,record in sources.items():pack(Path(source),directory/record['archive'])
+        for item in items:
+            image=engine.api('POST','/commit?container='+item['Id']+'&pause=false')['Id']
+            if image not in known_images:created_images.append(image)
+            item['Image']=image
+        images={x['Image'] for x in items}
+        cli('image','save','-o',str(directory/'images.tar'),*sorted(images))
+        state['checksums']={p.name:digest(p) for p in directory.iterdir() if p.name!='incomplete.json'}
+    finally:
+        for sig in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP):signal.signal(sig,signal.SIG_IGN)
+        failures=[]
+        for cid in stopped:
+            try:
+                current=engine.container(cid)
+                if not current['State']['Running']:engine.api('POST','/containers/'+cid+'/start')
+                require(engine.container(cid)['State']['Running'],'Backup restart failed')
+            except Exception:failures.append(cid)
+        for image in created_images:
+            try: engine.api('DELETE','/images/'+quote(image,safe='')+'?force=0&noprune=1')
+            except Exception: print('Temporary snapshot image retained: '+image,file=sys.stderr)
+        require(not failures,'Backup incomplete: some original containers did not restart; inspect incomplete.json')
+    for p in directory.iterdir():os.chmod(p,0o600)
+    (directory/'manifest.json').write_text(json.dumps(state))
+    os.chmod(directory/'manifest.json',0o600)
+    (directory/'incomplete.json').unlink()
+    print('Backup complete: '+str(directory))
+
+def payload(item, relocated, project_dirs):
+    config=copy.deepcopy(item['Config']);host=copy.deepcopy(item['HostConfig'])
+    config['Image']=item['Image']
+    for name, endpoint in (item.get('NetworkSettings',{}).get('Networks') or {}).items():
+        if host.get('NetworkMode') == endpoint.get('NetworkID'): host['NetworkMode']=name
+    host['Binds']=None;host['Mounts']=[]
+    for mount in item.get('Mounts',[]):
+        kind=mount['Type']
+        if kind=='tmpfs':continue
+        source=mount['Name'] if kind=='volume' else relocated[mount['Source']]
+        new={'Type':kind,'Source':source,'Target':mount['Destination'],'ReadOnly':not mount['RW']}
+        if kind=='volume':new['VolumeOptions']={'NoCopy':True}
+        elif mount.get('Propagation'):new['BindOptions']={'Propagation':mount['Propagation']}
+        host['Mounts'].append(new)
+    context=project_context(item)
+    if context:
+        name,_,_=context
+        config['Labels']['com.docker.compose.image']=item['Image']
+        config['Labels']['com.docker.compose.project.working_dir']=project_dirs[name]
+        config['Labels']['com.docker.compose.project.config_files']=project_dirs[name]+'/compose.restore.json'
+    endpoints={}
+    for name,original in (item.get('NetworkSettings',{}).get('Networks') or {}).items():
+        if name in ('bridge','host','none'):continue
+        endpoint={k:copy.deepcopy(original[k]) for k in ('IPAMConfig','Aliases','DriverOpts','MacAddress') if original.get(k)}
+        if 'Aliases' in endpoint:endpoint['Aliases']=[a for a in endpoint['Aliases'] if a not in (item['Id'],item['Id'][:12])]
+        endpoints[name]=endpoint
+    return dict(config,HostConfig=host,NetworkingConfig={'EndpointsConfig':endpoints})
+
+def canonical_project(project, relocated, items):
+    cfg=copy.deepcopy(project['config'])
+    work=project['work']
+    def relocate(source):
+        require(source in relocated,'Compose references unarchived bind data')
+        return relocated[source]
+    for name,service in cfg['services'].items():
+        runtime=[x for x in items if (x['Config'].get('Labels') or {}).get('com.docker.compose.service')==name and project_context(x) and project_context(x)[1]==work]
+        require(runtime,'Compose service has no archived runtime container')
+        require(len({x['Image'] for x in runtime})==1,'Compose service uses different images')
+        service['image']=runtime[0]['Image']
+        if service.get('build'):
+            service.pop('build')
+        for mount in service.get('volumes',[]):
+            if mount.get('type')=='bind':mount['source']=relocate(mount['source'])
+    return cfg
+
+def restore(engine,directory,target):
+    private(directory,True)
+    require(not (directory/'incomplete.json').exists(),'Incomplete backup cannot be restored')
+    manifest=directory/'manifest.json';private(manifest)
+    state=json.loads(manifest.read_text())
+    require(state.get('version')==2,'Unsupported backup format; legacy data must be recovered into an empty staging directory first')
+    require(state['platform']==engine.platform,'Backup and Docker platform differ')
+    fingerprint=digest(manifest)
+    original_target=empty_target(target)
+    items=state['containers'];require(items,'Empty backup')
+    names=[x['Name'].lstrip('/') for x in items]
+    require(len(set(names))==len(names) and all(re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.-]*',n) for n in names),'Invalid or duplicate container name')
+    for item in items:supported(item)
+    checksums=state['checksums']
+    require('images.tar' in checksums,'Image archive missing')
+    for name,checksum in checksums.items():
+        require(re.fullmatch(r'(?:data-[0-9]+\.tar\.gz|images\.tar)',name),'Invalid backup member name')
+        p=directory/name;private(p);require(digest(p)==checksum,'Backup checksum mismatch')
+        archive_members(p)
+    for source,record in state['sources'].items():
+        require(record['archive'] in checksums and record['archive']!='images.tar' and record['source']==source,'Data archive missing or mismatched')
+    for name,v in state['volumes'].items():
+        require(v['Name']==name and v['Driver']=='local' and not v.get('Options') and v['Mountpoint'] in state['sources'],'Unsupported volume metadata')
+    for name,n in state['networks'].items():
+        require(n['Name']==name and n['Driver']=='bridge' and not n.get('Ingress') and n.get('Scope')=='local' and not (n.get('Options') or {}).get('com.docker.network.bridge.name'),'Unsupported network metadata')
+    needed=sum(m.size for name in checksums if name!='images.tar' for m in archive_members(directory/name))
+    require(shutil.disk_usage(target).free>needed*2+(directory/'images.tar').stat().st_size,'Insufficient free space for staged recovery')
+    def conflicts():
+        for name in names:require(engine.container(name,missing=True) is None,'Container already exists (running or stopped); nothing overwritten')
+        for name in state['volumes']:require(engine.api('GET','/volumes/'+quote(name,safe=''),missing=True) is None,'Volume already exists; nothing overwritten')
+        for name in state['networks']:require(engine.api('GET','/networks/'+quote(name,safe=''),missing=True) is None,'Network already exists; nothing overwritten')
+        projects=state['projects']
+        for current in engine.api('GET','/containers/json?all=1'):
+            require((current.get('Labels') or {}).get('com.docker.compose.project') not in projects,'Compose project already exists')
+    conflicts()
+    relocated={source:str(target/('data-'+str(i))/'payload') for i,source in enumerate(state['sources'])}
+    project_dirs={name:relocated[p['work']] for name,p in state['projects'].items()}
+    configs={name:canonical_project(p,relocated,items) for name,p in state['projects'].items()}
+    payloads=[payload(x,relocated,project_dirs) for x in items]
+    require(empty_target(target)==original_target and digest(manifest)==fingerprint,'Restore inputs changed')
+    conflicts()
+    # All deterministic validation precedes changes. Unexpected failures leave explicit partial state, never delete existing resources.
+    token=uuid.uuid4().hex
+    progress={'transaction':token,'created_containers':[],'created_volumes':[],'created_networks':[],'complete':False}
+    def save():
+        (target/'restore-state.json').write_text(json.dumps(progress));os.chmod(target/'restore-state.json',0o600)
+    save()
+    try:
+        for i,(source,record) in enumerate(state['sources'].items()):
+            leaf=target/('data-'+str(i));leaf.mkdir(mode=0o700)
+            require(digest(directory/record['archive'])==checksums[record['archive']],'Archive changed')
+            unpack(directory/record['archive'],leaf)
+        for name,cfg in configs.items():
+            p=Path(project_dirs[name])/'compose.restore.json'
+            require(not p.exists() and not p.is_symlink(),'Reserved Compose restore filename exists')
+            p.write_text(json.dumps(cfg));os.chmod(p,0o600)
+        require(digest(directory/'images.tar')==checksums['images.tar'],'Image archive changed')
+        cli('image','load','-i',str(directory/'images.tar'))
+        for name,v in state['volumes'].items():
+            require(engine.api('GET','/volumes/'+quote(name,safe=''),missing=True) is None,'Volume appeared concurrently')
+            labels=dict(v.get('Labels') or {}, **{'io.daimon.restore':token})
+            new=engine.api('POST','/volumes/create',{'Name':name,'Driver':'local','Labels':labels})
+            require(new.get('Labels',{}).get('io.daimon.restore')==token,'Volume appeared concurrently; retained without writes')
+            progress['created_volumes'].append(name);save()
+            destination=Path(new['Mountpoint'])
+            require(destination.resolve()==destination and destination.is_dir() and not any(destination.iterdir()),'New volume is not empty')
+            record=state['sources'][v['Mountpoint']]
+            unpack(directory/record['archive'],destination,volume=True)
+        for name,n in state['networks'].items():
+            require(engine.api('GET','/networks/'+quote(name,safe=''),missing=True) is None,'Network appeared concurrently')
+            data={k:n[k] for k in ('Name','Driver','Internal','Attachable','EnableIPv6','IPAM','Options','Labels') if k in n}
+            data['CheckDuplicate']=True
+            data['Labels']=dict(data.get('Labels') or {}, **{'io.daimon.restore':token})
+            new=engine.api('POST','/networks/create',data)
+            progress['created_networks'].append(new['Id']);save()
+        restored=[]
+        for item,body,name in zip(items,payloads,names):
+            result=engine.api('POST','/containers/create?name='+quote(name,safe=''),body)
+            cid=result['Id'];progress['created_containers'].append(cid);save()
+            current=engine.container(cid)
+            for key in ('Env','Entrypoint','Cmd','User','WorkingDir','Healthcheck'):
+                require(current['Config'].get(key)==body.get(key),'Restored container config differs: '+key)
+            require(current['HostConfig'].get('PortBindings')==body['HostConfig'].get('PortBindings'),'Restored port bindings differ')
+            if item['State']['Running']:restored.append((item,cid))
+        pending=list(restored);done=set()
+        while pending:
+            ready=[]
+            for item,cid in pending:
+                ctx=project_context(item)
+                service=(item['Config'].get('Labels') or {}).get('com.docker.compose.service')
+                dependencies=set(state['projects'][ctx[0]]['config']['services'][service].get('depends_on',{})) if ctx else set()
+                running_services={(project_context(other)[0],(other['Config'].get('Labels') or {}).get('com.docker.compose.service')) for other,_ in restored if project_context(other)}
+                if not ctx or all((ctx[0],dep) in done or (ctx[0],dep) not in running_services for dep in dependencies):ready.append((item,cid))
+            require(ready,'Circular Compose startup dependencies')
+            for item,cid in ready:
+                engine.api('POST','/containers/'+cid+'/start')
+                deadline=time.monotonic()+120
+                while True:
+                    current=engine.container(cid)['State']
+                    require(current['Running'],'Restored container exited; inspect application health')
+                    health=(current.get('Health') or {}).get('Status')
+                    if health in (None,'healthy'):break
+                    require(health!='unhealthy' and time.monotonic()<deadline,'Restored container healthcheck failed or timed out')
+                    time.sleep(1)
+                ctx=project_context(item)
+                if ctx:done.add((ctx[0],(item['Config'].get('Labels') or {}).get('com.docker.compose.service')))
+                pending.remove((item,cid))
+        progress['complete']=True;save()
+        print('Restore complete. Runtime state verified; application/data health requires its own checks. Data directory: '+str(target))
+    except BaseException:
+        save()
+        print('Restore incomplete. Existing resources were not replaced; keep '+str(target)+'/restore-state.json for inspection.',file=sys.stderr)
+        raise
+
+def main():
+    require(os.geteuid()==0,'Root required')
+    os.umask(0o077)
+    require(len(sys.argv)>=3 and sys.argv[1] in ('backup','restore'),'Invalid backup/restore arguments')
+    lock=Path('/run/lock/daimon-docker-migration.lock')
+    require(lock.parent.resolve()==lock.parent and lock.parent.stat().st_uid==0,'Untrusted lock directory')
+    fd=os.open(lock,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600)
+    i=os.fstat(fd);require(stat.S_ISREG(i.st_mode) and i.st_uid==0 and i.st_nlink==1 and not i.st_mode&0o022,'Unsafe migration lock')
+    fcntl.flock(fd,fcntl.LOCK_EX|fcntl.LOCK_NB)
+    def interrupted(signum,frame):raise InterruptedError('Docker backup/restore interrupted')
+    for sig in (signal.SIGINT,signal.SIGTERM,signal.SIGHUP):signal.signal(sig,interrupted)
+    engine=Engine()
+    directory=Path(sys.argv[2])
+    require(directory.is_absolute() and directory.parent==Path('/tmp') and re.fullmatch(r'docker_backup_[A-Za-z0-9][A-Za-z0-9._-]*',directory.name),'Backup must be a direct /tmp/docker_backup_* directory')
+    if sys.argv[1]=='backup':backup(engine,directory,sys.argv[3:])
+    else:
+        require(len(sys.argv)==4,'An explicit empty restore directory is required')
+        restore(engine,directory,Path(sys.argv[3]))
+
+if __name__=='__main__':
+    try:main()
+    except (OSError,ValueError,KeyError,TypeError,tarfile.TarError,subprocess.SubprocessError,http.client.HTTPException) as error:
+        print('Docker backup/restore failed: '+str(error),file=sys.stderr)
+        sys.exit(1)
+PYDOCKER_BACKUP
+}
+
+docker_migration_engine() (
+    umask 077
+    local program
+    command -v python3 >/dev/null && command -v docker >/dev/null || { echo "需要已安装的 Python 3 和 Docker。" >&2; return 1; }
+    program=$(mktemp) || return 1
+    trap 'rm -f -- "$program"' EXIT
+    docker_migration_program > "$program" || return 1
+    python3 "$program" "$@"
+)
+
 docker_ssh_migration() {
 
 	docker_migration_backup_dir() {
@@ -13501,243 +13958,31 @@ docker_ssh_migration() {
 	# 备份
 	# ----------------------------
 	docker_migration_backup() {
-		send_stats "Docker备份"
-
-		echo -e "${gl_kjlan}正在备份 Docker 容器...${gl_bai}"
-		docker ps --format '{{.Names}}'
-		read -e -p  "请输入要备份的容器名（多个空格分隔，回车备份全部运行中容器）: " containers || return 1
-
-		install tar jq gzip
-		install_docker
-
-		local BACKUP_ROOT="/tmp"
-		local DATE_STR=$(date +%Y%m%d_%H%M%S)
-		local TARGET_CONTAINERS=()
-		if [ -z "$containers" ]; then
-			mapfile -t TARGET_CONTAINERS < <(docker ps --format '{{.Names}}')
-		else
-			read -ra TARGET_CONTAINERS <<< "$containers"
-		fi
-		[[ ${#TARGET_CONTAINERS[@]} -eq 0 ]] && { echo -e "${gl_hong}没有找到容器${gl_bai}"; return; }
-
-		local BACKUP_DIR="${BACKUP_ROOT}/docker_backup_${DATE_STR}"
-		mkdir -p "$BACKUP_DIR"
-		chmod 700 "$BACKUP_DIR"
-
-		local RESTORE_SCRIPT="${BACKUP_DIR}/docker_restore.sh"
-		echo "#!/bin/bash" > "$RESTORE_SCRIPT"
-		echo "set -e" >> "$RESTORE_SCRIPT"
-		echo "# 自动生成的还原脚本" >> "$RESTORE_SCRIPT"
-
-		# 记录已打包过的 Compose 项目路径，避免重复打包
-		declare -A PACKED_COMPOSE_PATHS=()
-
-		for c in "${TARGET_CONTAINERS[@]}"; do
-			echo -e "${gl_lv}备份容器: $c${gl_bai}"
-			local inspect_file="${BACKUP_DIR}/${c}_inspect.json"
-			docker inspect "$c" > "$inspect_file"
-
-			if is_compose_container "$c"; then
-				echo -e "${gl_kjlan}检测到 $c 是 docker-compose 容器${gl_bai}"
-				local project_dir=$(docker inspect "$c" | jq -r '.[0].Config.Labels["com.docker.compose.project.working_dir"] // empty')
-				local project_name=$(docker inspect "$c" | jq -r '.[0].Config.Labels["com.docker.compose.project"] // empty')
-
-				if [ -z "$project_dir" ]; then
-					read -e -p  "未检测到 compose 目录，请手动输入路径: " project_dir || return 1
-				fi
-
-				# 如果该 Compose 项目已经打包过，跳过
-				if [[ -n "${PACKED_COMPOSE_PATHS[$project_dir]}" ]]; then
-					echo -e "${gl_huang}Compose 项目 [$project_name] 已备份过，跳过重复打包...${gl_bai}"
-					continue
-				fi
-
-				if [ -f "$project_dir/docker-compose.yml" ]; then
-					echo "compose" > "${BACKUP_DIR}/backup_type_${project_name}"
-					echo "$project_dir" > "${BACKUP_DIR}/compose_path_${project_name}.txt"
-					tar -czf "${BACKUP_DIR}/compose_project_${project_name}.tar.gz" -C "$project_dir" .
-					echo "# docker-compose 恢复: $project_name" >> "$RESTORE_SCRIPT"
-					echo "cd \"$project_dir\" && docker compose up -d" >> "$RESTORE_SCRIPT"
-					PACKED_COMPOSE_PATHS["$project_dir"]=1
-					echo -e "${gl_lv}Compose 项目 [$project_name] 已打包: ${project_dir}${gl_bai}"
-				else
-					echo -e "${gl_hong}未找到 docker-compose.yml，跳过此容器...${gl_bai}"
-				fi
-			else
-				# 普通容器备份卷
-				local VOL_PATHS
-				VOL_PATHS=$(docker inspect "$c" --format '{{range .Mounts}}{{.Source}} {{end}}')
-				for path in $VOL_PATHS; do
-					echo "打包卷: $path"
-					tar -czpf "${BACKUP_DIR}/${c}_$(basename $path).tar.gz" -C / "$(echo $path | sed 's/^\///')"
-				done
-
-				# 端口
-				local PORT_ARGS=""
-				mapfile -t PORTS < <(jq -r '.[0].HostConfig.PortBindings | to_entries[] | "\(.value[0].HostPort):\(.key | split("/")[0])"' "$inspect_file" 2>/dev/null)
-				for p in "${PORTS[@]}"; do PORT_ARGS+="-p $p "; done
-
-				# 环境变量
-				local ENV_VARS=""
-				mapfile -t ENVS < <(jq -r '.[0].Config.Env[] | @sh' "$inspect_file")
-				for e in "${ENVS[@]}"; do ENV_VARS+="-e $e "; done
-
-				# 卷映射
-				local VOL_ARGS=""
-				for path in $VOL_PATHS; do VOL_ARGS+="-v $path:$path "; done
-
-				# 镜像
-				local IMAGE
-				IMAGE=$(jq -r '.[0].Config.Image' "$inspect_file")
-
-				echo -e "\n# 还原容器: $c" >> "$RESTORE_SCRIPT"
-				echo "docker run -d --name $c $PORT_ARGS $VOL_ARGS $ENV_VARS $IMAGE" >> "$RESTORE_SCRIPT"
-			fi
-		done
-
-
-		# 备份 /home/docker 下的所有文件（不含子目录）
-		if [ -d "/home/docker" ]; then
-			echo -e "${gl_kjlan}备份 /home/docker 下的文件...${gl_bai}"
-			find /home/docker -maxdepth 1 -type f | tar -czf "${BACKUP_DIR}/home_docker_files.tar.gz" -T -
-			echo -e "${gl_lv}/home/docker 下的文件已打包到: ${BACKUP_DIR}/home_docker_files.tar.gz${gl_bai}"
-		fi
-
-		find "$BACKUP_DIR" -type f -exec chmod 600 {} +; chmod 700 "$RESTORE_SCRIPT"
-		echo -e "${gl_lv}备份完成: ${BACKUP_DIR}${gl_bai}"
-		echo -e "${gl_lv}可用还原脚本: ${RESTORE_SCRIPT}${gl_bai}"
-
-
+		local containers confirm directory
+		local -a selected=()
+		command -v docker >/dev/null || { echo "Docker 未安装。"; return 1; }
+		docker ps --format '{{.Names}}' || return 1
+		read -r -p "容器名称（空格分隔，回车选择运行中的容器；Compose 自动包含整个项目）: " containers || return 1
+		read -r -a selected <<< "$containers"
+		echo "备份会停止所选容器及其 Compose 项目，完成后恢复原运行状态。包含可写层、镜像、挂载数据和 Compose 配置；不备份无关 /home/docker 文件。"
+		read -r -p "输入 STOP_BACKUP 确认: " confirm || return 1
+		[ "$confirm" = STOP_BACKUP ] || return 0
+		directory="/tmp/docker_backup_$(date +%Y%m%d_%H%M%S)_${RANDOM}"
+		docker_migration_engine backup "$directory" "${selected[@]}"
 	}
 
 	# ----------------------------
 	# 还原
 	# ----------------------------
 	docker_migration_restore() {
-
-		send_stats "Docker还原"
-		local BACKUP_DIR
-		read -e -p  "请输入要还原的备份目录: " BACKUP_DIR || return 1
-		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
-
-		echo -e "${gl_kjlan}开始执行还原操作...${gl_bai}"
-
-		install tar jq gzip
-		install_docker
-
-		# --------- 优先还原 Compose 项目 ---------
-		for f in "$BACKUP_DIR"/backup_type_*; do
-			[[ ! -f "$f" ]] && continue
-			if grep -q "compose" "$f"; then
-				project_name=$(basename "$f" | sed 's/backup_type_//')
-				path_file="$BACKUP_DIR/compose_path_${project_name}.txt"
-				[[ -f "$path_file" ]] && original_path=$(cat "$path_file") || original_path=""
-				[[ -z "$original_path" ]] && read -e -p  "未找到原始路径，请输入还原目录路径: " original_path
-
-				# 检查该 compose 项目的容器是否已经在运行
-				running_count=$(docker ps --filter "label=com.docker.compose.project=$project_name" --format '{{.Names}}' | wc -l)
-				if [[ "$running_count" -gt 0 ]]; then
-					echo -e "${gl_huang}Compose 项目 [$project_name] 已有容器在运行，跳过还原...${gl_bai}"
-					continue
-				fi
-
-				read -e -p  "确认还原 Compose 项目 [$project_name] 到路径 [$original_path] ? (y/n): " confirm || return 1
-				[[ "$confirm" != "y" ]] && read -e -p  "请输入新的还原路径: " original_path
-
-				mkdir -p "$original_path"
-				tar -xzf "$BACKUP_DIR/compose_project_${project_name}.tar.gz" -C "$original_path"
-				echo -e "${gl_lv}Compose 项目 [$project_name] 已解压到: $original_path${gl_bai}"
-
-				cd "$original_path" || return
-				docker compose down || true
-				docker compose up -d
-				echo -e "${gl_lv}Compose 项目 [$project_name] 还原完成！${gl_bai}"
-			fi
-		done
-
-		# --------- 继续还原普通容器 ---------
-		echo -e "${gl_kjlan}检查并还原普通 Docker 容器...${gl_bai}"
-		local has_container=false
-		for json in "$BACKUP_DIR"/*_inspect.json; do
-			[[ ! -f "$json" ]] && continue
-			has_container=true
-			container=$(basename "$json" | sed 's/_inspect.json//')
-			echo -e "${gl_lv}处理容器: $container${gl_bai}"
-
-			# 检查容器是否已经存在且正在运行
-			if docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
-				echo -e "${gl_huang}容器 [$container] 已在运行，跳过还原...${gl_bai}"
-				continue
-			fi
-
-			IMAGE=$(jq -r '.[0].Config.Image' "$json")
-			[[ -z "$IMAGE" || "$IMAGE" == "null" ]] && { echo -e "${gl_hong}未找到镜像信息，跳过: $container${gl_bai}"; continue; }
-
-			# 端口映射
-			mapfile -t PORTS < <(jq -r '.[0].HostConfig.PortBindings | to_entries[]? | "\(.value[0].HostPort):\(.key | split("/")[0])"' "$json")
-
-			# 环境变量
-			mapfile -t ENVS < <(jq -r '.[0].Config.Env[]' "$json")
-
-			# 卷映射 + 卷数据恢复
-			mapfile -t VOLS < <(jq -r '.[0].Mounts[] | "\(.Source):\(.Destination)"' "$json")
-			for v in "${VOLS[@]}"; do
-				VOL_SRC=$(echo "$v" | cut -d':' -f1)
-				VOL_DST=$(echo "$v" | cut -d':' -f2)
-				mkdir -p "$VOL_SRC"
-
-				VOL_FILE="$BACKUP_DIR/${container}_$(basename $VOL_SRC).tar.gz"
-				if [[ -f "$VOL_FILE" ]]; then
-					echo "恢复卷数据: $VOL_SRC"
-					tar -tzf "$VOL_FILE" >/dev/null 2>&1 || { echo "归档校验失败: $VOL_FILE"; continue; }
-					tar --extract --gzip --file "$VOL_FILE" --directory / --no-same-owner
-				fi
-			done
-
-			# 删除已存在但未运行的容器
-			if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
-				echo -e "${gl_huang}容器 [$container] 存在但未运行，删除旧容器...${gl_bai}"
-				docker rm -f "$container"
-			fi
-
-			# 启动容器
-			echo "正在创建容器: $container"
-			local -a run_args=(run -d --name "$container")
-			for p in "${PORTS[@]}"; do [ -n "$p" ] && run_args+=( -p "$p" ); done
-			for e in "${ENVS[@]}"; do [ -n "$e" ] && run_args+=( -e "$e" ); done
-			for v in "${VOLS[@]}"; do [ -n "$v" ] && run_args+=( -v "$v" ); done
-			if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
-				local -a _entrypoint=() _cmd=()
-				local restart_policy _i _arg
-				restart_policy=$(jq -r '.[0].HostConfig.RestartPolicy.Name // ""' "$json")
-				case "$restart_policy" in ""|no) ;; *) run_args+=(--restart "$restart_policy") ;; esac
-				mapfile -t _entrypoint < <(jq -r '.[0].Config.Entrypoint[]?' "$json")
-				if [ "${#_entrypoint[@]}" -gt 0 ]; then
-					run_args+=(--entrypoint "${_entrypoint[0]}")
-					for ((_i=1; _i<${#_entrypoint[@]}; _i++)); do run_args+=("${_entrypoint[_i]}"); done
-				fi
-			fi
-			run_args+=("$IMAGE")
-			if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
-				mapfile -t _cmd < <(jq -r '.[0].Config.Cmd[]?' "$json")
-				for _arg in "${_cmd[@]}"; do [ -n "$_arg" ] && run_args+=("$_arg"); done
-			fi
-			docker "${run_args[@]}"
-		done
-
-		[[ "$has_container" == false ]] && echo -e "${gl_huang}未找到普通容器的备份信息${gl_bai}"
-
-		# 还原 /home/docker 下的文件
-		if [ -f "$BACKUP_DIR/home_docker_files.tar.gz" ]; then
-			echo -e "${gl_kjlan}正在还原 /home/docker 下的文件...${gl_bai}"
-			mkdir -p /home/docker
-			tar -xzf "$BACKUP_DIR/home_docker_files.tar.gz" -C /
-			echo -e "${gl_lv}/home/docker 下的文件已还原完成${gl_bai}"
-		else
-			echo -e "${gl_huang}未找到 /home/docker 下文件的备份，跳过...${gl_bai}"
-		fi
-
-
+		local directory target confirm
+		read -r -p "请输入备份目录: " directory || return 1
+		directory=$(docker_migration_backup_dir "$directory") || return 1
+		read -r -p "请输入已创建的空恢复目录（不会覆盖原业务目录）: " target || return 1
+		echo "只接受可信备份。同名容器（含停止态）、卷或网络会拒绝；恢复运行状态可能对外开放原端口。"
+		read -r -p "输入 RESTORE 确认: " confirm || return 1
+		[ "$confirm" = RESTORE ] || return 0
+		docker_migration_engine restore "$directory" "$target"
 	}
 
 
