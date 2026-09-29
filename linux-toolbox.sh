@@ -14896,10 +14896,6 @@ ssh_config_manager() {
 	}
 
 	ssh_key_manager() {
-		mkdir -p /root/.ssh
-		chmod 700 /root/.ssh
-		touch /root/.ssh/authorized_keys
-		chmod 600 /root/.ssh/authorized_keys
 		while true; do
 			clear
 			echo "SSH 公钥和私钥管理"
@@ -14926,7 +14922,8 @@ ssh_config_manager() {
 						echo "文件名无效或文件已存在，未覆盖任何文件。"
 					else
 						echo "请粘贴私钥内容，结束后按 Ctrl+D:"
-						(umask 077; set -o noclobber; cat > "/root/.ssh/$key_name")
+						[ ! -L /root/.ssh ] && mkdir -p /root/.ssh && chmod 700 /root/.ssh &&
+							(umask 077; set -o noclobber; cat > "/root/.ssh/$key_name")
 					fi
 					;;
 				4)
