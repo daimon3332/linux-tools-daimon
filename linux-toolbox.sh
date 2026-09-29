@@ -20375,11 +20375,54 @@ server_retire_update_items() {
 	done < <(server_retire_update_dirs) | sort -u
 }
 
+server_retire_filter_cron() {
+	command -v python3 >/dev/null 2>&1 || { echo "安全识别定时任务需要 python3，未修改。" >&2; return 1; }
+	python3 -c '
+import re, shlex, sys
+target, runner = sys.argv[1:]
+gate = re.compile(r"^\[ \"\$\(TZ=Asia/Shanghai date \+\\%H:\\%M\)\" = \"[0-2][0-9]:[0-5][0-9]\" \] && (?:\[ \"\$\(TZ=Asia/Shanghai date \+\\%w\)\" = \"[0-6]\" \] && )?")
+kept = []
+try:
+    for line in sys.stdin:
+        stripped = line.lstrip()
+        if not stripped.strip() or stripped.startswith("#"):
+            kept.append(line); continue
+        fields = stripped.split(None, 1 if stripped.startswith("@") else 5)
+        if len(fields) != (2 if stripped.startswith("@") else 6):
+            kept.append(line); continue
+        command = gate.sub("", fields[-1], count=1)
+        lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        tokens = list(lexer)
+        args = tokens[1:] if tokens and tokens[0] in ("bash", "/bin/bash", "/usr/bin/bash", "sh", "/bin/sh", "/usr/bin/sh") else tokens
+        owned = bool(args) and (args[0] == target or (len(args) >= 3 and args[0] == runner and re.fullmatch(r"[A-Za-z0-9_.:-]+", args[1]) and args[2] == target))
+        compound = any(any(c in t for c in ";|()") or t in ("&", "&&") for t in tokens) or "$(" in command or "`" in command
+        if owned:
+            if compound: raise ValueError("Target shares a compound cron command; edit it explicitly")
+            continue
+        if target in tokens and (compound or not tokens or tokens[0] not in ("echo", "printf", "/bin/echo", "/usr/bin/printf")):
+            raise ValueError("Ambiguous cron reference to target; edit it explicitly")
+        kept.append(line)
+    sys.stdout.write("".join(kept))
+except ValueError as error:
+    print("Cron unchanged: " + str(error), file=sys.stderr)
+    sys.exit(1)
+' "$1" "$2"
+}
+
 server_retire_remove_cron_path() {
-	local path="$1" current next
-	current=$(crontab -l 2>/dev/null || true)
-	next=$(printf '%s\n' "$current" | awk -v path="$path" '/^[[:space:]]*#/ {print; next} {p=" " $0 " "; if (index(p, " " path " ")) next; print}')
-	printf '%s\n' "$next" | sed '/^[[:space:]]*$/d' | crontab -
+	local path="$1" current next checked runner
+	[[ "$path" = /* && "$path" != *$'\n'* && "$path" != *$'\r'* ]] || return 1
+	current=$(rsync_cron_read) || return 1
+	[ -n "$current" ] || return 0
+	runner=$(crontab_sync_runner_file) || return 1
+	next=$(printf '%s\n' "$current" | server_retire_filter_cron "$path" "$runner") || return 1
+	[ "$current" != "$next" ] || return 0
+	checked=$(rsync_cron_read) || return 1
+	[ "$checked" = "$current" ] || { echo "定时任务已被其他进程修改，已取消。" >&2; return 1; }
+	printf '%s\n' "$next" | crontab - || return 1
+	checked=$(rsync_cron_read) || return 1
+	[ "$checked" = "$next" ] || { echo "定时任务写入后校验失败，请检查 crontab。" >&2; return 1; }
 }
 
 server_retire_remove_script() {
