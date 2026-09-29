@@ -56,7 +56,7 @@ d
 | 16 | Bitwarden管理 | 配置 vaultwarden-backup 的 rclone.conf、执行备份和还原 |
 | 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via、域名和 Nginx 配置备份、服务器命名 `/root` 一致性备份 |
 | 18 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
-| 19 | 服务器退役 | 只读检测并按选择停止 Compose、删除托管 Nginx 配置/证书目录和自动任务脚本 |
+| 19 | 服务器退役 | 只读检测并按选择退役 Compose 容器、删除托管 Nginx 配置和自动任务脚本，保留共享证书 |
 | 20 | Debian 基础工具 | 固定检查并安装四项基础工具 |
 
 ## 主要内容
@@ -69,10 +69,10 @@ Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python
 
 ### Nginx 与域名管理（统一流程）
 
-- 菜单 11 使用宿主机 Nginx + acme.sh，证书按完整域名隔离在 `/root/domain/<完整域名>`，不再按首段共享目录。
+- 菜单 11 使用宿主机 Nginx + acme.sh，证书支持 `/root/domain/<完整域名>`，兼容旧首段目录；删除前单独验证域名和共享引用。
 - 证书申请和续期统一使用 `/var/www/acme-challenge` webroot，Nginx 不会因证书操作被停止，也不会强制 `kill -9` 其他服务。
 - 证书安装包含 Nginx reload hook；续期包装脚本写入 `/var/log/acme.sh/renew.log`，失败会写入系统日志。
-- 删除操作仅清理反代配置和证书，不会删除站点数据库；自动备份位于 `/root/linux-daimon/backup/nginx-domain`。
+- 配置删除复用失败恢复保护；证书删除先核查单域名 SAN、Nginx/其他续期记录/Docker 挂载引用、权限、链接及打开文件。共享、多域名、通配符或无法判定的证书保留；ECC 使用 `--ecc`，RSA/ECC 双记录需人工指定。申请失败不再自动删除无法证明属于本次操作的配置或证书。
 
 ### SSH 与 UFW
 
@@ -83,7 +83,10 @@ Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python
 
 ### Docker 备份
 
-- Docker 迁移菜单使用独立函数命名，避免覆盖系统备份菜单；备份目录权限为 700，删除需要确认。
+- 输入 `STOP_BACKUP` 后停止所选容器（Compose 自动纳入整个项目），保存可写层快照、镜像、完整运行参数、挂载数据及 Compose 配置，再恢复原运行状态。备份目录为 `/tmp/docker_backup_*`，权限 700；失败保留 `incomplete.json`，不能作为完整备份恢复。
+- 输入 `RESTORE` 后只向指定的已有空目录恢复，bind 数据改映射至该目录；保留 volume 类型、TCP/UDP、多 HostIP 绑定、Entrypoint/Cmd、环境、重启策略及原运行/停止状态。任何同名容器（含停止态）、卷、网络或 Compose 项目均拒绝，不删除原资源。
+- Compose 保留原项目文件和有序配置清单，并生成私有 `compose.restore.json` 作为恢复后的规范化配置，使用快照镜像，不重新 build。恢复后仍需验证应用登录、数据库和业务接口；失败记录在恢复目录的 `restore-state.json`，已恢复的数据不会自动删除。
+- 当前支持本机 Linux Docker Unix socket、普通容器、单副本 Compose 服务、普通本地卷和 bridge 网络。旧格式无完整清单的备份、跨平台、Swarm、特殊设备/共享命名空间、外部 configs/secrets、目录外 build 上下文、ACL/xattrs 等场景明确拒绝，不静默丢失信息。不能直接执行旧版生成的还原脚本；应从原环境重新生成新版备份或在隔离环境人工恢复旧数据。
 
 ### 系统信息查询
 
@@ -375,7 +378,7 @@ Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停�
 
 更新、启动或进入本菜单会检测已安装的受管理 `/root`、Emby 脚本；识别旧版本后原子替换，保留服务器名称和已有时间，合并重复 `/root` 任务，并把旧版 `custom:<服务器名>` 运行标识统一迁移为 `root`。任务运行、身份歧义或未知脚本模板会明确阻止升级。未安装任务的服务器不会自动创建任务。`/root` 备份只有统一的服务器命名入口：`qq3303338052@outlook:<服务器名>` → `kissska1:<服务器名>`；Emby 独立使用两边的 `Emby`，Nginx 本地包仍包含在服务器目录的 `linux-daimon/backup/nginx-domain/auto_latest`。
 
-新版脚本启动或进入本菜单时，会先验证 `kissska1`，再自动删除旧 Infini-cloud 任务和脚本，保留原执行时间并生成对应的 kissska1 同步任务。
+启动时仅提示旧 Infini-cloud 脚本，不改脚本或 cron。管理菜单选项 6 经 `MIGRATE` 确认后，只迁移选中的 Bitwarden/Via 旧脚本中的字面量 `Infini-cloud:` 为 `kissska1:`，保留文件名、同步方向及定时，不改自定义内容；旧文件会在其他脚本中显示。运行中、链接、不可信权限、语法错误或锁冲突会拒绝。
 
 | 序号 | 选项 | 作用 |
 |---:|---|---|
@@ -384,6 +387,7 @@ Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停�
 | 3 | 一键安装 | 默认预填所有脚本编号，用户可自行删除编号 |
 | 4 | 一键卸载 | 默认预填所有脚本编号，用户可自行删除编号 |
 | 5 | 立即执行一次 `/root` 备份 | 需要确认口令，执行结果也记录到自动同步记录 |
+| 6 | 迁移旧 Infini-cloud 脚本 | 显式选择并确认，保留原路径和 cron |
 | 0 | 返回主菜单 | 返回上一级菜单 |
 
 
@@ -408,7 +412,7 @@ Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停�
 
 进入菜单后顶部只读显示 Docker Compose、Nginx 配置、自动同步脚本、Compose 自动更新脚本和证书续期任务状态。菜单 1 会预填当前全部项目编号，用户可以删除不需要处理的编号，输入 `RETIRE` 后执行；各类别批量操作按编号倒序处理，避免删除前面的项目后编号错位。
 
-退役操作会停止 Compose 服务（不使用 `-v`，保留 named volume、bind mount 和镜像），删除托管路径下的 Nginx 配置及 `/root/domain/<域名>` 证书目录，并删除对应脚本和精确匹配的 crontab 任务。只允许处理 `/etc/nginx/sites-enabled`、`/etc/nginx/sites-available`、`/home/web/conf.d`、脚本托管目录和证书续期脚本；不会修改 DNS、UFW、Mihomo、SSH 或 rclone 配置，也不会自动创建备份。
+退役按项目名、工作目录和配置清单复核完整容器 ID，先停止再非强制移除所选容器；不执行 `compose down`，保留卷、网络、镜像和项目文件，同名不同上下文会拒绝。Nginx 配置删除失败会尝试恢复；证书保留，须在证书管理单独核查。脚本删除使用精确 cron 匹配。只允许处理 `/etc/nginx/sites-enabled`、`/etc/nginx/sites-available`、`/home/web/conf.d`、脚本托管目录和证书续期脚本；不会修改 DNS、UFW、Mihomo、SSH 或 rclone 配置，也不会自动创建备份。
 
 ## 第三方脚本引用
 

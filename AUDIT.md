@@ -1,3 +1,49 @@
+# 非 SSH 修复交付（2026-09-29）
+
+本轮按用户授权仅使用新加坡、西班牙、wawo；SSH 不在本轮范围，先前 SSH 限制仍有效。最新产品代码 `c57065b`。本轮只收尾下列非 SSH 风险，不宣称历史菜单清单全部分支已验收。
+
+## 修复与验证范围
+
+| 任务 | 实现 | 验证 |
+|---|---|---|
+| 旧 cron 迁移 | 启动只提示；选项 6 显式选择、确认，只替换旧脚本字面量远端，原路径/方向/cron/自定义脚本保留；共享锁、身份和语法检查、原子发布 | 9 项回归在三台原生 Linux 执行；写入、锁、权限、链接和打开文件是真实操作，远端连通检查使用替身，不冒充真实云端迁移 |
+| Compose 退役 | 同时核查项目/工作目录/配置列表，固定完整容器 ID，stop 后非强制 rm；不执行 down，保留卷/网络/镜像和文件 | 两台 Docker 各 4 项真实检查：同名不同上下文拒绝、所选对象退役、卷/镜像保留、重复执行；另 6 项回归覆盖查询/停止失败和列表变化 |
+| 证书删除与失败清理 | 单域名 SAN、共享引用、路径/权限/链接/打开文件检查；ECC 明确加 --ecc；逐文件删除，不递归删目录；失败申请保留无法证明归属的配置 | 三台各 14 项回归，使用真实 OpenSSL 证书、文件和 flock；acme 外部命令及服务探测使用替身，不会注销真实 CA 账户或业务证书 |
+| Docker 备份/恢复 | 完整运行参数、可写层和镜像、bind/volume/tmpfs 类型及数据、Compose 文件/环境/上下文；冲突拒绝、空目录、归档校验、明确部分失败状态 | 新加坡 Docker 29.7.2 / 西班牙 29.8.1，均 ARM64；真实创建独立夹具、备份、删除夹具再恢复，检验唯一数据标记而非仅容器启动；wawo 没有 Docker，未安装或冒充其端到端验收 |
+
+Docker 实测覆盖原运行容器恢复/原停止容器不启动、失败备份恢复原运行态、伪造路径穿越归档拒绝、同名运行/停止容器和卷保护、UDP 多 HostIP 绑定、Entrypoint/Cmd/环境/策略、只读 bind 重定位、named volume 数据、可写层唯一标记、healthcheck、tmpfs 配置保留且临时内容不回放、Compose 有序文件/`.env`/新上下文可被 Compose CLI 识别。未执行真实业务登录、数据库恢复或所有 Docker 版本/CPU 的验收。
+
+## 最终验收与清理
+
+- `c57065b` 已推送，三台通过已安装工具箱更新器部署，两个安装路径的归一化 SHA256 均为 `eb9775760ba0a0622ea836bb18b3bd8e554352ae1ffc72cf5a35626943b21cbc`。
+- 三台各执行 35 套隔离回归，内外退出均为 0，采集状态未变；各有 10 项依赖 jq 的历史 Docker 配置用例跳过，不计通过，本轮未安装依赖。新增 Docker 引擎 16 项、证书 14 项、cron 9 项与 Compose 退役 6 项在三台均无跳过通过。
+- 两台 Docker 主机最新版本各完成 18 项原生检查（含挂载元数据观测），完整备份/恢复成功、失败字段为空；context 与错误 DOCKER_HOST 同时设置时仍使用显式选定的实例。不是完整菜单或真实业务数据库验收。
+- 最终三台安装 hash 匹配，采集的业务配置/服务/容器状态无变化；任务目录、测试进程、loop、自有 Docker 容器/卷/网络/镜像及 `/tmp/docker_backup_daimon-audit-*` 均无残留。本轮未创建 VM、未下载镜像、未安装宿主软件；之前的 VM 删除记录见历史部分。保留本地回归脚本与验收报告。
+- Bash 语法、菜单静态审计（681 patterns / 86 case blocks / 9 内嵌 Bash）与 diff 检查通过。Windows 引擎回归的 3 项原生用例跳过，已由三台 Linux 执行覆盖；本地首次检查因 UTF-8/Bash 环境变量未设置失败，设置后重跑通过。
+
+## 明确限制
+
+- Docker 新包为带校验清单的版本 2；不直接执行旧版生成的还原脚本，不直接把旧归档覆盖到 `/`。旧格式缺少完整信息时需要从原环境重新生成包，或在隔离环境人工恢复。
+- 支持本机 Linux Unix-socket Docker、普通容器、单副本 Compose、普通本地卷/bridge。跨平台、Swarm、共享命名空间/特殊设备、复杂卷、外部 configs/secrets、目录外 build、ACL/xattrs、set-ID 和不安全链接等明确拒绝；不是静默丢字段。tmpfs 内容本身不持久化。
+- Docker 恢复遇外部错误可能留下本次已创建资源和数据，记录在 `restore-state.json`，不会自动强删或声称回滚。备份遇强杀/断电无法依靠 trap 保证恢复，失败包中的 `incomplete.json` 用于核查原容器。
+- Compose 恢复保留原项目资料，但运行使用规范化 `compose.restore.json` 和快照镜像，不重新 build；以后主动修改原始 YAML 时须重新核对实际使用的配置文件。
+- 证书保护覆盖所检查的 Nginx、Docker、续期记录及打开文件；未知外部服务和非协作 root 并发不在完整证明范围。共享、通配符、多域名、双 RSA/ECC 记录或无法判定时保留，而非强行删除。
+- `/root` 定时备份流程未改动。历史 `OPTION_AUDIT.tsv` 中未执行条目不等于确定缺陷，更不等于本轮通过数。
+
+## 失败记录与依据
+
+- `824758a` 两台原生备份首次被普通 volume 的默认 `Mode=z` 误拒绝；`1ac7a03` 区分 volume 默认值与 bind SELinux relabel，新增红/绿回归后实测通过。
+- 原生测试发现 ECC 参数遗漏、符号链接配置目录被忽略、ACL/xattrs 静默丢失、非法 uid/gid 未提前拒绝，共四项红测试；`5758591` 修复后重跑。`5470d15` 补齐 API tmpfs，`c6eda7a` 统一 Docker CLI/Engine 的 DOCKER_CONTEXT 优先级，均先有失败回归再修复。
+- `c6eda7a` 的新增 context 实测未通过：首轮错误地假设 default context 忽略 DOCKER_HOST；改用独立命名 context 后，仍观测到环境变量未按预期选择。显式 `--context` 探测成功，`c57065b` 将 CLI 和 API 的 context 都显式固定，新增命令参数回归先红后绿，两台完整原生备份/恢复重跑通过。首轮初始化遗留的两个目录经核验 owner、文件、进程/挂载/FD 与 Docker 标签后删除；后续夹具初始化纳入清理保护。
+- Compose 退役第一次夹具因 UUID 拼接错误在创建资源前失败，修正夹具后才计实测通过。失败证据保留，不归因于业务环境。
+- 采用 Engine Config/HostConfig 而非拼接 shell 命令，依据 [Docker SDK API 文档](https://docker-py.readthedocs.io/en/latest/api.html) 与 [官方实现](https://github.com/docker/docker-py/blob/master/docker/api/container.py) 的 Entrypoint、端口列表、HostIP、挂载和 NetworkingConfig 定义。归档先完整验证再写入，依据 [Python tarfile 文档](https://docs.python.org/3/library/tarfile.html)；Ubuntu Python 3.10 不依赖 Python 3.14 的默认安全过滤器。2026-09-29 查阅；实际兼容性以上述已测 Docker/发行版为准。
+
+证据位于本地 `.tmp/audit-20260928/`：`7054f73-*`、`461dd2a-compose-retire-real-r2.jsonl`、`retire-cert-suites.jsonl`、`824758a-docker-engine-real.jsonl`、`1ac7a03-metadata-ecc-red.jsonl`、`5758591-*`、`5470d15-*`、`c6eda7a-*`、`c57065b-*`。临时证据不会提交密钥、真实配置或备份内容。
+
+---
+
+## 以下为历史进度（不代表当前版本状态）
+
 # 当前进度（2026-09-29，尚未全量验收）
 
 最新代码 `81f1844`，六台宿主均通过已安装工具箱更新器部署，归一化 SHA256 为 `49bf706b5730be41af6463b0e821106e921a41ca1a011c4294f52359b0b23a5e`。下文早期版本记录属于历史证据，不代表当前版本全量验收。

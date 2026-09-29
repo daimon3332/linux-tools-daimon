@@ -1073,25 +1073,16 @@ ls -1dt /tmp/docker_backup_* 2>/dev/null
 ```
 解释：显示已有备份。
 
-```bash
-docker ps --format '{{.Names}}'
-docker inspect 容器名 > /tmp/docker_backup_时间/容器名_inspect.json
-tar -czf /tmp/docker_backup_时间/compose_project_项目名.tar.gz -C compose目录 .
-tar -czpf /tmp/docker_backup_时间/容器名_卷名.tar.gz -C / 卷路径
-```
-解释：备份容器 inspect、compose 目录、挂载卷。
+备份使用本机 Docker Engine API 读取完整 inspect，确认后停止所选容器（Compose 扩展为整个项目），提交可写层快照并通过 `docker image save` 保存镜像，Python tarfile 打包挂载和项目文件，生成带 SHA256 的版本 2 清单。完成或可恢复失败后重新启动原运行容器；失败包保留 `incomplete.json`。不自动打包无关 `/home/docker` 文件，也不生成旧版有损 `docker run` 还原脚本。
 
 ```bash
 scp -P SSH端口 -o StrictHostKeyChecking=no -r /tmp/docker_backup_xxx 用户@目标IP:/tmp/
 ```
 解释：迁移备份到目标服务器。
 
-```bash
-tar -xzf compose_project_项目名.tar.gz -C 原目录
-cd 原目录 && docker compose down && docker compose up -d
-docker run -d --name 容器名 -p 主机端口:容器端口 -v 主机路径:容器路径 -e 环境变量 镜像
-```
-解释：还原 compose 项目或普通容器。
+恢复先验证完整清单、归档路径/链接/类型/校验和、架构、空目标和容器/卷/网络/项目冲突，然后恢复数据、加载快照镜像并通过 Engine `POST /containers/create` 重建。完整 Config/HostConfig 保留环境变量数组、Entrypoint/Cmd、TCP/UDP、多 HostIP/HostPort 绑定、用户、工作目录、健康检查和重启策略；bind 指向恢复目录，named volume 保持卷类型。原停止容器不启动，原运行容器检查运行状态及已有 healthcheck；不会删除同名停止容器。
+
+Compose 原文件和有序 `-f` 清单保存在包中，恢复后生成权限 600 的 `compose.restore.json`，更新工作目录/配置文件标签，保留项目名称、网络和卷。使用快照镜像而不是重新 build。单副本服务按依赖启动；应用级一致性仍需业务验证。旧格式无完整清单、跨平台、特殊设备/命名空间、Swarm、非普通本地卷、外部 configs/secrets、目录外 build、ACL/xattrs、set-ID 等不支持场景拒绝执行。中途失败保留 `restore-state.json` 及部分恢复资源，不能声称已回滚。
 
 ```bash
 rm -rf -- /tmp/docker_backup_时间
@@ -1304,17 +1295,9 @@ cat > /etc/nginx/sites-available/配置名
 ln -sf /etc/nginx/sites-available/配置名 /etc/nginx/sites-enabled/
 nginx -t && systemctl reload nginx
 ```
-解释：生成 Nginx 配置并重载。HTTP 配置会先放行 `/.well-known/acme-challenge/` 到 `/var/www/acme-challenge`，再跳转 HTTPS；HTTPS 配置包括 `listen 443 ssl http2`、`ssl_certificate`、`proxy_pass http://127.0.0.1:端口`。申请证书 + 配置 nginx 如果失败，会自动删除本次生成的证书目录、acme 记录和 nginx 配置。
+解释：生成 Nginx 配置并重载。HTTP 配置会先放行 `/.well-known/acme-challenge/` 到 `/var/www/acme-challenge`，再跳转 HTTPS；HTTPS 配置包括 `listen 443 ssl http2`、`ssl_certificate`、`proxy_pass http://127.0.0.1:端口`。申请失败时保留无法证明归属的配置和证书；不按域名推测并递归删除已有内容。
 
-删除 nginx 配置 + 证书：
-
-```bash
-rm -f /etc/nginx/sites-available/配置名 /etc/nginx/sites-enabled/配置名
-rm -rf /root/domain/example
-~/.acme.sh/acme.sh --remove -d example.com
-nginx -t && systemctl reload nginx
-```
-解释：删除站点配置、证书目录和 acme 记录。
+删除 nginx 配置 + 证书：配置先经临时移出、`nginx -t` 和 reload 验证，失败尝试恢复。证书只处理 `/root/domain` 的直接可信目录，OpenSSL SAN 必须仅包含所选域名；检查 Nginx、其他续期记录、Docker 挂载及打开文件，拒绝共享、通配符、链接、不可信权限和未知目录内容。确认无引用后执行 `acme.sh --remove -d 域名`（ECC 加 `--ecc`），再按已验证的文件逐个 unlink/rmdir；不使用递归删除。RSA/ECC 双记录或注册移除失败会保留文件。配置已删而证书被保护时明确报告部分完成。
 
 查看/移除证书：
 
@@ -1590,7 +1573,7 @@ chmod +x /root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh
 ls -1 /root/linux-daimon/backup-sh/*.sh 2>/dev/null
 crontab -l
 ```
-解释：显示内置脚本和已有其他脚本的安装状态；状态会检查脚本文件和对应 crontab 路径。启动新版脚本或进入本菜单时，会在确认 `kissska1` 可访问后自动迁移旧 Infini-cloud 脚本和任务，并保留原执行时间。旧版服务器命名的 `/root` 自定义脚本会统一迁移为 `root` 任务，不再单列成另一套脚本。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
+解释：显示内置脚本和已有其他脚本的安装状态；状态会检查脚本文件和对应 crontab 路径。启动时只提示旧任务。选项 6 经选择和 `MIGRATE` 确认后检查 `kissska1`，持有共享锁、核查身份和语法并原子替换所选旧脚本的字面量远端；不改 cron、不改同步方向、不改文件名、不改其他自定义脚本。旧版服务器命名的 `/root` 自定义脚本会统一迁移为 `root` 任务，不再单列成另一套脚本。内置脚本第 4 项是本地域名和 Nginx 配置备份，不使用 rclone。
 
 内置脚本目录：
 
@@ -1737,14 +1720,7 @@ crontab -l
 
 一键退役：
 
-```bash
-docker compose -p 项目名 -f compose.yml down
-rm -f /etc/nginx/sites-enabled/站点
-rm -f /etc/nginx/sites-available/站点 /home/web/conf.d/站点
-rm -rf /root/domain/域名
-crontab -l | awk -v path="/root/linux-daimon/backup-sh/脚本名.sh" '/^[[:space:]]*#/ || index(" " $0 " ", " " path " ") == 0' | crontab -
-```
-解释：菜单 1 默认预填全部 `C/N/A/U/R` 编号，用户可删减后输入 `RETIRE` 确认；每类按编号倒序执行。Compose 停止不带 `-v`，保留卷、挂载和镜像；脚本和任务仅限托管目录。不会修改 DNS、UFW、Mihomo、SSH 或 rclone 配置，也不会创建备份。
+菜单 1 默认预填全部 `C/N/A/U/R` 编号，用户删减后输入 `RETIRE` 确认；执行前固定和复核对象。Compose 按项目名、工作目录、配置清单验证完整容器 ID，先 `docker stop --time 30 ID`，确认停止后 `docker rm ID`，不强删、不重新解析项目配置、不删除卷/镜像/网络。上下文冲突或停止失败即停止该项，不假称回滚已完成的独立项目。Nginx 退役只删托管配置并验证 reload，证书保留。脚本通过精确解析 cron 后移除；不会修改 DNS、UFW、Mihomo、SSH 或 rclone 配置，也不创建备份。
 
 ## 20. Debian 基础工具
 

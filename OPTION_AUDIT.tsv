@@ -586,11 +586,11 @@ linux_tools	13429	$sub_choice	1	tool_category_menu thirdparty "第三方工具"	
 linux_tools	13429	$sub_choice	2	tool_category_menu programming "编程工具"	not-run	-
 linux_tools	13429	$sub_choice	0	return	not-run	-
 linux_tools	13429	$sub_choice	*	echo "无效的输入!"; break_end	not-run	-
-docker_ssh_migration/docker_migration_restore	13713	"$restart_policy"	""|no		not-run	-
-docker_ssh_migration/docker_migration_restore	13713	"$restart_policy"	*	run_args+=(--restart "$restart_policy")	not-run	-
-docker_ssh_migration/main_menu	13806	$choice	1	docker_migration_backup	not-run	-
+docker_ssh_migration/docker_migration_restore	13713	"$restart_policy"	""|no		replaced	824758a: legacy shell reconstruction removed; version-2 Engine path tested natively on Singapore/Spain; unsupported old archives rejected
+docker_ssh_migration/docker_migration_restore	13713	"$restart_policy"	*	run_args+=(--restart "$restart_policy")	replaced	824758a: legacy shell reconstruction removed; version-2 Engine path tested natively on Singapore/Spain; unsupported old archives rejected
+docker_ssh_migration/main_menu	13806	$choice	1	docker_migration_backup	engine-native/partial	5758591/5470d15: real isolated Docker backup/restore with full metadata/data/Compose checks; menu confirmation routing regression; not every menu path
 docker_ssh_migration/main_menu	13806	$choice	2	docker_migration_migrate	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
-docker_ssh_migration/main_menu	13806	$choice	3	docker_migration_restore	menu-real-vm/privacy-only	b68aef3; bothVMs actualmain8->19->3 withinspectfixturefromrealDockercreate, busybox1.37 andTOKEN; restoredcontainerretainsENVwithoutconsoleleak; testcontainer/tag/tmpcleanup; NOvolume/archive/Compose/fullfidelityacceptance
+docker_ssh_migration/main_menu	13806	$choice	3	docker_migration_restore	engine-native/partial	5758591/5470d15: real isolated Docker backup/restore with full metadata/data/Compose checks; menu confirmation routing regression; not every menu path
 docker_ssh_migration/main_menu	13806	$choice	4	docker_migration_delete_backup	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
 docker_ssh_migration/main_menu	13806	$choice	0	return	menu-real/partial	2026-09-28 docker; six hosts; IPv4/IPv6 loopback migration and owned deletion
 docker_ssh_migration/main_menu	13806	$choice	*	echo -e "${gl_hong}无效选项${gl_bai}"	not-run	-
@@ -674,8 +674,8 @@ fail2ban_manager	15789	"$sub_choice"	3	fail2ban_check_sshd_jail	not-run	-
 fail2ban_manager	15789	"$sub_choice"	0	return	not-run	-
 fail2ban_manager	15789	"$sub_choice"	*	echo "无效的输入!"	not-run	-
 embedded@15817/nginx_domain_cert_dir_for_domain	390	"$cert_path"	/root/domain/*/fullchain.pem	dirname "$cert_path"; return 0	not-run	-
-embedded@15817/remove_cert	443	"$cert_dir"	/root/domain/*	[ -d "$cert_dir" ] && rm -rf "$cert_dir"	not-run	-
-embedded@15817/remove_nginx_and_cert	531	"$CERT_DIR"	/root/domain/*|/etc/letsencrypt/live/*	[ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"	not-run	-
+embedded@15817/remove_cert	443	"$cert_dir"	/root/domain/*	[ -d "$cert_dir" ] && rm -rf "$cert_dir"	replaced	461dd2a..5758591: recursive certificate deletion removed; native OpenSSL/filesystem guard tests, mocked acme/service probes
+embedded@15817/remove_nginx_and_cert	531	"$CERT_DIR"	/root/domain/*|/etc/letsencrypt/live/*	[ -n "$CERT_DIR" ] && [ -d "$CERT_DIR" ] && rm -rf "$CERT_DIR"	replaced	461dd2a..5758591: recursive certificate deletion removed; native OpenSSL/filesystem guard tests, mocked acme/service probes
 embedded@15817/CLI	1065	$ACTION	1	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } read -p "请输入 nginx 配置文件名称: " NGINX_NAME validate_name "$NGINX_NAME" || { echo -e "${RED}配置名不合法${NC}"; continue; } read -p "请输入代理端口号: " PORT va	not-run	-
 embedded@15817/CLI	1065	$ACTION	2	remove_nginx_and_cert	not-run	-
 embedded@15817/CLI	1065	$ACTION	3	read -p "请输入域名: " DOMAIN validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; } issue_cert "$DOMAIN" restart_nginx_if_needed	not-run	-
@@ -822,7 +822,7 @@ crontab_sync_write_script	19647	"$id"	via	cat > "$script_file" <<'EOF' #!/bin/ba
 crontab_sync_write_script	19647	"$id"	nginxdomain	rclone_nginx_write_backup_script "$script_file"	not-run	-
 crontab_sync_write_script	19647	"$id"	root|emby|custom	local backup_name kind source if [ "$id" = emby ]; then backup_name=Emby; kind=emby; source=/root/emby else backup_name=$(basename "$target" .sh) if [ "$backup_name" = Root_Backup ]; then backup_name=$(crontab_sync_root_name) || return 1 fi	not-run	-
 crontab_sync_write_script	19647	"$id"	*	return 1	not-run	-
-crontab_sync_reconcile_legacy	20601	"$custom_file"	"$bit_old"|"$via_old"	continue	not-run	-
+crontab_sync_reconcile_legacy	20601	"$custom_file"	"$bit_old"|"$via_old"	continue	replaced/read-only	7054f73: startup no longer writes cron/scripts; explicit selected-file migration separately tested on three hosts
 crontab_sync_install_one	20647	"$id"	bitwarden|via|root|emby|custom	if ! crontab_sync_remote_ready; then echo -e "${gl_hong}kissska1 连接检查失败，未修改脚本和定时任务。${gl_bai}" return 1 fi	not-run	-
 crontab_sync_get_item_by_number	20793	"$num"	1|2|3|4|5|6	id=$(crontab_sync_builtin_id_by_number "$num") if [ "$id" = root ]; then if ! file=$(crontab_sync_script_file_by_id "$id" 2>/dev/null); then [ "$action" = install ] || return 1 crontab_sync_prompt_root_name >/dev/null || return 1 file=$(cro	not-run	-
 crontab_sync_handle_numbers	20831	"$action"	install|remove		not-run	-
@@ -842,7 +842,7 @@ server_retire_capture	21208	"$1"	A	server_retire_script_items	not-run	-
 server_retire_capture	21208	"$1"	U	server_retire_update_items	not-run	-
 server_retire_capture	21208	"$1"	R	printf '%s %s\n' "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" "$DAIMON_ROOT_DIR/cert-renew.sh"	not-run	-
 server_retire_capture	21208	"$1"	*	return 1	not-run	-
-server_retire_apply_token	21228	"$token"	C*	IFS=$' ' read -r project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	not-run	-
+server_retire_apply_token	21228	"$token"	C*	IFS=$' ' read -r project workdir config_files <<< "$item"; server_retire_compose_stop "$project" "$workdir" "$config_files"	helper-native/partial	461dd2a/5758591: two native Docker hosts, four checks each; 6 guard regressions; full menu not separately driven
 server_retire_apply_token	21228	"$token"	N*	IFS=$' ' read -r file domains enabled <<< "$item"; server_retire_nginx_remove "$file" "$domains"	not-run	-
 server_retire_apply_token	21228	"$token"	A*|U*	file=${item%%$' '*}; server_retire_remove_script "$file"	not-run	-
 server_retire_apply_token	21228	"$token"	R1	IFS=$' ' read -r file workdir <<< "$item" server_retire_remove_script "$file" || failure=1 server_retire_remove_script "$workdir" || failure=1 return "$failure"	not-run	-
@@ -983,3 +983,4 @@ linux_tools/programming/install		tool number	7	install_tool_by_id claude	not-run
 linux_tools/programming/remove		tool number	7	remove_tool_by_id claude	not-run	-
 linux_tools/programming/install		tool number	8	install_tool_by_id codex	not-run	-
 linux_tools/programming/remove		tool number	8	remove_tool_by_id codex	not-run	-
+crontab_sync_manager	21250	"$sub_choice"	6	crontab_sync_migrate_legacy_menu	helper-native/partial	7054f73: explicit migration; 9 native tests/host; remote readiness mocked; full menu not separately driven
