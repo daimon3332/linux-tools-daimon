@@ -1137,10 +1137,11 @@ test_symlink_restore_guard() {
 }
 
 test_retire_cron_exact_cleanup() {
+    export MSYS2_ARG_CONV_EXCL="*"
     local fixture="$WORK/retire-cron" current_file="$WORK/retire-cron.current" next_file="$WORK/retire-cron.next"
     mkdir -p "$fixture"
     printf '%s\n' "# keep /root/linux-daimon/backup-sh/task.sh in documentation" "0 1 * * * /root/linux-daimon/backup-sh/task.sh" "0 2 * * * /root/linux-daimon/backup-sh/task.sh-extra" "0 3 * * * /root/keep.sh" > "$current_file"
-    load_function server_retire_remove_cron_path || return 1
+    load_function server_retire_remove_cron_path && load_function server_retire_filter_cron && load_function rsync_cron_read || return 1
     crontab() {
         if [ "$1" = "-l" ]; then cat "$current_file"; return 0; fi
         cat > "$next_file"
@@ -1166,7 +1167,7 @@ test_retire_compose_preserves_volumes() {
 test_retire_script_path_guard() {
     local fixture="$WORK/retire-guard"
     mkdir -p "$fixture"
-    load_function server_retire_remove_script || return 1
+    load_function server_retire_remove_script && load_function server_retire_script_guard && load_function server_retire_sync_dirs && load_function server_retire_update_dirs || return 1
     root_use() { :; }
     ! server_retire_remove_script /tmp/not-managed.sh
 }
@@ -1175,7 +1176,8 @@ test_retire_bulk_order() {
     local log="$WORK/retire-order.log"
     : > "$log"
     load_function server_retire_apply_token || return 1
-    load_function server_retire_apply_tokens_for_prefix || return 1
+    load_function server_retire_apply_tokens_for_prefix && load_function server_retire_apply_selection || return 1
+    server_retire_capture() { for n in $(seq 1 10); do echo "fixture$n"; done; }
     server_retire_apply_token() { printf '%s\n' "$1" >> "$log"; }
     server_retire_apply_tokens_for_prefix N 'N1 N10 N2' || return 1
     [ "$(tr '\n' ' ' < "$log")" = 'N10 N2 N1 ' ]
