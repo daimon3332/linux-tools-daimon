@@ -227,9 +227,13 @@ install_add_docker() {
 }
 
 check_crontab_installed() {
-	if ! command -v crontab >/dev/null 2>&1; then
-		install_crontab
-	fi
+	daimon_require_cmd crontab || return 1
+	systemctl enable --now cron >/dev/null 2>&1 || systemctl enable --now crond >/dev/null 2>&1 ||
+		service cron start >/dev/null 2>&1 || service crond start >/dev/null 2>&1 || true
+	grep -qxE 'cron|crond' /proc/[0-9]*/comm 2>/dev/null || {
+		echo -e "${gl_hong}cron 服务未运行，定时任务不会执行。${gl_bai}" >&2
+		return 1
+	}
 }
 
 install_crontab() {

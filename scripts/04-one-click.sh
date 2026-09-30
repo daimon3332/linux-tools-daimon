@@ -8,7 +8,7 @@ daimon_network_verify_bbr_fq() {
 
 daimon_network_verify_active_fq() {
 	local interfaces iface queues
-	command -v tc >/dev/null 2>&1 || { echo "缺少 tc，无法验证实际队列。" >&2; return 1; }
+	daimon_require_cmd tc >&2 || return 1
 	interfaces=$({ ip -o -4 route show default; ip -o -6 route show default; } 2>/dev/null |
 		awk '{for(i=1;i<NF;i++) if($i=="dev") print $(i+1)}' | sort -u)
 	[ -n "$interfaces" ] || { echo "没有默认路由，无法验证实际队列。" >&2; return 1; }

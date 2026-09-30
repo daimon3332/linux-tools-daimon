@@ -131,8 +131,26 @@ def archive_urls(revision, region):
     return proxies + direct if region == 'CN' else direct + proxies
 
 
+def resolve(revision, region):
+    if revision != 'master':
+        return revision
+    url = 'https://api.github.com/repos/' + REPO + '/git/ref/heads/master'
+    proxies = ['https://gh-proxy.com/' + url, 'https://ghproxy.net/' + url]
+    for endpoint in (proxies + [url] if region == 'CN' else [url] + proxies):
+        try:
+            with urllib.request.urlopen(urllib.request.Request(endpoint, headers={'User-Agent': 'linux-tools-daimon'}), timeout=20) as stream:
+                target = json.loads(stream.read(65536))['object']
+            if target['type'] == 'commit' and re.fullmatch(r'[a-f0-9]{40}', target['sha']):
+                print('Latest revision: ' + target['sha'], file=sys.stderr, flush=True)
+                return target['sha']
+        except Exception as error:
+            print('Revision lookup failed: ' + endpoint + ': ' + str(error), file=sys.stderr, flush=True)
+    return revision
+
+
 def download(revision, target):
     region = country()
+    revision = resolve(revision, region)
     for url in archive_urls(revision, region):
         print('Downloading complete package: ' + url, file=sys.stderr, flush=True)
         try:

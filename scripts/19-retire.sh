@@ -166,7 +166,7 @@ server_retire_update_items() {
 }
 
 server_retire_filter_cron() {
-	command -v python3 >/dev/null 2>&1 || { echo "安全识别定时任务需要 python3，未修改。" >&2; return 1; }
+	daimon_require_cmd python3 || { echo "未修改定时任务。" >&2; return 1; }
 	python3 -c '
 import re, shlex, sys
 target, runner = sys.argv[1:]

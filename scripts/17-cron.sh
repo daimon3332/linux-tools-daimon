@@ -1655,9 +1655,8 @@ crontab_sync_install_one() {
 	local cron_line="$3"
 	local current next checked runner
 	root_use
-	if [ "$id" != "nginxdomain" ] && ! command -v rclone >/dev/null 2>&1; then
-		echo -e "${gl_hong}未检测到 rclone，请先安装 rclone。${gl_bai}"
-		return 1
+	if [ "$id" != "nginxdomain" ]; then
+		rclone_require || return 1
 	fi
 	case "$id" in
 		bitwarden|via|root|emby|custom)

@@ -1,14 +1,7 @@
 #!/bin/bash
 
 docker_config_require_tool() {
-	local tool="$1"
-	command -v "$tool" >/dev/null 2>&1 && return 0
-	echo "Docker 配置需要 $tool，正在安装..."
-	if ! install "$tool"; then
-		echo "依赖 $tool 安装失败，未修改 Docker 配置。请检查上方软件源错误。" >&2
-		return 1
-	fi
-	command -v "$tool" >/dev/null 2>&1 || { echo "安装后仍找不到 $tool，未修改 Docker 配置。" >&2; return 1; }
+	daimon_require_cmd "$1" || { echo "未修改 Docker 配置。" >&2; return 1; }
 }
 
 docker_daemon_json_merge() (
@@ -16,7 +9,8 @@ docker_daemon_json_merge() (
 	shift
 	[ "$(id -u)" -eq 0 ] || return 1
 	docker_config_require_tool jq || return 1
-	command -v dockerd >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || { echo "缺少 dockerd 或 flock，未修改 Docker 配置。" >&2; return 1; }
+	command -v dockerd >/dev/null 2>&1 || { echo "未检测到 Docker 引擎（dockerd），请先在 Docker 管理中安装 Docker；未修改配置。" >&2; return 1; }
+	docker_config_require_tool flock || return 1
 	[ ! -L /etc/docker ] && [ "$(realpath -m /etc/docker)" = /etc/docker ] || return 1
 	mkdir -p /etc/docker || return 1
 	[ "$(stat -c %u /etc/docker)" = 0 ] && (( (8#$(stat -c %a /etc/docker) & 8#022) == 0 )) || return 1
@@ -571,7 +565,7 @@ save_iptables_rules() {
 	mkdir -p /etc/iptables
 	touch /etc/iptables/rules.v4
 	iptables-save > /etc/iptables/rules.v4
-	check_crontab_installed
+	check_crontab_installed || return 1
 	crontab -l | grep -v 'iptables-restore' | crontab - > /dev/null 2>&1
 	(crontab -l ; echo '@reboot iptables-restore < /etc/iptables/rules.v4') | crontab - > /dev/null 2>&1
 
@@ -1453,7 +1447,8 @@ PYDOCKER_BACKUP
 docker_migration_engine() (
     umask 077
     local program
-    command -v python3 >/dev/null && command -v docker >/dev/null || { echo "需要已安装的 Python 3 和 Docker。" >&2; return 1; }
+    command -v docker >/dev/null || { echo "未检测到 Docker，请先在 Docker 管理中安装 Docker。" >&2; return 1; }
+    daimon_require_cmd python3 || return 1
     program=$(mktemp) || return 1
     trap 'rm -f -- "$program"' EXIT
     docker_migration_program > "$program" || return 1
@@ -2060,16 +2055,8 @@ docker_compose_update_install_one() {
 	local script_file legacy_script_file cron_line project_id config_file
 	local -a compose_config_files
 	root_use
-	check_crontab_installed
-	docker_config_require_tool python3 || return 1
-	if ! command -v timeout >/dev/null 2>&1; then
-		install coreutils || { echo "无法安装 timeout 所需的 coreutils，未配置自动更新。" >&2; return 1; }
-		command -v timeout >/dev/null 2>&1 || { echo "仍缺少 timeout，未配置自动更新。" >&2; return 1; }
-	fi
-	if ! docker compose version >/dev/null 2>&1; then
-		echo -e "${gl_hong}Docker Compose 插件不可用，无法配置自动更新。${gl_bai}"
-		return 1
-	fi
+	check_crontab_installed || return 1
+	daimon_require_cmd python3 && daimon_require_cmd timeout && docker_compose_require_plugin || { echo "未配置自动更新。" >&2; return 1; }
 	if ! docker compose up --help 2>/dev/null | grep -q -- '--wait'; then
 		echo -e "${gl_hong}Docker Compose 版本过旧，不支持健康等待，请先更新 Docker。${gl_bai}"
 		return 1
@@ -2228,11 +2215,22 @@ docker_compose_update_handle_numbers() {
 	done
 }
 
-docker_compose_auto_update_manager() {
-	if ! command -v docker >/dev/null 2>&1 || ! docker compose version >/dev/null 2>&1; then
-		echo -e "${gl_hong}未检测到 Docker，请先安装 Docker。${gl_bai}"
+docker_compose_require_plugin() {
+	docker compose version >/dev/null 2>&1 && return 0
+	echo -e "${gl_kjlan}缺少 Docker Compose 插件，正在自动安装 docker-compose-plugin...${gl_bai}"
+	install docker-compose-plugin || install docker-compose-v2
+	if ! docker compose version >/dev/null 2>&1; then
+		echo -e "${gl_hong}Docker Compose 插件安装失败，请检查 Docker 软件源。${gl_bai}" >&2
 		return 1
 	fi
+}
+
+docker_compose_auto_update_manager() {
+	if ! command -v docker >/dev/null 2>&1; then
+		echo -e "${gl_hong}未检测到 Docker，请先在 Docker 管理中安装 Docker。${gl_bai}"
+		return 1
+	fi
+	docker_compose_require_plugin || return 1
 	while true; do
 		clear
 		echo -e "Docker Compose 自动更新"

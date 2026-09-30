@@ -88,12 +88,16 @@ rclone_install_tool() {
 	echo -e "${gl_kjlan}配置文件: $(rclone_config_path)${gl_bai}"
 }
 
+rclone_require() {
+	command -v rclone >/dev/null 2>&1 && return 0
+	echo -e "${gl_kjlan}缺少 rclone，正在自动安装...${gl_bai}"
+	rclone_install_tool
+}
+
 rclone_edit_config() {
 	root_use
-	if ! command -v rclone >/dev/null 2>&1; then
-		echo -e "${gl_huang}rclone 未安装，请先安装。${gl_bai}"
-		return
-	fi
+	rclone_require || return 1
+	daimon_require_cmd vim || return 1
 	rclone_prepare_config || return 1
 	vim "$(rclone_config_path)" || return 1
 	chmod 600 "$(rclone_config_path)" || return 1
@@ -194,6 +198,7 @@ rclone_load_remote_status() {
 rclone_select_remote() {
 	local conf="${1:-$(rclone_config_path)}" idx
 	RCLONE_SELECTED_REMOTE=""
+	rclone_require && daimon_require_cmd python3 || return 1
 	rclone_load_remote_status "$conf" || return 1
 	read -r -p "请选择有效远程存储（0 返回）: " idx || return 1
 	idx=$(rclone_selection_index "$idx" "${#RCLONE_REMOTE_NAMES[@]}") || return 1
@@ -428,10 +433,7 @@ rclone_select_remote_dirs_multi() {
 
 rclone_restore_remote_folder() {
 	root_use
-	if ! command -v rclone >/dev/null 2>&1; then
-		echo -e "${gl_huang}rclone 未安装，请先安装。${gl_bai}"
-		return 1
-	fi
+	rclone_require || return 1
 
 	local remote_root root="${DAIMON_RESTORE_ROOT:-/root}" policy
 	local server_dir restore_dir remote_path target_dir confirm failed
@@ -779,10 +781,7 @@ rclone_check_nginx_after_restore() {
 
 rclone_restore_nginx_domain_remote() {
 	root_use
-	if ! command -v rclone >/dev/null 2>&1; then
-		echo -e "${gl_huang}rclone 未安装，请先安装。${gl_bai}"
-		return 1
-	fi
+	rclone_require || return 1
 
 	local remote_root server_dir remote_backup choice confirm mode policy
 
@@ -1111,7 +1110,7 @@ PY
 	while IFS=$'\t' read -r name ip port pid; do
 		[ -n "$name" ] || continue
 		if [ "$pid" -gt 0 ]; then
-			command -v nsenter >/dev/null 2>&1 || { echo "缺少 nsenter，无法验证容器网络。"; failed=1; continue; }
+			daimon_require_cmd nsenter || { echo "缺少 nsenter，无法验证容器网络。"; failed=1; continue; }
 			if ! nsenter -t "$pid" -n -- timeout 4 bash -c 'exec 3<>/dev/tcp/$1/$2' _ "$ip" "$port" 2>/dev/null; then
 				echo "$name: 容器无法连接代理 $ip:$port；检查监听、网关及 UFW。"
 				failed=1
@@ -1307,8 +1306,9 @@ rclone_export_named_volumes() (
 	set -o pipefail
 	umask 077
 	root_use
-	command -v rclone >/dev/null 2>&1 || { echo "rclone 未安装，请先安装。"; return 1; }
-	command -v docker >/dev/null 2>&1 || { echo "Docker 未安装，请先安装。"; return 1; }
+	command -v docker >/dev/null 2>&1 || { echo "未检测到 Docker，本机没有可导出的 named volume。"; return 1; }
+	rclone_require || return 1
+	daimon_require_cmd python3 || return 1
 	local remote_root server_dir base selected_raw token idx name mount work="" archive sha confirm listing
 	local names=() selected=()
 	listing=$(docker volume ls -q 2>/dev/null) || return 1
@@ -1371,8 +1371,12 @@ rclone_restore_named_volumes() {
 		3) ;;
 		*) return 0 ;;
 	esac
-	command -v rclone >/dev/null 2>&1 || { echo "rclone 未安装，请先安装。"; return 1; }
-	command -v docker >/dev/null 2>&1 || { echo "Docker 未安装，请先安装。"; return 1; }
+	rclone_require || return 1
+	if ! command -v docker >/dev/null 2>&1; then
+		echo "未检测到 Docker，正在调用现有 Docker 安装流程。"
+		install_docker || return 1
+	fi
+	docker info >/dev/null 2>&1 || { echo "Docker daemon 不可用，未恢复 volume。"; return 1; }
 	rclone_select_remote || return 1
 	remote_root="$RCLONE_SELECTED_REMOTE:"
 	rclone_select_remote_dir "$remote_root" "请选择包含 Docker volume 备份的服务器目录" || return
@@ -1407,7 +1411,7 @@ for name in sorted(names): print(name)
 rclone_migration_verify() {
 	root_use
 	command -v nginx >/dev/null 2>&1 || { echo "Nginx 未安装，无法读取域名配置。"; return 1; }
-	command -v curl >/dev/null 2>&1 || { echo "curl 未安装，无法执行 HTTP/HTTPS 验证。"; return 1; }
+	daimon_require_cmd curl || return 1
 	local domains expected domain output dns code rc=0 health_url
 	domains=$(rclone_migration_domain_names) || { echo "无法解析 Nginx 域名清单。"; return 1; }
 	[ -n "$domains" ] || { echo "Nginx 配置中没有可验证的完整域名。"; return 1; }

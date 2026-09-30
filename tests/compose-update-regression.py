@@ -178,7 +178,7 @@ class ComposeUpdate(unittest.TestCase):
         script = definitions + '''
 root_use() { :; }
 check_crontab_installed() { :; }
-docker_config_require_tool() { echo "dependency $1 failed" >&2; return 1; }
+daimon_require_cmd() { echo "dependency $1 failed" >&2; return 1; }
 docker_compose_update_write_script() { echo unexpected-write; }
 docker_compose_update_install_one 1 fixture /unused ""
 '''

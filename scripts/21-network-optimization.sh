@@ -592,8 +592,7 @@ daimon_tcp_measure_iperf3() {
 	local retr_total=0 bdp=0 bdp_f=0 bw_use="" rtt_use="" detail4="" detail6=""
 	rm -f "$DAIMON_TCP_MEASURE_RESULT"
 	DAIMON_TCP_RTT_SAMPLES=""
-	command -v iperf3 >/dev/null 2>&1 || install iperf3 || { echo "iperf3 安装失败。"; return 1; }
-	command -v ss >/dev/null 2>&1 || install iproute2 >/dev/null 2>&1 || true
+	daimon_require_cmd iperf3 && daimon_require_cmd ss || return 1
 	while ss -tln 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"; do
 		port=$((port + 1))
 		[ "$port" -gt 65000 ] && { echo "找不到可用端口。"; return 1; }
@@ -803,7 +802,7 @@ daimon_tcp_tcpquality_direct() {
 
 daimon_tcp_tcpquality_rootfs() {
 	local log="$1"
-	command -v script >/dev/null 2>&1 || { echo "缺少 script 命令（util-linux），无法用 rootfs 模式运行 TCPquality。" >&2; return 1; }
+	daimon_require_cmd script || return 1
 	printf 'n\nn\nn\ny\nn\n' | TERM=xterm timeout --kill-after=10s 900s \
 		script -qec "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null \
 		> "$log" 2>&1 || true

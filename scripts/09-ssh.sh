@@ -112,8 +112,7 @@ sshkey_panel() {
 
 		  5)
 			send_stats "编辑公钥文件"
-			install vim
-			vim ${HOME}/.ssh/authorized_keys
+			daimon_require_cmd vim && vim ${HOME}/.ssh/authorized_keys
 			break_end
 			  ;;
 
@@ -868,7 +867,7 @@ ssh_config_edit() (
     umask 077
     local work original
     [ ! -e /var/lib/daimon/ssh-change ] || { echo "已有 SSH 变更待确认或恢复。" >&2; return 1; }
-    command -v vim >/dev/null || { echo "请先安装 vim，未修改配置。" >&2; return 1; }
+    daimon_require_cmd vim || { echo "未修改配置。" >&2; return 1; }
     work=$(mktemp -d /run/daimon-ssh-edit.XXXXXX) || return 1
     trap 'rm -f -- "$work/sshd_config"; rmdir -- "$work"' EXIT
     cp -- /etc/ssh/sshd_config "$work/sshd_config" || return 1

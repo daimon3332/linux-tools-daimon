@@ -38,6 +38,8 @@ class Config(unittest.TestCase):
                  'linuxmirrors_install_docker', 'docker_ipv6_on', 'docker_ipv6_off']
         if re.search(r'(?m)^docker_config_require_tool\(\)', SOURCE):
             names.insert(0, 'docker_config_require_tool')
+        if re.search(r'(?m)^daimon_require_cmd\(\)', SOURCE):
+            names.insert(0, 'daimon_require_cmd')
         definitions = '\n'.join(function(n) for n in names)
         definitions = definitions.replace('/etc/docker', (self.work/'docker').as_posix())
         definitions = definitions.replace('/etc/os-release', (self.work/'os-release').as_posix())

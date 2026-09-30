@@ -46,10 +46,11 @@ install() {
 				yum install -y "$package" || return 1
 			elif command -v apt &>/dev/null; then
 				if [ "$apt_updated" -eq 0 ]; then
-					DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y || return 1
+					DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l APT_LISTCHANGES_FRONTEND=none apt update -y ||
+						echo -e "${gl_huang}部分软件源更新失败，继续使用现有索引安装 $package。${gl_bai}" >&2
 					apt_updated=1
 				fi
-				DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+				DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l APT_LISTCHANGES_FRONTEND=none apt install -y \
 					-o Dpkg::Options::="--force-confdef" \
 					-o Dpkg::Options::="--force-confold" \
 					"$package" || return 1
@@ -73,6 +74,28 @@ install() {
 			fi
 		fi
 	done
+}
+
+daimon_require_cmd() {
+	local tool="$1" package="${2:-}"
+	command -v "$tool" >/dev/null 2>&1 && return 0
+	if [ -z "$package" ]; then
+		case "$tool" in
+			ss|tc|ip) package=iproute2 ;;
+			flock|nsenter) package=util-linux ;;
+			script) command -v apt-get >/dev/null 2>&1 && package=bsdutils || package=util-linux ;;
+			timeout|stdbuf) package=coreutils ;;
+			crontab) command -v apt-get >/dev/null 2>&1 && package=cron || package=cronie ;;
+			*) package="$tool" ;;
+		esac
+	fi
+	echo -e "${gl_kjlan}缺少 $tool，正在自动安装 $package...${gl_bai}"
+	if ! install "$package"; then
+		echo -e "${gl_hong}$package 安装失败，操作未执行；请检查上方软件源错误。${gl_bai}" >&2
+		return 1
+	fi
+	hash -r
+	command -v "$tool" >/dev/null 2>&1 || { echo -e "${gl_hong}$package 已安装但仍找不到 $tool，操作未执行。${gl_bai}" >&2; return 1; }
 }
 
 remove() {
@@ -107,8 +130,13 @@ remove() {
 }
 
 break_end() {
+	  local status=$?
 	  [ "${DAIMON_BATCH_MODE:-0}" = 1 ] && return 0
-	  echo -e "${gl_lv}操作完成${gl_bai}"
+	  if [ "$status" -eq 0 ]; then
+		  echo -e "${gl_lv}操作完成${gl_bai}"
+	  else
+		  echo -e "${gl_hong}操作失败（返回码 $status），请查看上方输出${gl_bai}"
+	  fi
 	  echo "按任意键继续..."
 	  read -n 1 -s -r -p ""
 	  echo ""

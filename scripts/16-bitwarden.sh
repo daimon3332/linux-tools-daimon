@@ -81,14 +81,11 @@ bitwarden_sync_script_status() {
 bitwarden_check_requirements() {
 	local missing=0
 	if ! command -v docker >/dev/null 2>&1; then
-		echo -e "${gl_hong}未检测到 docker，请先安装并启动 Docker。${gl_bai}"
-		missing=1
+		echo -e "${gl_hong}未检测到 docker，本机没有可配置的 Vaultwarden 备份。${gl_bai}"
+		return 1
 	fi
-	if ! command -v rclone >/dev/null 2>&1; then
-		echo -e "${gl_hong}未检测到 rclone，请先到 rclone管理 中安装 rclone。${gl_bai}"
-		missing=1
-	fi
-	command -v python3 >/dev/null 2>&1 || { echo "需要 python3 验证配置及恢复数据。"; missing=1; }
+	rclone_require || missing=1
+	daimon_require_cmd python3 || missing=1
 	docker info >/dev/null 2>&1 || { echo "Docker daemon 不可用。"; missing=1; }
 	return "$missing"
 }
@@ -365,11 +362,8 @@ PY
 
 bitwarden_configure_sync_script() {
 	root_use
-	if ! command -v rclone >/dev/null 2>&1; then
-		echo -e "${gl_hong}未检测到 rclone，请先到 rclone管理 中安装 rclone。${gl_bai}"
-		return 1
-	fi
-	check_crontab_installed
+	rclone_require || return 1
+	check_crontab_installed || return 1
 	if ! crontab_sync_remote_ready; then
 		echo -e "${gl_hong}kissska1 连接检查失败，未修改同步脚本。${gl_bai}"
 		return 1

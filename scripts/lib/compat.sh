@@ -851,7 +851,7 @@ EOF
 
 install_certbot() {
 	write_certbot_renewal_script
-	check_crontab_installed
+	check_crontab_installed || return 1
 	local cron_job="0 0 * * * /bin/bash $DAIMON_SCRIPT_DIR/auto_cert_renewal.sh >> /var/log/certbot/renew.log 2>&1"
 	crontab -l 2>/dev/null | grep -vF "$DAIMON_SCRIPT_DIR/auto_cert_renewal.sh" | crontab -
 	(crontab -l 2>/dev/null; echo "$cron_job") | crontab -
@@ -2232,6 +2232,7 @@ f2b_edit_config() {
 	local cfg="/etc/fail2ban/jail.d/sshd.local"
 	[ -f "$cfg" ] || printf "[sshd]\n# bantime/findtime/maxretry\n" > "$cfg"
 
+	daimon_require_cmd vim || return 1
 	vim "$cfg"
 	echo -e "${gl_lv}已保存${gl_bai}，正在 reload fail2ban..."
 	fail2ban-client reload >/dev/null 2>&1 || true
@@ -4730,7 +4731,7 @@ PY
 restore_backup() {
 	local name archive destination confirm
 	send_stats "恢复备份"
-	command -v python3 >/dev/null 2>&1 || { echo "需要 python3，未恢复任何文件。"; return 1; }
+	daimon_require_cmd python3 || { echo "未恢复任何文件。"; return 1; }
 	read -r -e -p "请输入要恢复的备份文件名: " name || return 1
 	archive=$(daimon_backup_delete_target "$name") || { echo "备份不存在或路径、类型、归属不安全。"; return 1; }
 	read -r -e -p "请输入已存在的空目录绝对路径（不覆盖原位置）: " destination || return 1
@@ -4971,13 +4972,7 @@ use_connection() {
 		fi
 	else
 		# 使用密码连接
-		if ! command -v sshpass &> /dev/null; then
-			echo "错误：未安装 sshpass，请先安装 sshpass。"
-			echo "安装方法："
-			echo "  - Ubuntu/Debian: apt install sshpass"
-			echo "  - CentOS/RHEL: yum install sshpass"
-			return
-		fi
+		daimon_require_cmd sshpass || return 1
 		sshpass -p "$password_or_key" ssh -o StrictHostKeyChecking=no -p "$port" "$user@$ip"
 		if [[ $? -ne 0 ]]; then
 			echo "连接失败！请检查以下内容："
@@ -5349,13 +5344,7 @@ run_task() {
 	local ssh_options="-p $port -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 
 	if [[ "$auth_method" == "password" ]]; then
-		if ! command -v sshpass &> /dev/null; then
-			echo "错误：未安装 sshpass，请先安装 sshpass。"
-			echo "安装方法："
-			echo "  - Ubuntu/Debian: apt install sshpass"
-			echo "  - CentOS/RHEL: yum install sshpass"
-			return 1
-		fi
+		daimon_require_cmd sshpass || return 1
 		SSHPASS="$password_or_key" sshpass -e rsync "${rsync_options[@]}" -e "ssh $ssh_options" -- "$source" "$destination"
 		rc=$?
 	elif [ "$auth_method" = key ]; then

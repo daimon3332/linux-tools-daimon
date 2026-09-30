@@ -122,6 +122,14 @@ class Native(unittest.TestCase):
             dest=p.install(self.root,self.rev,True)
         self.assertEqual(dest.name,self.rev)
 
+    def test_master_resolves_to_commit_before_download(self):
+        ref=json.dumps({'object':{'type':'commit','sha':self.rev}}).encode()
+        responses=[io.BytesIO(ref),io.BytesIO(self.archive.read_bytes())]
+        with patch.object(p,'country',return_value='CN'),patch.object(p.urllib.request,'urlopen',side_effect=responses) as opened:
+            dest=p.install(self.root,'master',True)
+        self.assertEqual(dest.name,self.rev)
+        self.assertIn(self.rev,opened.call_args_list[1][0][0].full_url)
+
     def test_installed_component_corruption_refuses_run(self):
         release=self.install()
         (release/'scripts/08-docker.sh').write_text('broken')

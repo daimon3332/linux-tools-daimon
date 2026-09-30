@@ -61,6 +61,8 @@
 
 ## 7. 安装成功判断
 
+- 执行操作缺少可安装的命令时统一调用 `daimon_require_cmd <命令> [包名]` 自动安装并复检，缺 rclone 用 `rclone_require`；禁止提示“请先安装”后退出。缺少配置、凭据或运行中的业务服务不属于依赖，保留明确提示。
+- 只读查询和菜单展示不得触发自动安装。
 - 安装工具后必须检查实际命令是否存在。
 - 例如 starship 必须检查 `command -v starship`。
 - rclone、Docker、fail2ban、WARP 等服务类功能要检查命令、服务、容器或关键配置。
