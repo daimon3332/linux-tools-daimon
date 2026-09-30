@@ -999,7 +999,9 @@ ssh_config_manager() {
 				read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1
 				new_port=${new_port:-$DEFAULT_SSH_PORT}
 				if ! validate_tcp_port "$new_port"; then echo "端口不合法"; break_end; continue; fi
-				ssh_transaction_apply --ufw Port "$new_port" PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password
+				local ufw_link=()
+				LC_ALL=C ufw status 2>/dev/null | grep -q '^Status: active' && ufw_link=(--ufw)
+				ssh_transaction_apply "${ufw_link[@]}" Port "$new_port" PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password
 				;;
 			5) ssh_key_manager; continue ;;
 			6) ssh_config_edit ;;
