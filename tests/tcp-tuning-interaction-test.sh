@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+DAIMON_RELEASE_DIR="$ROOT"
 source "$ROOT/scripts/network/tcp-tuning-lab.sh"
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/tcp-interaction.XXXXXX") || exit 1

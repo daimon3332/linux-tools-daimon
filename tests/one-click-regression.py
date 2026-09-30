@@ -19,7 +19,9 @@ def function(name):
     match = re.search(r'(?m)^([ \t]*)' + re.escape(name) + r'\(\) ([{(])\n', SOURCE)
     if not match:
         raise AssertionError('Missing function: ' + name)
-    following = {'linux_tools':'linux_bbr', 'one_click_install_docker_auto':'daimon_network_cleanup_old_qdisc_service'}
+    if name == 'linux_tools':
+        return SOURCE[match.start():SOURCE.index('\n#!/bin/bash', match.end())].rstrip()
+    following = {'one_click_install_docker_auto':'one_click_network_auto_optimize'}
     if name in following:
         return SOURCE[match.start():SOURCE.index('\n'+following[name]+'() {',match.end())].rstrip()
     end = SOURCE.index('\n' + match[1] + ('}' if match[2] == '{' else ')'), match.end())

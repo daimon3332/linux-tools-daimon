@@ -721,9 +721,9 @@ update_docker_compose_with_db_creds() {
   if ! grep -q "letsencrypt" /home/web/docker-compose.yml; then
 	wget -O /home/web/docker-compose.yml ${gh_proxy}raw.githubusercontent.com/kejilion/docker/main/LNMP-docker-compose-10.yml
 
-  	dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
-  	dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
-  	dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
+      dbrootpasswd=$(grep -oP 'MYSQL_ROOT_PASSWORD:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
+      dbuse=$(grep -oP 'MYSQL_USER:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
+      dbusepasswd=$(grep -oP 'MYSQL_PASSWORD:\s*\K.*' /home/web/docker-compose1.yml | tr -d '[:space:]')
 
 	sed -i "s#webroot#$dbrootpasswd#g" /home/web/docker-compose.yml
 	sed -i "s#kejilionYYDS#$dbusepasswd#g" /home/web/docker-compose.yml
@@ -731,7 +731,7 @@ update_docker_compose_with_db_creds() {
   fi
 
   if grep -q "kjlion/nginx:alpine" /home/web/docker-compose1.yml; then
-  	sed -i 's|kjlion/nginx:alpine|nginx:alpine|g' /home/web/docker-compose.yml  > /dev/null 2>&1
+      sed -i 's|kjlion/nginx:alpine|nginx:alpine|g' /home/web/docker-compose.yml  > /dev/null 2>&1
 	sed -i 's|nginx:alpine|kjlion/nginx:alpine|g' /home/web/docker-compose.yml  > /dev/null 2>&1
   fi
 
@@ -765,8 +765,8 @@ install_ldnmp() {
 
 	  cd /home/web && docker compose up -d
 	  sleep 1
-  	  crontab -l 2>/dev/null | grep -v 'logrotate' | crontab -
-  	  (crontab -l 2>/dev/null; echo '0 2 * * * docker exec nginx apk add logrotate && docker exec nginx logrotate -f /etc/logrotate.conf') | crontab -
+        crontab -l 2>/dev/null | grep -v 'logrotate' | crontab -
+        (crontab -l 2>/dev/null; echo '0 2 * * * docker exec nginx apk add logrotate && docker exec nginx logrotate -f /etc/logrotate.conf') | crontab -
 
 	  fix_phpfpm_conf php
 	  fix_phpfpm_conf php74
@@ -867,7 +867,7 @@ install_ssltls() {
 
 	  local file_path="/etc/letsencrypt/live/$yuming/fullchain.pem"
 	  if [ ! -f "$file_path" ]; then
-		 	local ipv4_pattern='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
+             local ipv4_pattern='^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'
 			local ipv6_pattern='^(([0-9A-Fa-f]{1,4}:){1,7}:|([0-9A-Fa-f]{1,4}:){7,7}[0-9A-Fa-f]{1,4}|::1)$'
 			if [[ ($yuming =~ $ipv4_pattern || $yuming =~ $ipv6_pattern) ]]; then
 				mkdir -p /etc/letsencrypt/live/$yuming/
@@ -972,16 +972,16 @@ certs_status() {
 		echo "------------------------"
 		read -e -p "请输入你的选择: " sub_choice || return 1
 		case $sub_choice in
-	  	  1)
-	  	  	send_stats "重新申请"
-		  	echo "请再次尝试部署 $webname"
-		  	add_yuming
-		  	install_ssltls
-		  	certs_status
+            1)
+                send_stats "重新申请"
+              echo "请再次尝试部署 $webname"
+              add_yuming
+              install_ssltls
+              certs_status
 
-	  		  ;;
-	  	  2)
-	  	  	send_stats "导入已有证书"
+                ;;
+            2)
+                send_stats "导入已有证书"
 
 			# 定义文件路径
 			local cert_file="/home/web/certs/${yuming}_cert.pem"
@@ -1025,10 +1025,10 @@ certs_status() {
 				echo "错误：无效的证书或私钥格式！"
 				certs_status
 			fi
-	  		  ;;
-	  	  *)
-		  	  exit
-	  		  ;;
+                ;;
+            *)
+                exit
+                ;;
 		esac
 	fi
 
@@ -1645,7 +1645,7 @@ web_security() {
 					  ;;
 
 				  32)
-				  	  nginx_waf off
+                        nginx_waf off
 					  echo "站点WAF已关闭"
 					  send_stats "站点WAF已关闭"
 					  ;;
@@ -1710,7 +1710,7 @@ check_nginx_compression() {
 
 web_optimization() {
 		  while true; do
-		  	  check_ldnmp_mode
+                check_ldnmp_mode
 			  check_nginx_compression
 			  clear
 			  send_stats "优化LDNMP环境"
@@ -3611,12 +3611,12 @@ bbrv3() {
 				elif [ -r /etc/os-release ]; then
 					os_codename=$(. /etc/os-release && echo "$VERSION_CODENAME")
 				fi
-				
+
 				# 兼容官方已移除的老系统代号（回退使用 releases 尝试旧包库）
 				if ! echo "bookworm trixie forky sid noble plucky questing resolute faye gigi wilma xia zara zena" | grep -qw "$os_codename"; then
 					os_codename="releases"
 				fi
-				
+
 				# 官方已彻底移除对 jammy, focal, bullseye 等老系统的 apt 支持
 				if echo "jammy focal bullseye buster" | grep -qw "$os_codename" || [ "$os_codename" = "releases" ]; then
 					echo -e "${gl_hong}XanMod 官方已停止对当前系统($os_codename)的 APT 源支持，请升级至 Debian12 / Ubuntu24 或更高版本。${gl_bai}"

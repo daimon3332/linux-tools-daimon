@@ -73,12 +73,12 @@ sshkey_panel() {
 	  if [[ "$REAL_STATUS" =~ "yes" ]]; then
 		  IS_KEY_ENABLED="${gl_lv}已启用${gl_bai}"
 	  else
-	  	  IS_KEY_ENABLED="${gl_hui}未启用${gl_bai}"
+            IS_KEY_ENABLED="${gl_hui}未启用${gl_bai}"
 	  fi
-  	  echo -e "用户密钥登录模式 ${IS_KEY_ENABLED}"
-  	  echo "进阶玩法: https://blog.kejilion.pro/ssh-key"
-  	  echo "------------------------------------------------"
-  	  echo "将会生成密钥对，更安全的方式SSH登录"
+        echo -e "用户密钥登录模式 ${IS_KEY_ENABLED}"
+        echo "进阶玩法: https://blog.kejilion.pro/ssh-key"
+        echo "------------------------------------------------"
+        echo "将会生成密钥对，更安全的方式SSH登录"
 	  echo "------------------------"
 	  echo "1. 生成新密钥对                  2. 手动输入已有公钥"
 	  echo "3. 从GitHub导入已有公钥          4. 从URL导入已有公钥"
@@ -89,8 +89,8 @@ sshkey_panel() {
 	  read -e -p "请输入你的选择: " host_dns || return 1
 	  case $host_dns in
 		  1)
-	  		send_stats "生成新密钥"
-	  		add_sshkey
+              send_stats "生成新密钥"
+              add_sshkey
 			break_end
 			  ;;
 		  2)

@@ -194,7 +194,7 @@ def preferences(root):
         regular(path)
         values.update(json.loads(path.read_text()))
     else:
-        for candidate in (root/'linux-toolbox.sh', Path('/usr/local/bin/d')):
+        for candidate in (root/'linux-toolbox.sh', Path(os.environ.get('DAIMON_INSTALL_BIN','/usr/local/bin/d'))):
             if not candidate.exists() or candidate.is_symlink():
                 continue
             regular(candidate)

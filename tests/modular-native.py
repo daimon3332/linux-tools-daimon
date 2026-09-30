@@ -56,6 +56,18 @@ class Native(unittest.TestCase):
         self.assertEqual(result.returncode,0,result.stderr)
         self.assertFalse((self.root/'backup-sh').exists())
 
+    def test_every_menu_entry_and_shortcut_dispatch_is_defined(self):
+        release=self.install()
+        entries=['linux_info','linux_update','linux_clean','one_click_config_manager','linux_Settings',
+                 'linux_thirdparty_tools','linux_programming_tools','linux_docker','ssh_config_manager',
+                 'ufw_manager','ssl_nginx_manager','fail2ban_manager','linux_bbr','warp_manager',
+                 'rclone_manager','bitwarden_manager','crontab_sync_manager','common_one_click_scripts',
+                 'server_retire_menu','debian_basics_menu','daimon_tcp_tune_menu','daimon_dispatch']
+        script='set -e\n'+''.join('source '+str(release/name)+'\n' for name in p.manifest(release)['modules'])
+        script+='\n'.join('declare -F '+name+' >/dev/null' for name in entries)
+        result=subprocess.run(['bash','--noprofile','--norc'],input=script,text=True,capture_output=True)
+        self.assertEqual(result.returncode,0,result.stderr)
+
     def test_settings_migrate_and_survive_update(self):
         self.bin.write_text('#!/bin/bash\nDAIMON_NAME="linux-tools-daimon"\ncanshu="V6"\npermission_granted="true"\nENABLE_STATS="false"\n')
         self.install()
