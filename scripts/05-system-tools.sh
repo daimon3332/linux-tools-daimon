@@ -89,7 +89,7 @@ restore_dns_config() (
 	fi
 	mv -Tf -- "$work/link" /etc/resolv.conf || return 1
 	committed=1
-	echo "已恢复系统 DNS 管理器提供的上游配置: $source（不启动或重启服务）"
+	echo "已恢复系统 DNS 管理器提供的配置: $source（不启动或重启服务）"
 )
 
 set_dns_ui() {

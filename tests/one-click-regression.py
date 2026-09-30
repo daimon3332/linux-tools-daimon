@@ -228,7 +228,7 @@ one_click_network_auto_optimize() { echo NETWORK; }
     def test_rhel_locale_selects_requested_language_pack(self):
         release=self.work/'os-release';release.write_text('ID=fedora\n')
         config=self.work/'locale.conf'
-        script=function('update_locale').replace('/etc/os-release',str(release)).replace('/etc/locale.conf',str(config))
+        script=function('break_end_unless')+'\n'+function('update_locale').replace('/etc/os-release',str(release)).replace('/etc/locale.conf',str(config))
         setup='install() { echo "PACKAGE:$1"; }; localectl() { return 0; }; '
         result=subprocess.run(['/bin/bash','-c',script+'\n'+setup+'update_locale en_US.UTF-8 en_US.UTF-8 false'],capture_output=True,text=True)
         self.assertEqual(result.returncode,0,result.stdout+result.stderr)

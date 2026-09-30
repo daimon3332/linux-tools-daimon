@@ -37,6 +37,7 @@ class Locales(unittest.TestCase):
     def run_locale(self, failure='', lang='en_US.UTF-8'):
         names = ['update_locale', 'daimon_config_commit']
         if 'daimon_debian_locale()' in SOURCE:names.append('daimon_debian_locale')
+        if 'break_end_unless()' in SOURCE:names.append('break_end_unless')
         body = '\n'.join(function(n) for n in names).replace('/etc/', self.work.as_posix()+'/etc/')
         body += r'''
 install() { [ "$FAILURE" != install ]; }
