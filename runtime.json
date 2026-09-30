@@ -46,7 +46,7 @@
     "scripts/13-bbr.sh": "de1d16a56b7878cb14962f780a27220cb95a40d27eff4593728df3903893cd5b",
     "scripts/14-warp.sh": "97d1dadf0e8dd8fa0dbd40dce6262f22336a871f12764eb089f7d753eef0b314",
     "scripts/15-rclone.sh": "74cbc7fa7569230dbfb76dc2d008f220dcef991a2397b9af140b41e82b831d92",
-    "scripts/16-bitwarden.sh": "2cf1143ef7d366a2692b4d7ae79a16ddf8215fcbe1818b93eda01e0cf5667318",
+    "scripts/16-bitwarden.sh": "5355554334a9003e9350fa77cb045600efadf2bc9be711fa128fa543159d894b",
     "scripts/17-cron.sh": "37e4ac0a9b7e4bde034371510f60334638a4982d0522ae47521dc978cf76aa47",
     "scripts/18-one-click-scripts.sh": "d46cd6f90c86b36e1db572cee30e08497f407f5e41f43b4c76a2ec081a9f8491",
     "scripts/19-retire.sh": "fa52aca492e5284c0981b1fe06d960efa09564f6ce212ea47067f608ad511cfc",

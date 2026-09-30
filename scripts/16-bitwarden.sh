@@ -278,14 +278,20 @@ bitwarden_restore_data() (
 	bitwarden_check_requirements && bitwarden_restore_preflight || return 1
 	umask 077
 	set -o pipefail
-	local remote conf image work stage="" target="$BITWARDEN_DATA_PATH" moved=0
+	local remote conf image work stage="" target="$BITWARDEN_DATA_PATH" moved=0 state
 	local list_output selected_idx selected_file password confirm i cid bytes
 	local files=()
 	image=$(bitwarden_backup_image) || { echo "本机缺少备份工具镜像，未拉取或升级镜像。"; return 1; }
 	remote=$(bitwarden_remote_path) || return 1
 	conf=$(bitwarden_rclone_conf_file) || return 1
-	if [ "$(rclone_remote_state "$conf" "$remote")" != valid ]; then
-		echo "当前备份 remote 不可用，请选择已验证的凭据。"
+	state=$(rclone_remote_state "$conf" "$remote")
+	[ "$state" = valid ] || state=$(rclone_remote_state "$conf" "$remote")
+	if [ "$state" = unknown ]; then
+		echo "当前备份 remote $remote 暂时无法连接（网络或超时），未修改数据卷，请稍后重试。"
+		return 1
+	fi
+	if [ "$state" != valid ]; then
+		echo "当前备份 remote $remote 凭据无效，请选择已验证的凭据。"
 		rclone_select_remote || return 1
 		remote="$RCLONE_SELECTED_REMOTE:${remote#*:}"
 		conf=$(rclone_config_path)
