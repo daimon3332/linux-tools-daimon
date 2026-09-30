@@ -1,3 +1,29 @@
+# 腾讯 Docker 自动更新修复（2026-09-30）
+
+本轮仅使用腾讯 `122.51.119.228`。最新代码 `87606de` 已推送并经已安装工具箱更新器部署，两处安装脚本归一化 SHA256 为 `737b78bc529619efd90ed465836000913f47a11acc2496c48c8d34d59d512524`。不是所有菜单选项验收。
+
+## 原因与修复
+
+- 原 cron 连续三天在北京时间 11 点触发配置为 03 点的任务；cron 启动早于系统时区改变，符合缓存旧时区表现。7 个原受管理任务已用安装版本生成器重新发布，保持原项目身份、配置文件与 03:07 到 03:49 的错峰时间，改用显式 `TZ=Asia/Shanghai` 每分钟判断；无关 cron 保留。真实 cron 临时任务在上海时间 10:26:01 触发后清理，未等待次日凌晨执行。
+- Sub2API 连续三天镜像拉取失败，后两天日志明确 `short read ... unexpected EOF`。本次网络探测及 Docker 日志确认首个代理 DNS 失败、Daocloud 对该镜像返回 403；部分代理/直连也不可达或内容下载被拒绝。磁盘余量 43 GiB、inode 使用约 10%，无空间耗尽证据。实际 Docker 重拉绕过失败端点后 23.2 秒成功；不能把历史 EOF 唯一归因到某一代理，也未修改全局镜像源。
+- 任务默认最多 3 次拉取、10 秒间隔、单次 300 秒超时，可在有限范围调整；实际运行镜像作为恢复基线，应用及恢复都指定 `--no-build --pull never`，防止隐式再次拉取。镜像未变不重建，成功后核查运行镜像 ID 和 Compose 健康等待。`UPDATED`、`NO_CHANGE`、`SKIPPED_*` 明确区分。
+- Search MCP Proxy 是本地 build 服务，旧任务跳过 pull 却报告更新成功。新版明确记录 `SKIPPED_BUILD`；未更新其源码或构建。固定 digest、pull_policy=never 也保留策略，不冒充更新。
+- 用户报告换源/编辑无反应：腾讯缺 jq，原安装输出被隐藏，依赖安装失败无提示。补齐自动安装的错误与命令存在检查，安装入口也自动处理 Python/coreutils 依赖。腾讯已安装 jq 与必要的 libjq1/libonig5，使用仅列出需重启服务的模式，Docker/cron/containerd PID 和启动时间未变化。
+- 安装 jq 后实际执行原配置回归发现空 JSON 输入被 `jq -e` 错误接受；修复为必须存在且仅存在一个 JSON 对象，增加多文档拒绝。不是把此前跳过项目计作通过。
+
+## 实际验证
+
+- Sub2API 更新脚本在腾讯真实运行，应用版本 **0.2.3 → 0.2.10**，运行镜像由 `ef61f153...` 变为 `79e33383...`。该 Compose 项目 3 个服务按配置更新，应用、PostgreSQL、Redis 均 healthy，HTTP `/health` 返回 200；数据库连接正常，public 表数更新前后均 100。挂载不变，其他项目容器 ID、镜像、启动时间未变；未执行真实用户登录/交易或数据库逐行内容比对。
+- 再次运行原任务确认 `NO_CHANGE`，Search MCP Proxy 实际任务确认 `SKIPPED_BUILD`，两者无容器重建。现有数据卷、项目 YAML、SSH 和 daemon.json 保留；Docker PID 6456/启动时间仍为 9 月 7 日，没有重启 Docker。
+- 腾讯安装版本隔离回归：通用 Bash 79 项、Docker 配置 16 项、自动更新 12 项、镜像测速 12 项、Swap 17 项均通过，**无跳过**，采集状态未变。配置合并/恢复使用真实 jq、文件/锁，服务操作有替身；这是 helper/regression 验证，不是全部 Docker 菜单或真实 daemon 重启验收。
+- Windows 本地相关测试通过，但配置回归有 10 项 POSIX/jq 跳过；上述腾讯原生测试覆盖了它们。Bash 语法、菜单静态检查（681 patterns / 86 case blocks / 9 内嵌 Bash）与 diff 检查通过。
+- 首轮通用夹具未带入 Swap 测试文件导致 3 个失败，补齐文件后重跑通过；首轮数据库检查 SQL 引号错误在更新前失败，修正后真实更新通过；保留失败记录。Git 22 端口推送一度失败，使用严格主机密钥验证的 GitHub SSH 443 端口推送成功。
+- 临时 cron、隔离目录已清理；无新 VM/镜像测试资源。新 Sub2API 镜像是业务更新成果，原镜像保留，不 prune。jq 是功能所需依赖，保留安装。未来网络仍可能波动，有限重试不保证所有拉取成功；数据库迁移等应用级副作用不等于镜像回滚能逆转。
+
+实现依据：[Compose pull](https://docs.docker.com/reference/cli/docker/compose/pull/)、[Compose up](https://docs.docker.com/reference/cli/docker/compose/up/)（2026-09-30 查阅）。本地证据位于 `.tmp/audit-20260930/` 的部署、代理探测、`sub2api-direct-pull.json`、`tencent-regenerate.jsonl`、`tencent-sub2api-update.json`、`tencent-native-suites-r2.json`、`tencent-final-verify.json`；不提交完整配置、环境变量或令牌。
+
+---
+
 # SSH 安全收尾（2026-09-29）
 
 代码 `1c92951` 已推送；本轮仅 wawo（Debian 13，IPv6 SSH，活动 UFW）通过已安装工具箱更新器部署，两个安装路径归一化 SHA256 均为 `82c93d7d4a126c913a2124c0b3dcf8680ffb6f1d430e6edf511c28dad8e456c9`。未更新其他主机。
