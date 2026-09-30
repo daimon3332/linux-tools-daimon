@@ -26,8 +26,6 @@ ENABLE_STATS="false"
 
 DAIMON_NAME="linux-tools-daimon"
 
-DAIMON_BIN="d"
-
 DAIMON_ROOT_DIR="${DAIMON_RUNTIME_ROOT:-/root/linux-daimon}"
 
 DAIMON_SCRIPT_DIR="$DAIMON_ROOT_DIR/daimon"
@@ -41,12 +39,6 @@ DAIMON_TOOLS_DIR="$DAIMON_ROOT_DIR/tools"
 DAIMON_FZF_DIR="$DAIMON_TOOLS_DIR/fzf"
 
 DAIMON_DOCKER_COMPOSE_UPDATE_DIR="$DAIMON_ROOT_DIR/docker-compose-update"
-
-DAIMON_UPDATE_URL="https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh"
-
-DAIMON_UPDATE_GITHUB_URL="https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh"
-
-DAIMON_UPDATE_GITHUB_PROXY_URL="https://gh-proxy.com/raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh"
 
 DAIMON_LOCAL_SCRIPT="$DAIMON_ROOT_DIR/linux-toolbox.sh"
 
@@ -64,8 +56,6 @@ DAIMON_BBR_FQ_CONF="/etc/sysctl.d/99-daimon-bbr-fq.conf"
 
 DAIMON_NETWORK_OPTIMIZE_CONF="/etc/sysctl.d/99-daimon-network-optimize.conf"
 
-DAIMON_NETWORK_LEGACY_CONF="/etc/sysctl.d/99-network-optimize.conf"
-
 DAIMON_TCP_TUNING_CONF="/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf"
 
 DAIMON_TCP_BBR_CONF="${DAIMON_BBR_FQ_CONF:-/etc/sysctl.d/99-daimon-bbr-fq.conf}"
@@ -77,8 +67,6 @@ DAIMON_TCP_SNAPSHOT="$DAIMON_TCP_STATE_DIR/runtime-snapshot.conf"
 DAIMON_TCP_PROFILE="$DAIMON_TCP_STATE_DIR/profile.json"
 
 DAIMON_TCP_MEASURE_RESULT="$DAIMON_TCP_STATE_DIR/last-measure.conf"
-
-DAIMON_TCP_BEFORE_RESULT="$DAIMON_TCP_STATE_DIR/before-measure.conf"
 
 DAIMON_TCP_FAMILY_RECORD="$DAIMON_TCP_STATE_DIR/family-speed.conf"
 
@@ -110,7 +98,3 @@ DAIMON_TCP_MANAGED_KEYS=(
 )
 
 DAIMON_TCP_FW_METHOD=""
-
-DAIMON_TCP_IPERF_PID=""
-
-DAIMON_TCP_RTT_SAMPLES=""

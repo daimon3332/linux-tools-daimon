@@ -4,19 +4,12 @@ ssl_nginx_manager() {
 	mkdir -p "$DAIMON_SCRIPT_DIR" || return 1
 	{
 	printf '#!/bin/bash\n'
-	if [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
-		declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
-			rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
-			rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
-			rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore \
-			crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
-			crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_cron_entry || return 1
-	else
-		declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
-			rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
-			rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
-			rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore crontab_sync_cron_entry || return 1
-	fi
+	declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
+		rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
+		rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
+		rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore \
+		crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
+		crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_cron_entry || return 1
 	declare -f server_retire_nginx_remove server_retire_nginx_reload || return 1
 	cat <<'DAIMON_CERT_NGINX_SCRIPT' || return 1
 #!/bin/bash

@@ -1,496 +1,125 @@
 # linux-tools-daimon
 
-`linux-tools-daimon` 是个人自用的 Linux 服务器脚本工具箱，中文交互，快捷命令为 `d`。
+个人自用的 Linux 服务器工具箱，中文交互，快捷命令 `d`。基于 [kejilion/sh](https://github.com/kejilion/sh) 定制，主要面向 Ubuntu / Debian。
 
-本项目基于 `kejilion/sh` 二开定制，保留常用服务器管理能力，并增加 SSH、UFW、rclone、Bitwarden、crontab 同步脚本、SSL/Nginx、fail2ban、WARP、GitHub 镜像源测速、journalctl 日志管理、第三方工具和编程工具管理等功能。
-
-## 编码规范
-
-后续修改脚本前，请先阅读 [CODING_GUIDELINES.md](./CODING_GUIDELINES.md)。该文件记录本脚本维护过程中已经确定的菜单规则、国内/国外分流、GitHub 代理、`.bashrc` 写入、安装校验、卸载清理、文档同步和常见踩坑处理方式。
-
-## 一键运行
+## 安装与更新
 
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
-```
-
-中国大陆优先使用代理获取同一仓库入口；进入安装器后还会自动切换完整包下载端点：
-
-```bash
+# 中国大陆
 bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
 ```
 
-Debian 首次使用时若没有 `curl`，先以 root 执行：
-
-```bash
-apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends ca-certificates curl
-```
-
-然后运行上方启动命令，进入主菜单 `20` 按需补齐基础工具。此步骤不升级系统或改变 APT 软件源。
+- 首次运行自动补齐 `python3`、`curl`，安装完整版本到 `/root/linux-daimon`，之后输入 `d` 启动。
+- 主菜单 `00` 更新：解析最新提交 → 下载同一提交的完整包 → 校验文件清单、SHA256 和语法 → 原子切换；失败保留旧版本，只保留最近 3 个版本。
+- 国内（`ipinfo.io` 返回 `CN`，香港不算）自动走 GitHub 代理和国内镜像；国家结果缓存 24 小时，启动不联网。
+- 任何选项缺少依赖命令时自动安装并复检，安装失败会明确提示；缺少配置、凭据或运行中的服务时给出说明，不擅自安装大型组件。
 
 ## 快捷命令
 
-首次运行后可使用：
-
-```bash
-d
-```
-
-之后在服务器命令行输入 `d` 即可打开工具箱。
-
-更新使用主菜单 `00`；不是 `d update`（后者升级系统软件包）。入口 `linux-toolbox.sh` 安装完整的模块版本：先确定 Git 提交，下载同一提交的完整包，核查 `runtime.json` 文件清单、SHA256、路径与语法，再切换 `/root/linux-daimon/current`。中国大陆优先尝试代理，失败切换备用端点；缺件、损坏或下载中断不发布半套文件，旧完整版本保留。安装后日常启动只读取本地组件，无需联网下载各菜单。
-
-源码按一级菜单放在 `scripts/01-*.sh` 到 `scripts/21-*.sh`；主菜单与命令分发为 `scripts/main.sh`，共享函数在 `scripts/lib`，TCP 组件在 `scripts/network`。维护后执行 `python scripts/build-runtime.py` 更新校验清单。许可和偏好保存在 `preferences.json`，升级不再修改组件源码；已有单文件安装首次升级时迁移原偏好。校验和防止内容损坏或混版，不代替可信下载来源验证。
-
-## 主菜单顺序
-
-| 序号 | 一级菜单 | 作用 |
-|---:|---|---|
-| 1 | 系统信息查询 | 查看系统、CPU、内存、硬盘、网络、DNS、IP、SSH、UFW、Docker、Nginx、Fail2ban、rclone、Bitwarden 等信息 |
-| 2 | 系统更新 | 更新软件源并升级系统软件包 |
-| 3 | 系统清理 | 清理软件包缓存、无用依赖及限额 journal 日志 |
-| 4 | 一键配置 | 快速执行系统更新、清理、Swap、DNS、BBR、Docker、网络优化、第三方工具安装、时区和本地语言配置 |
-| 5 | 系统工具 | 管理快捷键、软件源、DNS、Swap、用户、时区、本地语言、主机名、hosts、网卡、日志、IPv6、Docker 镜像源测速等 |
-| 6 | 第三方工具 | 安装/卸载 vim、cpcat、starship、bat、btop、yazi、NextTrace、iperf3 等常用工具 |
-| 7 | 编程工具 | 安装/卸载 Python、Node.js、Bun、uv、git、ClaudeCode、Codex 等开发工具 |
-| 8 | Docker管理 | 安装、卸载、状态查看、镜像源、容器、镜像、网络、卷、Compose、备份迁移等 |
-| 9 | SSH管理 | 修改 SSH 端口、密码登录、密钥登录、公钥私钥和 sshd_config |
-| 10 | UFW管理 | 安装/卸载 UFW、开放端口、删除端口规则 |
-| 11 | Nginx + 域名管理 | 安装 Nginx、申请证书、删除证书、配置 Nginx、备份/恢复域名和 Nginx 配置 |
-| 12 | fail2ban管理 | 安装/卸载 fail2ban，并自动配置 sshd 防护 |
-| 13 | BBR管理 | 进入 BBR / 网络加速管理脚本 |
-| 14 | WARP管理 | 进入 WARP 管理脚本或彻底删除 WARP |
-| 15 | rclone管理 | 安装 rclone、修改配置文件、卸载 rclone |
-| 16 | Bitwarden管理 | 配置 vaultwarden-backup 的 rclone.conf、执行备份和还原 |
-| 17 | crontab同步脚本管理 | 管理 Bitwarden、图床、Via、域名和 Nginx 配置备份、服务器命名 `/root` 一致性备份 |
-| 18 | 常用的一键脚本 | 运行 NodeQuality、IPQuality、YABS、kejilion.sh 等脚本 |
-| 19 | 服务器退役 | 只读检测并按选择退役 Compose 容器、删除托管 Nginx 配置和自动任务脚本，保留共享证书 |
-| 20 | Debian 基础工具 | 固定检查并安装四项基础工具 |
-| 21 | 网络自适应优化 | iperf3 多轮线路测试、参数调优、恢复和独立测速 |
-
-## 主要内容
-
-### Debian 基础工具
-
-菜单 `20` 固定检查 `ca-certificates curl wget jq` 四项，只安装缺失项，不提供其他软件包选择。其他菜单在安装对应工具或执行功能时，由现有安装流程检测缺少的命令和依赖并按需安装；不会因为打开菜单而批量安装无关工具。已安装项跳过；需要安装时只运行一次 APT 索引更新和缺失包安装，失败会明确报告。不执行系统升级、依赖修复、清理、SSH/DNS/Swap 配置或软件源替换。
-
-Debian 编程工具的 Python 选项使用发行版自带的 `python3`、`python3-venv` 和 `python3-pip`，不添加 Ubuntu PPA、不替换系统解释器；Ubuntu 保持原 Python 3.12 行为。Debian 没有 `/var/log/auth.log` 时，fail2ban SSH 配置选择 systemd journal 后端并按需安装 `python3-systemd`。这两项均属于选择相应功能后的安装，不属于默认基础包。
-
-### Nginx 与域名管理（统一流程）
-
-- 菜单 11 使用宿主机 Nginx + acme.sh，证书支持 `/root/domain/<完整域名>`，兼容旧首段目录；删除前单独验证域名和共享引用。
-- 证书申请和续期统一使用 `/var/www/acme-challenge` webroot，Nginx 不会因证书操作被停止，也不会强制 `kill -9` 其他服务。
-- 证书安装包含 Nginx reload hook；续期包装脚本写入 `/var/log/acme.sh/renew.log`，失败会写入系统日志。
-- 配置删除复用失败恢复保护；证书删除先核查单域名 SAN、Nginx/其他续期记录/Docker 挂载引用、权限、链接及打开文件。共享、多域名、通配符或无法判定的证书保留；ECC 使用 `--ecc`，RSA/ECC 双记录需人工指定。申请失败不再自动删除无法证明属于本次操作的配置或证书。
-
-### SSH 与 UFW
-
-- UFW 管理启用防火墙前放行检测到的 SSH 端口；SSH 安全配置可留空公钥输入以使用已有有效公钥，不会自动开启 UFW。
-- SSH 配置菜单 1/2/3/4/6 与公钥删除使用共享安全事务：先验证候选文件，启用 180 秒定时与重启恢复，再原子发布、reload；须通过变更后的独立 SSH 连接执行 `d ssh-confirm <token>`。未确认会恢复原文件；未知外部改动不会被覆盖，恢复材料保留供核查。
-- 改端口会为已启用的 UFW 增量添加带事务标识的新端口 TCP 规则；回滚只移除本次新增规则，保留旧规则。菜单 4 不再安装/启用 UFW 或自动封禁 22，需先单独审查并启用防火墙；活动 fail2ban 的端口变更、socket activation、自定义 SSH 服务启动参数等仍明确拒绝，不自动停用保护。
-- 配置编辑使用 `/run` 内私有暂存文件，校验原文件未变化后应用；公钥删除固定显示时的文件摘要，拒绝最后一把公钥及无效剩余文件，并等待新连接确认。新增公钥是独立非破坏性操作，后续配置失败不会撤销已添加的公钥。
-- 事务不是带外救援替代品。手工规则、非协作 root 并发及发行版差异可能需要人工恢复；本轮只在 wawo 验证在线流程，未做真实重启或故意切断唯一连接的测试。
-
-- `d sshkey` 导入公钥会逐行验证，保留 SSH include 和 Match 配置；登录策略先校验再应用，失败恢复本次原配置，不创建持久备份。为其他用户导入公钥不会切换全局登录策略。
-
-### Docker 备份
-
-- 输入 `STOP_BACKUP` 后停止所选容器（Compose 自动纳入整个项目），保存可写层快照、镜像、完整运行参数、挂载数据及 Compose 配置，再恢复原运行状态。备份目录为 `/tmp/docker_backup_*`，权限 700；失败保留 `incomplete.json`，不能作为完整备份恢复。
-- 输入 `RESTORE` 后只向指定的已有空目录恢复，bind 数据改映射至该目录；保留 volume 类型、TCP/UDP、多 HostIP 绑定、Entrypoint/Cmd、环境、重启策略及原运行/停止状态。任何同名容器（含停止态）、卷、网络或 Compose 项目均拒绝，不删除原资源。
-- Compose 保留原项目文件和有序配置清单，并生成私有 `compose.restore.json` 作为恢复后的规范化配置，使用快照镜像，不重新 build。恢复后仍需验证应用登录、数据库和业务接口；失败记录在恢复目录的 `restore-state.json`，已恢复的数据不会自动删除。
-- 当前支持本机 Linux Docker Unix socket、普通容器、单副本 Compose 服务、普通本地卷和 bridge 网络。旧格式无完整清单的备份、跨平台、Swarm、特殊设备/共享命名空间、外部 configs/secrets、目录外 build 上下文、ACL/xattrs 等场景明确拒绝，不静默丢失信息。不能直接执行旧版生成的还原脚本；应从原环境重新生成新版备份或在隔离环境人工恢复旧数据。
-
-### 系统信息查询
-
-- 展示主机名、系统版本、内核、CPU、内存、Swap、硬盘、流量、拥塞算法、队列算法、运营商、IPv4、IPv6、DNS、位置、时间、时区、本地语言、运行时长，以及 SSH、UFW、Docker、Nginx、Fail2ban、rclone、Bitwarden 状态。
-- 只读查询，不安装依赖。公网查询限定地址族和超时；位置使用已有 jq/Python 解析，缺失或失败显示未知。SSH 认证项来自 `sshd -T` 的全局配置，不代表特定用户的 Match 策略或实际登录结果。
-
-### 系统更新
-
-- 尝试修复 dpkg 中断；锁被占用或修复失败时停止，不强杀进程或删除锁文件。
-- 执行系统软件包更新和升级。
-
-### 系统清理
-
-- 清理无用依赖、软件包缓存，按原有 500M 上限清理 journal；任一步失败即停止。
-- 不清空共享 `/tmp`、`/var/log`，不按 1 秒保留期删除日志；无安全清理入口的 opkg 跳过。
-
-### 一键配置
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 配置全部 | 默认回车也是此项，预填 `2 3 4 5 6 7 8 9 10`，用户可自行删减编号 |
-| 2 | 系统更新 | 执行系统更新 |
-| 3 | 系统清理 | 执行系统清理 |
-| 4 | 设置虚拟内存 1G | 创建/重建 1G Swap |
-| 5 | 优化 DNS 地址 | 根据 `ipinfo.io` 的 `country` 字段自动选择 DNS；`CN` 使用国内 DNS，其他地区包括香港使用国外 DNS |
-| 6 | 开启 BBR 加速（BBR + FQ） | 当前内核支持 BBR 时设置并验证 BBR + FQ；不自动安装或更换内核 |
-| 7 | 安装 Docker | 根据 `ipinfo.io` 的 `country` 字段自动选择国内镜像或 Docker 官方源 |
-| 8 | BBR + FQ | 保留基础拥塞控制与队列；缓冲参数须到系统工具进行本地 iperf3 多轮验证后再应用 |
-| 9 | 安装第三方工具 | 安装全部 15 项工具；需要选择工具时使用主菜单的第三方工具管理 |
-| 10 | 修改时区和本地语言 | 设置时区为 `Asia/Shanghai`，本地语言为 `en_US.UTF-8` |
-
-批量配置先验证全部编号并去重，再按输入顺序执行。中间不等待“按任意键继续”；失败项会明确记录，后续配置继续，最后汇总成功/失败编号并只执行一次 `exec bash`。直接选择第 9 项也使用相同收尾流程。清空编号或输入 `0` 取消，不执行配置或重启 Shell。已有可用 Docker/Compose 会保留安装和配置；检测到异常时报告失败，不自动卸载。
-
-### 系统工具
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 设置脚本启动快捷键 | 设置 `d` 或自定义快捷命令 |
-| 2 | 更换系统软件包镜像源 | 下载、缓存并校验 LinuxMirrors 脚本后执行；下载失败不执行部分内容 |
-| 3 | 优化 DNS 地址 | 配置国外/国内 DNS、手动编辑或恢复原配置 |
-| 4 | 切换优先 ipv4/ipv6 | 修改 `/etc/gai.conf`，切换 IPv4/IPv6 优先级 |
-| 5 | 修改虚拟内存大小 | 预设 1G、2G、4G，支持自定义 Swap 大小，也支持删除 `/swapfile` |
-| 6 | 用户管理 | 创建普通用户/高级用户、赋予/取消 sudo 权限、删除用户 |
-| 7 | 系统时区调整 | 切换亚洲、欧洲、美洲和 UTC 常用时区 |
-| 8 | 修改主机名 | 修改 hostname 和 hosts 中的本机名 |
-| 9 | 本机 host 解析 | 添加或删除 `/etc/hosts` 解析记录 |
-| 10 | 系统变量管理工具 | 查看、添加、修改、删除环境变量 |
-| 11 | github镜像源 | 显示镜像源、添加、删除、测速 |
-| 12 | 查看ssh的ip | 查看当前 SSH 连接 IP 和所有 SSH 连接地址 |
-| 13 | 网卡管理工具 | 查看、启用、禁用网卡和查看网卡详细信息 |
-| 14 | journalctl日志管理 | 配置日志自动清理、查看占用、查看服务日志、按时间/大小清理 |
-| 15 | 网络自适应优化兼容入口 | 跳转一级菜单 21，保留原编号 |
-| 16 | 禁用IPv6 | 写入 sysctl 配置禁用 IPv6 |
-| 17 | 开启IPv6 | 写入 sysctl 配置开启 IPv6 |
-| 18 | 设置本地语言 | 支持 `en_US.UTF-8`、中文简体和其他常用 UTF-8 locale |
-| 19 | Docker镜像源测速 | 测速默认镜像源、第三方镜像源或两者组合，可选择加入官方镜像源 |
-| 20 | 卸载daimon脚本 | 删除 daimon 本地脚本和快捷命令 |
-
-Swap 只调整带本脚本 inode 归属标记的 `/swapfile`；未标记的已有文件、其他 swap 文件及物理分区保持不变。大小须为 1-1048576 MiB 整数；停用失败不覆盖原文件，新文件启用失败尝试恢复原文件和启用状态。
-
-自定义快捷键不能覆盖已有系统命令；两个位置创建成功后才清理旧别名，创建失败恢复原链接，保留 `d`。用户权限修改与删除仅接受合法的普通账号（UID 至少 1000，排除 nobody）；删除账号及主目录需要再次输入用户名确认。
-
-IPv4/IPv6 优先级切换保留其他 gai 策略；主机名修改保留 hosts 别名并在失败时恢复。hosts 删除和 GitHub 镜像名称按字面匹配，不将输入当正则。环境变量值转义保存，拒绝特殊 Shell 类型，不执行 Shell 配置或修改当前工具箱环境；重新登录后生效。
-
-### 网络自适应优化（一级菜单 21）
-
-主菜单 `21` 提供 `1. 动态调优`、`2. 恢复调优前参数`、`3. iperf3 本地测试`；旧 `5 → 15` 保留跳转。第 3 项只测速，不修改参数。动态调优的自动持久化只使用本地 iperf3 接收端多轮结果；TCPquality 公共端点仅供线路参考。四个 TCP 组件随完整版本一起安装，不在运行该菜单时下载可能不同版本的组件。
-
-- 菜单顶部显示最近 IPv4 / IPv6 实测（Mbps、RTT、重传、时间）。只有同一客户端、会话和配置，且记录未超过一天时，才比较协议快慢；不同会话的历史数字不能直接推荐节点协议。
-- 动态调优内可选 IPv4、IPv6、共用配置或分别试调后择优。TCP sysctl 参数两种协议共用，第四项最终只能保留一套配置；任一协议明显变慢则不保留候选。
-- 本地只需粘贴**一条 PowerShell 命令**。它从服务器临时令牌接口取得经过 SHA256 校验的客户端脚本，自动运行多轮 iperf3 `-R`，将本地 JSON 的实际接收速率回传。服务器只在本轮参数准备好后启动一次性 iperf3 服务端；不把同一连接的每秒采样误当多轮。
-- `TCPquality`：运行 `ibsgss/TcpQuality` 国内三网单线程测速，取下载最快三个结果的中位数，RTT 取国内公共 DNS 的 ping 中位数；解析失败时打印原始输出并要求手工输入带宽和 RTT。
-
-本次调优比较**发送缓冲上限**：以 BDP、当前值对半/翻倍生成不同的上下调候选，受内存/32 和 256MiB 限制，并利用获胜候选的新实测进行有限细化。每个候选采用 `A → B → A` 独立连接对照；最多探索三个候选，再给获胜配置做两次独立 `B → A` 确认。任一确认轮无可靠收益、任一所测协议倒退，或相邻 A 轮漂移超过 20%，均不写入。只比较 `net.core.wmem_max` 和 `net.ipv4.tcp_wmem` 上限，必要时将 TCP 默认值夹入合法范围；BBR/FQ 和其他已有覆盖保留。结果只适用于本次客户端路径，不保证其他线路同样提升。
-
-新快照只记录两项发送缓冲参数；中途失败、不达标或中断时，只恢复本次确实修改过的参数并复读验证。纯测速不写 sysctl，也不撤销其他服务期间作出的无关调整。应用和菜单恢复都不重载全机 sysctl，持久化仍合并原配置；互斥锁避免同时调优。
-
-测速端口永久放行，临时控制规则按 IPv4/IPv6 分别检查，只撤销本会话新增的规则；结束结果等待客户端确认，默认最长 30 秒后关闭接口。确认请求可重试，响应丢失不把已经收到的成功结果改成失败。云平台安全组无法由本机脚本直接修改。每次预算 **20 GB（十进制）**，服务器出口计数包括预热、重传及同期业务流量，并预留 512 MiB 余量提前停止；计数与云厂商账单可能不同。剩余预算不足以完成两次确认时不应用候选。当前内核不支持 BBR 时不写入调优配置。
-
-| 参数 | 多轮调优方式 |
+| 命令 | 作用 |
 |---|---|
-| `net.core.wmem_max` | 可上调或下调，只有独立确认通过才持久化 |
-| `net.ipv4.tcp_wmem` | 调整最大值，默认值超过新上限时同步夹入；该参数同时影响 IPv4 和 IPv6 |
-| BBR + FQ | 必须在调优前已生效，试验期间不切换 |
-| 其他 sysctl | 不参加本轮候选比较，避免混淆单线程下载结果 |
+| `d` | 打开主菜单 |
+| `d install/remove 包名` | 安装 / 卸载软件包 |
+| `d update` / `d clean` | 系统更新 / 系统清理 |
+| `d swap 2048` / `d time Asia/Shanghai` | 设置虚拟内存 / 时区 |
+| `d docker [install\|ps\|img]` | Docker 管理 |
+| `d ssh` / `d sshkey [公钥\|URL\|github 用户]` | 远程连接管理 / 导入 root 公钥 |
+| `d f2b` `d rc` `d bw` `d cronsync` `d retire` `d info` | fail2ban / rclone / Bitwarden / 同步脚本 / 退役 / 系统信息 |
+| `d status\|start\|stop\|restart\|enable 服务` | 服务管理 |
+| `d ssh-confirm TOKEN` / `d ssh-rollback TOKEN` | 确认 / 回滚待确认的 SSH 修改 |
 
-### 第三方工具
+## 主菜单
 
-- 支持按编号安装、按编号卸载、全部安装、全部卸载。
-- “全部安装 / 全部卸载”会预填当前分类全部编号，执行前可以手动删除不需要的编号。
-- 带配置的工具卸载时会同步删除脚本写入的配置。
-- 国内仅指 `ipinfo.io` 返回 `CN`；香港走国外路径。国内 fzf 发行包、Git 子模块与 NextTrace 源也使用代理，安装失败不会写入新的成功配置。
-
-| 序号 | 名称 | 工具的作用 |
+| 序号 | 菜单 | 说明 |
 |---:|---|---|
-| 1 | vim | 文本编辑器，并设置 `EDITOR=vim`、`VISUAL=vim` |
-| 2 | cpcat | 通过 OSC 52 快速复制文件内容到本地剪贴板 |
-| 3 | Ctrl+D | 将 Bash 中的 `Ctrl+D` 绑定为删除下一个单词 |
-| 4 | starship | 终端提示符美化 |
-| 5 | bat | 终端输出高亮增强，提供 `bauto`、`blog`、`byaml`、`raw` 等命令 |
-| 6 | btop | 现代化系统资源监控工具 |
-| 7 | tree | 以树形结构查看目录 |
-| 8 | ripgrep | 快速文本搜索工具，命令为 `rg` |
-| 9 | fd | 快速文件查找工具，Ubuntu 下通过 `fd-find` 安装并配置 `fd` 别名 |
-| 10 | fzf | 命令行模糊搜索工具，使用 git clone 安装 |
-| 11 | ble.sh | Bash 行编辑增强、自动补全和历史补全 |
-| 12 | yazi | 现代终端文件管理器，通过 Yazi 官方签名 APT 源安装，验证 `yazi` 和 `ya` |
-| 13 | ncdu | 交互式磁盘占用分析工具 |
-| 14 | NextTrace | 可视化路由追踪工具，通过官方 apt 源安装 |
-| 15 | iperf3 | 网络性能测试工具 |
+| 1 | 系统信息查询 | 只读显示系统、资源、网络、SSH、UFW、Docker、Nginx、fail2ban、rclone、Bitwarden 状态 |
+| 2 | 系统更新 | 修复中断的 dpkg 后更新并升级软件包，不强杀进程 |
+| 3 | 系统清理 | 清理无用依赖、软件包缓存、journal（500M 上限） |
+| 4 | 一键配置 | 下表各项可单选，或“配置全部”后删减编号批量执行 |
+| 5 | 系统工具 | 快捷键、软件源、DNS、IPv4/6 优先、Swap、用户、时区、主机名、hosts、环境变量、GitHub 镜像、网卡、journal、IPv6 开关、语言、Docker 镜像测速、卸载工具箱 |
+| 6 | 第三方工具 | vim、cpcat、Ctrl+D、starship、bat、btop、tree、ripgrep、fd、fzf、ble.sh、yazi、ncdu、NextTrace、iperf3 的安装 / 卸载 |
+| 7 | 编程工具 | Python、npm、Node.js、Bun、uv、git、ClaudeCode、Codex 的安装 / 卸载 |
+| 8 | Docker 管理 | 安装、状态、容器、镜像、网络、卷、清理、镜像源、daemon.json、Compose 自动更新、IPv6、备份 / 迁移 / 还原、卸载 |
+| 9 | SSH 管理 | 端口、密码 / 密钥登录、安全配置、公钥私钥、编辑 sshd_config（事务化，需新连接确认） |
+| 10 | UFW 管理 | 安装（先放行 SSH 端口）、卸载、开放 / 删除端口 |
+| 11 | Nginx + 域名管理 | acme.sh webroot 证书、Nginx 站点、测试页、本地备份 / 恢复、证书迁移 |
+| 12 | fail2ban 管理 | 安装并按当前 SSH 端口配置 sshd jail、卸载、检查修正 |
+| 13 | BBR 管理 | 运行 Linux-NetSpeed `tcpx.sh`（内核需用户在其中明确选择） |
+| 14 | WARP 管理 | 运行 fscarmen WARP 脚本、彻底删除 WARP |
+| 15 | rclone 管理 | 安装、编辑配置、卸载、恢复远程文件夹、恢复 Nginx + 域名、Compose 恢复、同步记录 |
+| 16 | Bitwarden 管理 | 配置 vaultwarden-backup 的 rclone.conf、备份、还原、同步脚本 |
+| 17 | crontab 同步脚本 | Bitwarden、图床、Via、域名 Nginx、Emby、`/root` 一致性备份脚本的安装 / 卸载 / 立即执行 |
+| 18 | 常用一键脚本 | NodeQuality、IPQuality、融合怪、NetQuality、流媒体检测、bench、YABS、HardwareQuality、勇哥、kejilion、sing-box、TcpQuality |
+| 19 | 服务器退役 | 只读检测后按选择停止 Compose、删除托管 Nginx 配置、同步 / 更新脚本和续期任务 |
+| 20 | Debian 基础工具 | 仅 Debian：补齐 ca-certificates、curl、wget、jq |
+| 21 | 网络自适应优化 | 本地 PowerShell 客户端配合 iperf3 多轮对照调优发送缓冲、恢复调优前参数、只测速 |
 
-### 编程工具
+### 一键配置（菜单 4）
 
-- 支持按编号安装、按编号卸载、全部安装、全部卸载。
-- “全部安装 / 全部卸载”会预填当前分类全部编号，执行前可以手动删除不需要的编号。
-
-| 序号 | 名称 | 工具的作用 |
+| 序号 | 选项 | 说明 |
 |---:|---|---|
-| 1 | python | Debian 使用发行版 Python 3、pip 和 venv，不替换系统解释器；Ubuntu 保留 Python 3.12 安装方式 |
-| 2 | npm | 通过 nvm 安装 Node.js LTS 后提供 npm；CN 使用 nvm-cn，非 CN 使用官方 nvm |
-| 3 | nodejs | 通过 nvm 安装最新 LTS 版本 Node.js |
-| 4 | bun | Bun JavaScript 运行时和包管理器 |
-| 5 | uv | Python 包管理和项目管理工具 |
-| 6 | git | 版本控制工具 |
-| 7 | ClaudeCode | Claude Code 命令行工具；CN 使用 npm 镜像源，非 CN 使用官方安装脚本，并写入 `~/.claude/settings.json` |
-| 8 | Codex | Codex 命令行工具；统一通过 `npm install -g @openai/codex@latest` 安装，并写入 `~/.codex/config.toml` |
+| 1 | 配置全部 | 预填 2–10，可删减；失败项记录后继续，最后汇总并 `exec bash` |
+| 2 / 3 | 系统更新 / 清理 | 同主菜单 2 / 3 |
+| 4 | 虚拟内存 1G | 创建带归属标记的 `/swapfile` |
+| 5 | DNS | CN 用 223.5.5.5、119.29.29.29，其他用 1.1.1.1、8.8.8.8 |
+| 6 / 8 | BBR + FQ | 内核支持时启用并验证；缓冲参数到菜单 21 实测后调整 |
+| 7 | Docker | CN 用 linuxmirrors + 国内镜像，其他用官方源 |
+| 9 | 第三方工具 | 安装菜单 6 全部工具 |
+| 10 | 时区和语言 | `Asia/Shanghai` + `en_US.UTF-8` |
 
-已有 ClaudeCode/Codex 配置保持不变。Python 卸载检测到 3.12 是系统解释器时只移除 daimon 的快捷配置，保留解释器和系统依赖。
+### 使用要点
 
-### Docker管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 安装更新 Docker 环境 | 安装或更新 Docker |
-| 2 | 查看 Docker 全局状态 | 查看 Docker 服务和版本状态 |
-| 3 | Docker 容器管理 | 管理容器 |
-| 4 | Docker 镜像管理 | 管理镜像 |
-| 5 | Docker 网络管理 | 管理 Docker 网络 |
-| 6 | Docker 卷管理 | 管理 Docker volume |
-| 7 | Docker 清理 | 清理无用 Docker 资源 |
-| 8 | 更换 Docker 源 | 配置默认 Docker 镜像源：`hub.333186.xyz`、`docker.m.daocloud.io`、`docker.1ms.run`、`docker.registry.cyou` |
-| 9 | 编辑 daemon.json 文件 | 编辑 Docker daemon 配置 |
-| 10 | Docker Compose 自动更新 | 保留项目名和配置文件，定时拉取并健康检查；失败自动恢复旧镜像 |
-| 11 | 开启 Docker IPv6 访问 | 写入 Docker IPv6 配置 |
-| 12 | 关闭 Docker IPv6 访问 | 关闭 Docker IPv6 配置 |
-| 19 | 备份/迁移/还原 Docker 环境 | 备份、迁移和还原 Docker 项目 |
-| 20 | 卸载 Docker 环境 | 卸载 Docker |
-
-Compose 自动更新不会预先执行 `docker compose down`。每个任务使用独立锁，按上海时间错峰执行；仅处理可拉取镜像的运行服务，本地构建、固定 digest 和禁止拉取策略明确跳过，不自动更新源码或构建。默认拉取最多 3 次、间隔 10 秒、单次超时 300 秒；失败保持容器运行。镜像未变化记录 `NO_CHANGE`，不重建；变化后执行 `up -d --no-deps --no-build --pull never --wait`，复核运行镜像 ID，失败尝试恢复实际原运行镜像。已停止的服务或依赖不主动启动。版本 2 任务区分 `UPDATED` 和 `SKIPPED_*`；主工具箱升级后已有任务须重新安装才能刷新脚本和调度。日志轮转设置保持不变。
-
-### SSH管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 修改 SSH 端口 | 修改 sshd 监听端口 |
-| 2 | 禁用 / 开启密码登录 | 控制 `PasswordAuthentication` |
-| 3 | 开启 / 禁用密钥登录 | 控制 `PubkeyAuthentication`，开启时可粘贴公钥 |
-| 4 | 安全配置 | 事务化改端口、关密码、开密钥；联动已启用 UFW，保留旧规则 |
-| 5 | 公钥和私钥管理 | 添加/删除公钥，添加/删除私钥 |
-| 6 | 修改 sshd_config 配置文件 | 编辑暂存副本，验证后事务化应用 |
-
-### UFW管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 安装 UFW | 安装并启用 UFW |
-| 2 | 卸载 UFW | 禁用并彻底卸载 UFW |
-| 3 | 开放端口 | 用户输入 `80` 执行 `ufw allow 80`，输入 `80/tcp` 执行 `ufw allow 80/tcp` |
-| 4 | 删除端口规则 | 用户输入 `80` 执行 `ufw delete allow 80`，输入 `80/tcp` 执行 `ufw delete allow 80/tcp` |
-| 0 | 返回主菜单 | 返回上一级菜单 |
-
-### Nginx + 域名管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 申请证书 + 配置 nginx | 申请证书并生成 Nginx 配置；失败时自动清理证书和 Nginx 配置 |
-| 2 | 删除 nginx 配置 + 证书 | 删除站点配置和证书 |
-| 3 | 申请证书 | 只申请证书 |
-| 4 | 移除证书 | 删除证书 |
-| 5 | 查看证书列表 | 查看已申请证书 |
-| 6 | 配置 nginx | 只生成 Nginx 配置 |
-| 7 | 删除 nginx 配置 | 删除 Nginx 配置 |
-| 8 | 创建测试页面 | 校验名称和端口，不覆盖已有目录或配置 |
-| 9 | 删除测试页面 | 仅删除带本脚本归属标记的测试目录，保留未标记的旧目录 |
-| 10 | 安装 nginx | 安装、启动并设置 Nginx 开机自启 |
-| 11 | 备份域名 + nginx 配置 | 替换最新本地备份 `/root/linux-daimon/backup/nginx-domain/auto_latest` |
-| 12 | 恢复域名 + nginx 配置 | 从 `/root/linux-daimon/backup/nginx-domain/auto_latest` 合并恢复 `sites-available` 和 `/root/domain`，并重建 `sites-enabled` 软链接；同名文件保留本机版本 |
-| 13 | 迁移/修复现有证书 | 将 acme.sh 证书迁移到 webroot 模式并保留当前 Nginx 证书路径；不创建操作前备份，逐域名报告成功、失败和跳过 |
-
-进入 Nginx + 域名管理时只显示域名备份脚本是否开启；安装 Nginx、申请证书或配置 Nginx 时会自动开启每天上海时间 04:00 的本地备份脚本。证书续期任务为每天 03:00 的 `/root/linux-daimon/cert-renew.sh`，日志位于 `/var/log/acme.sh/renew.log`。脚本运行时检测 `/root/domain/*/fullchain.pem`，有域名才刷新 `auto_latest`，无域名则跳过且保留已有备份。恢复时合并备份内容，同名冲突以本机现有文件为准。主脚本更新时会自动同步 Nginx + 域名续期脚本，不再要求用户选择。
-
-### fail2ban管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 安装 Fail2ban | 自动检测当前 SSH 端口并配置 sshd 防护 |
-| 2 | 卸载 Fail2ban | 停止服务并删除配置/状态目录 |
-| 3 | 检查 sshd 配置 | 检查 jail 中的 sshd 端口，不一致则自动修正 |
-| 0 | 返回主菜单 | 返回上一级菜单 |
-
-### BBR管理
-
-- 每次进入时优先下载并校验最新版 `tcpx.sh`，更新失败才使用已通过语法校验的本地缓存。
-- `tcpx.sh` 提供官方稳定/最新/Cloud、BBR、BBRplus、XanMod 和 Zen 等内核安装选项。安装内核需要用户明确选择，不会因进入菜单而自动执行。
-
-### WARP管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 进入 WARP 官方管理脚本 | 运行 WARP 管理脚本 |
-| 2 | 彻底删除 WARP | 删除 WARP 网络接口、Linux Client 和 WireProxy |
-
-### rclone管理
-
-通过 `ipinfo.io` 判断地区：`CN` 优先用 GitHub 代理获取官方版本化发行包，校验 SHA256、ZIP 和实际可执行版本后原子安装；`HK`、其他地区及未知地区使用官方安装器。所有下载设有超时和失败回退，失败不会创建配置或提示成功。成功安装保留已有配置内容，只设置必要权限。
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 安装 rclone | 安装 rclone |
-| 2 | 修改配置文件 | 打开 rclone 配置 |
-| 3 | 卸载 rclone | 卸载 rclone |
-| 4 | 恢复远程文件夹到 /root | 选择有效 remote、服务器和子目录；暂存、内容校验后合并，拒绝活跃挂载和符号链接，明确选择同名文件策略；根层文件、Mihomo、DNS、cron 仍由用户处理 |
-| 5 | 从远程恢复 Nginx + 域名 | 缺失时自动安装 Nginx、OpenSSL、UFW，保护实际 SSH 端口并放行 80/443 与 `172.16.0.0/12`；恢复站点、证书、实际 include 清单并验证，失败回滚，不切换 DNS |
-| 6 | Docker Compose 恢复 | 缺失时调用现有 Docker/Compose 安装流程；扫描最多五级常见 Compose 文件，支持追加绝对目录，检查挂载、卷和代理，确认后启动并等待健康，不重建已运行容器 |
-| 7 | 自动同步记录 | 查看本地缓存的最近 15 次执行状态，按任务筛选，查看/复制脱敏日志，或导出到 `/root/linux-daimon/rclone-logs` |
-
-进入管理菜单会在隔离配置副本中实际检测每个 remote，显示名称、类型及有效／认证无效／无法检测；不打印 token，读取成功不等于已验证备份可写。需要 Python 3，单个 remote 检测最多 25 秒。
-
-迁移顺序：用户安装 Mihomo；脚本通过 rclone 菜单选择性恢复 `/root`，再恢复 Nginx/证书（自动补齐 Nginx、OpenSSL、UFW，保护 SSH，放行 80/443 和用户指定的 `172.16.0.0/12`），检查卷/挂载并启动 Compose；用户切换 DNS，再人工验证域名和登录。目录恢复不包含根层文件、未备份的隐藏配置、`/data`、named volumes 或系统 cron，也不保证云文件保留原 UID/GID。Vaultwarden named volume 使用 Bitwarden 专用还原；脚本不安装 Mihomo、不修改 DNS，也不恢复系统 cron。
-
-### Bitwarden管理
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 配置 rclone.conf 文件 | 选择有效 remote，通过本机备份镜像的 rclone 直接验证，仅替换 `BitwardenBackup` 和必要依赖；保留其他 remote，不打印 token |
-| 2 | 数据备份 | 对运行中的 `vaultwarden-backup` 容器执行 `/app/backup.sh`；退出码和上传成功字段必须同时满足 |
-| 3 | 数据还原 | 读取实际 remote 和数据卷，要求使用者已停止；重新下载并校验 ZIP，隔离解密，验证 SQLite 和归档路径后替换 named volume 数据 |
-| 4 | 配置 Bitwarden 同步脚本 | 写入 `/root/linux-daimon/backup-sh/Vaultwarden_OneDrive_to_Kissska1.sh`，并添加上海时间 05:05 同步到 `kissska1` 的 crontab |
-| 0 | 返回主菜单 | 返回上一级菜单 |
-
-### crontab同步脚本管理
-
-同步脚本采用原子写入并传播 rclone 失败。所有定时和手动 `/root` 执行都经过 `/root/linux-daimon/backup-sh/.rclone-runner.sh`，记录状态到 `/var/cache/daimon/rclone-sync-status.tsv`，独立日志放在 `/var/log/rclone/runs`。状态缓存默认保留 30 天，菜单默认显示最近 15 次；失败记录包含退出码和脱敏原因，复制使用 OSC 52/cpcat，导出文件使用 600 权限。受管 root 任务通过内置升级更新，未知自定义脚本保持不变；更新主脚本不会立即运行生产备份或云端同步。
-
-升级保留服务器名称和原定时。锁仍放在 `/run/lock`，大清单使用磁盘目录 `/var/tmp/daimon-root-backups`，恢复清单保存在 `/var/lib/daimon/root-backups/<服务器名>`。按现有 Compose 依赖先恢复依赖服务，仅启动备份前运行的容器；传输期间检测外部启动/替换及宿主机可写文件句柄，发现无法保证一致性时失败并恢复。未知宿主机写入者需要另行停止或采用数据库原生备份，不能保证扫描能发现所有短暂写入。
-
-主备份内容校验后，先恢复原运行容器，再复制到第二个远端，让服务预热与复制并行；最终健康检查通过才记录整体成功。Compose 的 `service_started` 仅要求依赖已运行，`service_healthy` 要求依赖健康。rclone 配置及标准 `.bash_history`、`.zsh_history` 如在备份范围内，使用权限受限的临时副本上传并单独校验，保留副本生成时的内容；在线配置与历史文件继续正常更新，任务结束后清理副本。
-
-可在任务目录的 `.root-backup.exclude` 中逐行写入 rclone 排除模式，或通过 `DAIMON_ROOT_EXCLUDE_FILE` 指定文件。例如 `/snap/chromium/**` 排除 `/root/snap/chromium`；仅在无需备份这些数据时配置。排除规则同时用于扫描、传输、校验和宿主机写入者检查，更新保留该文件。
-
-需要暂停的宿主机服务可在任务旁 `.root-backup.services` 中逐行列出完整 systemd `.service` 名称，或用 `DAIMON_ROOT_SERVICES_FILE` 指定配置文件。仅暂停启动时处于 active 的明确配置服务，保留原本停止的服务；主备份校验后及失败退出时恢复。恢复清单持久保存，恢复失败不标记成功，下次运行先重试。具有 timer/socket 触发关系的服务会拒绝自动暂停，需另行制定停写策略。未配置的服务不会被自动停止。
-
-运行日志默认单文件达到 8 MiB 后保留后半段，总预算 128 MiB、保留 30 天，只清理本脚本格式匹配且未被活动任务锁住的文件。每 0.5 秒检查，瞬间突发写入可能短暂超过阈值；磁盘空间被其他程序耗尽时取消任务并尝试恢复服务，不能保证物理空间永不耗尽。被轮转的早期详细输出不再保留，状态缓存继续保存结果。历史非受管日志和导出文件不会被自动删除。
-
-| 环境变量 | 默认值 | 用途 |
-|---|---:|---|
-| `DAIMON_LOG_FILE_BYTES` | 8388608 | 单次日志轮转阈值 |
-| `DAIMON_LOG_TOTAL_BYTES` | 134217728 | 受管运行日志总预算 |
-| `DAIMON_LOG_RETENTION_DAYS` | 30 | 详细日志保留天数 |
-| `DAIMON_LOG_MIN_FREE_BYTES` | 67108864 | 日志/状态分区最低剩余空间 |
-| `DAIMON_LOG_MIN_FREE_INODES` | 128 | 日志/状态分区最低剩余 inode |
-| `DAIMON_BACKUP_WORK_DIR` | `/var/tmp/daimon-root-backups` | 磁盘工作目录，拒绝 tmpfs |
-| `DAIMON_ROOT_STATE_DIR` | `/var/lib/daimon/root-backups/<服务器名>` | 持久恢复状态目录 |
-| `DAIMON_BACKUP_MIN_FREE_BYTES` | 268435456 | 备份工作/状态/日志目录最低剩余空间 |
-| `DAIMON_BACKUP_MIN_FREE_INODES` | 128 | 备份最低剩余 inode |
-| `DAIMON_ROOT_TRANSFERS` | 4 | root 并行传输数，允许 1–32；提高会增加内存和远端请求压力 |
-| `DAIMON_ROOT_CHECKERS` | 8 | root 并行检查数，允许 1–64 |
-| `DAIMON_ROOT_TPS_LIMIT` | 4 | root 每秒请求上限，允许 1–32；突发为 1，多个服务器共用账号时需分配请求预算 |
-| `DAIMON_RECOVERY_TIMEOUT` | 自动计算 | 按容器启动宽限、检查间隔、超时和重试数计算 180–3600 秒；显式设置可覆盖为 1–3600 秒 |
-
-root 低层请求最多重试 10 次，遵守后端的重试等待。完整内容校验最多执行 3 次，重试等待至少 60／120 秒，并尊重日志中的更长退避时间；单次等待超过一小时则保留失败。等待期间继续检查写入者和空间。持续的内容差异、缺失或服务恢复失败仍判失败。
-
-预算通过启动任务的环境设置；降低阈值不能解决实际容量不足。此流程依赖 Linux、Bash、Python 3.9+、util-linux、rclone，Docker 数据还需可用 Docker daemon。云厂商和 CPU 架构不写死；能力或一致性检查不通过会拒绝继续。
-
-内置脚本编号：
-
-| 序号 | 名称 | 作用 |
-|---:|---|---|
-| 1 | Bitwarden 同步脚本 | 每天上海时间 05:05 从 `qq3303338052@outlook` 同步 Bitwarden 备份到 `kissska1` |
-| 2 | 图床同步脚本 | 每天上海时间 04:10 同步图床数据 |
-| 3 | Via 同步脚本 | 每天上海时间 04:15 从 `qq3303338052@outlook:Via` 同步到 `kissska1:Via` |
-| 4 | 域名和nginx配置备份脚本 | 每天上海时间 04:00 本地备份到 `/root/linux-daimon/backup/nginx-domain/auto_latest`，只保留 1 份，不使用 rclone |
-| 5 | Emby目录备份脚本 | 每周日上海时间 05:45 停止使用 `/root/emby` 的运行中容器，不限速同步到 QQ，校验并恢复容器后从 QQ 复制到 kissska1；不创建快照 |
-| 6 | `/root` Docker 一致性备份脚本 | 每天上海时间 04:25 沿用服务器名称，冻结相关容器完成 `/root` → QQ，再恢复容器并执行 QQ → kissska1 |
-
-Emby 备份会先检查实际同步范围和 OneDrive 大小写冲突，再停止对 `/root/emby` 有可写挂载的原运行容器（包括父目录挂载）；向 QQ 同步及 `rclone check` 期间保持停止，恢复后再执行 QQ → kissska1 及校验。两阶段均固定 `--bwlimit=0 --transfers=4 --checkers=8`，旧限速环境变量不再生效。空源、Docker 检查失败、路径冲突、同步或容器恢复失败均不能标记成功。日志和迁移回滚目录不参与备份，SQLite 的 WAL/journal 不作为普通日志排除。`sync` 会删除目标中不再存在的文件，不等于历史版本备份；不创建快照。
-
-正常失败或 INT/TERM 会先等待传输退出，再恢复容器。恢复失败时保留 `/run/lock/daimon-emby/containers.pending`，核对并恢复清单中的容器后才能移除清单重试；强杀或主机故障不能依靠 shell trap 自动恢复。运行器会保留真正存活的长任务状态，重复路径警告不显示为完整成功。
-
-更新、启动或进入本菜单会检测已安装的受管理 `/root`、Emby 脚本；识别旧版本后原子替换，保留服务器名称和已有时间，合并重复 `/root` 任务，并把旧版 `custom:<服务器名>` 运行标识统一迁移为 `root`。任务运行、身份歧义或未知脚本模板会明确阻止升级。未安装任务的服务器不会自动创建任务。`/root` 备份只有统一的服务器命名入口：`qq3303338052@outlook:<服务器名>` → `kissska1:<服务器名>`；Emby 独立使用两边的 `Emby`，Nginx 本地包仍包含在服务器目录的 `linux-daimon/backup/nginx-domain/auto_latest`。
-
-启动时仅提示旧 Infini-cloud 脚本，不改脚本或 cron。管理菜单选项 6 经 `MIGRATE` 确认后，只迁移选中的 Bitwarden/Via 旧脚本中的字面量 `Infini-cloud:` 为 `kissska1:`，保留文件名、同步方向及定时，不改自定义内容；旧文件会在其他脚本中显示。运行中、链接、不可信权限、语法错误或锁冲突会拒绝。
-
-| 序号 | 选项 | 作用 |
-|---:|---|---|
-| 1 | 安装脚本 | 支持多选安装 Bitwarden、图床、Via、域名和 Nginx、`/root`、Emby 备份或已有其他脚本 |
-| 2 | 卸载脚本 | 支持多选删除脚本文件和对应 crontab |
-| 3 | 一键安装 | 默认预填所有脚本编号，用户可自行删除编号 |
-| 4 | 一键卸载 | 默认预填所有脚本编号，用户可自行删除编号 |
-| 5 | 立即执行一次 `/root` 备份 | 需要确认口令，执行结果也记录到自动同步记录 |
-| 6 | 迁移旧 Infini-cloud 脚本 | 显式选择并确认，保留原路径和 cron |
-| 0 | 返回主菜单 | 返回上一级菜单 |
-
-
-### 常用的一键脚本
-
-| 序号 | 名称 | 命令 |
-|---:|---|---|
-| 1 | NodeQuality | `bash <(curl -sL https://run.NodeQuality.com)` |
-| 2 | IPQuality | `bash <(curl -Ls https://IP.Check.Place)` |
-| 3 | 融合怪 | `curl -L https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh -o ecs.sh && chmod +x ecs.sh && bash ecs.sh` |
-| 4 | NetQuality | `bash <(curl -Ls https://Net.Check.Place)` |
-| 5 | RegionRestrictionCheck | `bash <(curl -L -s check.unlock.media)` |
-| 6 | bench.sh | `wget -qO- bench.sh | bash` |
-| 7 | YABS | `curl -sL https://yabs.sh | bash` |
-| 8 | HardwareQuality | `bash <(curl -Ls https://Check.Place) -H` |
-| 9 | 勇哥脚本 | 进入脚本后运行 |
-| 10 | kejilion.sh | `bash <(curl -sL kejilion.sh)` |
-| 11 | sing-box安装 | `bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh)` |
-| 12 | TcpQuality | `bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh)` |
-
-### 服务器退役
-
-进入菜单后顶部只读显示 Docker Compose、Nginx 配置、自动同步脚本、Compose 自动更新脚本和证书续期任务状态。菜单 1 会预填当前全部项目编号，用户可以删除不需要处理的编号，输入 `RETIRE` 后执行；各类别批量操作按编号倒序处理，避免删除前面的项目后编号错位。
-
-退役按项目名、工作目录和配置清单复核完整容器 ID，先停止再非强制移除所选容器；不执行 `compose down`，保留卷、网络、镜像和项目文件，同名不同上下文会拒绝。Nginx 配置删除失败会尝试恢复；证书保留，须在证书管理单独核查。脚本删除使用精确 cron 匹配。只允许处理 `/etc/nginx/sites-enabled`、`/etc/nginx/sites-available`、`/home/web/conf.d`、脚本托管目录和证书续期脚本；不会修改 DNS、UFW、Mihomo、SSH 或 rclone 配置，也不会自动创建备份。
+- **SSH**：修改先写入候选配置并启动 180 秒回滚计时，必须从新连接执行 `d ssh-confirm TOKEN`，否则自动恢复。Ubuntu 22.10+ 默认的 `ssh.socket` 会在确认后切换为常规 `ssh.service`。安全配置只在 UFW 已启用时联动放行新端口；fail2ban 运行中不允许改端口。
+- **Docker 备份**（菜单 8-19）：输入 `STOP_BACKUP` 后停止所选容器（Compose 整个项目），保存镜像、可写层、挂载和配置到 `/tmp/docker_backup_*`，再恢复原运行状态；还原需要空目录并输入 `RESTORE`，同名资源拒绝。
+- **Compose 自动更新**（菜单 8-10）：按上海时间错峰拉取，镜像变化才重建并等待健康，失败恢复原镜像；已停止的服务不启动。
+- **迁移到新服务器**：rclone 菜单 4 恢复 `/root` 下所需目录 → 菜单 5 恢复 Nginx 和证书 → 菜单 6 启动 Compose 项目 → 自行切换 DNS 并验证。
+- **同步脚本**（菜单 17）：统一经 `.rclone-runner.sh` 运行，状态写入 `/var/cache/daimon/rclone-sync-status.tsv`，日志在 `/var/log/rclone`；`/root` 备份按服务器名同步 `qq3303338052@outlook:<名称>` → `kissska1:<名称>`，备份期间冻结相关容器。排除规则写入任务目录 `.root-backup.exclude`。
+- **网络优化**（菜单 21）：每次预算 20 GB；候选采用 A→B→A 对照并两次确认，无可靠收益保留原参数。“恢复调优前参数”回到菜单显示的快照时间点。测速端口 50280 保持放行，控制端口用后删除；云平台安全组需自行放行。
 
 ## 第三方脚本引用
 
-以下只列本脚本会下载后执行、`source`、`exec bash` 或通过管道执行的第三方脚本/安装器；普通 API、软件源、配置文件、Docker 镜像源和二进制文件不列入此表。
+只列下载后执行、`source`、`exec bash` 或通过管道执行的外部脚本。国内机器访问 GitHub 时依次尝试 `gh-proxy.com`、`ghproxy.net`、`testingcf.jsdelivr.net`、`ghfast.top`。
 
-| 分类 | 名称 | 来源 | 用途 |
-|---|---|---|---|
-| 系统工具 | linuxmirrors 软件源脚本 | `https://linuxmirrors.cn/main.sh` | 更换系统软件包镜像源 |
-| 系统工具 | cmdbox 命令收藏夹脚本 | `https://raw.githubusercontent.com/byJoey/cmdbox/refs/heads/main/install.sh` | 安装命令收藏夹 |
-| Docker | linuxmirrors Docker 安装脚本 | `https://linuxmirrors.cn/docker.sh` | 安装 Docker、配置 Docker CE 源和镜像源 |
-| 系统工具 | jhb IPv6 修复脚本 | `https://jhb.ovh/jb/v6.sh` | IPv6 修复 |
-| BBR 管理 | kejilion 网络自适应优化脚本 | `https://raw.githubusercontent.com/kejilion/sh/refs/heads/main/network-optimize.sh` | Linux 内核调优管理中的自动调优/还原 |
-| BBR 管理 | Linux-NetSpeed | `https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh` | BBR / 网络加速管理 |
-| BBR 管理 | jhb BBRv3 ARM 脚本 | `https://jhb.ovh/jb/bbrv3arm.sh` | ARM 环境 BBRv3 相关处理 |
-| WARP 管理 | fscarmen WARP 菜单脚本 | `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh` | WARP 安装、管理和彻底删除 |
-| rclone 管理（非 CN） | rclone 官方安装脚本 | `https://rclone.org/install.sh` | 安装 rclone；CN 直接下载并校验官方发行包 |
-| SSL/Nginx | acme.sh 官方安装脚本 | `https://get.acme.sh` | 安装 acme.sh，用于申请和续期证书 |
-| LDNMP/网站管理 | 内置 certbot webroot 续期脚本 | `/root/linux-daimon/daimon/auto_cert_renewal.sh` | 仅续期正在运行且已配置 challenge 路径的 Docker Nginx 站点 |
-| Cloudflare | kejilion CF Under Attack 脚本 | `https://raw.githubusercontent.com/kejilion/sh/main/CF-Under-Attack.sh` | Cloudflare 防护模式相关操作 |
-| 第三方工具 | starship 官方安装脚本 | `https://starship.rs/install.sh` | 国外机器安装 starship |
-| 第三方工具 | fzf 源码仓库 | `https://github.com/junegunn/fzf.git` | git clone 安装 fzf |
-| 第三方工具 | ble.sh 源码仓库 | `https://github.com/akinomyoga/ble.sh.git` | git clone 安装 ble.sh |
-| 编程工具 | Bun 官方安装脚本 | `https://bun.sh/install` | 安装 Bun |
-| 编程工具 | uv 官方安装脚本 | `https://astral.sh/uv/install.sh` | 安装 uv |
-| 编程工具 | NodeSource Debian/Ubuntu 安装脚本 | `https://deb.nodesource.com/setup_24.x` | 配置 Node.js apt 源 |
-| 编程工具 | NodeSource RHEL/Fedora 安装脚本 | `https://rpm.nodesource.com/setup_24.x` | 配置 Node.js rpm 源 |
-| 常用一键脚本 | NodeQuality | `https://run.NodeQuality.com` | 网络质量测试 |
-| 常用一键脚本 | IPQuality | `https://IP.Check.Place` | IP 质量、纯净度和流媒体检测 |
-| 常用一键脚本 | 融合怪 | `https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh` | 综合性能测评 |
-| 常用一键脚本 | NetQuality | `https://Net.Check.Place` | 网络质量、回程和延迟检测 |
-| 常用一键脚本 | RegionRestrictionCheck | `https://check.unlock.media` | 流媒体解锁检测 |
-| 常用一键脚本 | bench.sh | `https://bench.sh` | 基础性能、I/O、网络测速 |
-| 常用一键脚本 | YABS | `https://yabs.sh` | 综合性能测试 |
-| 常用一键脚本 | HardwareQuality | `https://Check.Place` | 硬件质量检测 |
-| 常用一键脚本 | 勇哥 x-ui-yg | `https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh` | x-ui-yg 管理脚本 |
-| 常用一键脚本 | kejilion.sh | `https://kejilion.sh` | kejilion 一键脚本 |
-| 常用一键脚本 | sing-box-daimon | `https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh` | sing-box 安装与管理脚本 |
-| 常用一键脚本 | TcpQuality | `https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh` | TCP SYN 重传检测 |
+| 菜单 | 名称 | 来源 |
+|---|---|---|
+| 系统工具 | LinuxMirrors 换源 | `https://linuxmirrors.cn/main.sh` |
+| 系统工具 | jhb IPv6 修复 | `https://jhb.ovh/jb/v6.sh` |
+| Docker | LinuxMirrors Docker 安装（CN） | `https://linuxmirrors.cn/docker.sh` |
+| BBR | Linux-NetSpeed | `https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh` |
+| WARP | fscarmen WARP | `https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh` |
+| rclone（非 CN） | rclone 官方安装器 | `https://rclone.org/install.sh` |
+| Nginx | acme.sh | `https://get.acme.sh` |
+| 第三方工具 | starship（非 CN） | `https://starship.rs/install.sh` |
+| 第三方工具 | fzf / ble.sh 源码 | `https://github.com/junegunn/fzf.git`、`https://github.com/akinomyoga/ble.sh.git` |
+| 编程工具 | nvm / nvm-cn | `https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh`、`https://gitee.com/RubyMetric/nvm-cn/raw/main/install.sh` |
+| 编程工具 | Bun / uv / ClaudeCode | `https://bun.sh/install`、`https://astral.sh/uv/install.sh`、`https://claude.ai/install.sh` |
+| 一键脚本 | NodeQuality / IPQuality / NetQuality / HardwareQuality | `https://run.NodeQuality.com`、`https://IP.Check.Place`、`https://Net.Check.Place`、`https://Check.Place` |
+| 一键脚本 | 融合怪 | `https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh` |
+| 一键脚本 | RegionRestrictionCheck | `https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh` |
+| 一键脚本 | bench.sh / YABS | `https://bench.sh`、`https://yabs.sh` |
+| 一键脚本 | 勇哥 x-ui-yg | `https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh` |
+| 一键脚本 | kejilion.sh | `https://kejilion.sh` |
+| 一键脚本 | sing-box-daimon / TcpQuality | `https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh`、`https://raw.githubusercontent.com/daimon3332/TcpQuality/main/runTcpQuality.sh` |
+| 网络优化 | TCPquality 参考测速 | `https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh` |
 
-国内机器访问 `raw.githubusercontent.com` / `github.com` 相关脚本时，脚本会优先尝试 GitHub 代理地址，例如 `https://gh-proxy.com/`、`https://ghproxy.net/`、`https://testingcf.jsdelivr.net/gh/`、`https://ghfast.top/`。
-
-## 目录约定
-
-脚本运行过程中的 daimon 自有文件默认放到 `/root/linux-daimon`：
+## 目录
 
 | 路径 | 用途 |
 |---|---|
-| `/root/linux-daimon/linux-toolbox.sh` | 本地脚本 |
+| `/root/linux-daimon/releases/<提交>` | 已校验的完整版本（`current` 指向当前版本） |
+| `/root/linux-daimon/preferences.json` | 许可与偏好 |
 | `/root/linux-daimon/daimon` | 第三方脚本缓存 |
-| `/root/linux-daimon/backup` | 本地备份 |
+| `/root/linux-daimon/backup` | 本地备份（Nginx + 域名） |
 | `/root/linux-daimon/backup-sh` | crontab 同步脚本 |
-| `/root/linux-daimon/docker-compose-update` | Docker Compose 自动更新脚本 |
-| `/root/linux-daimon/tools/fzf` | fzf clone 目录 |
+| `/root/linux-daimon/docker-compose-update` | Compose 自动更新脚本 |
+| `/root/linux-daimon/tcp-tuning` | 网络调优快照与记录 |
+| `/root/domain` | 证书目录 |
 
-域名证书目录保持 `/root/domain`，不迁移到 `/root/linux-daimon`。
-
+源码：`scripts/01-*.sh`～`21-*.sh` 对应一级菜单，`scripts/main.sh` 为主菜单与快捷命令，`scripts/lib` 为共享函数，`scripts/network` 为调优组件。修改前阅读 [CODING_GUIDELINES.md](./CODING_GUIDELINES.md)。
 
 ## 风险提示
 
-本脚本会修改系统配置、SSH、UFW、Docker、Nginx、SSL 证书、Swap、软件源等内容。请只在自己拥有管理权限的服务器上使用，并提前备份重要数据。
+本工具会修改 SSH、防火墙、Docker、Nginx、证书、Swap、DNS、sysctl 等系统配置。请只在自己有管理权限的服务器上使用，并提前备份重要数据。
 
-## 开源协议
-
-本项目基于 MIT License 开源，详见 [LICENSE](../LICENSE)。
-
-## 致谢
-
-- 上游项目：<https://github.com/kejilion/sh>
-- 本项目仓库：<https://github.com/daimon3332/linux-tools-daimon>
+MIT License，见 [LICENSE](../LICENSE)。
