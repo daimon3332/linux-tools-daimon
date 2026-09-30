@@ -25,7 +25,7 @@ warp_manager() {
 			1)
 				clear
 				send_stats "warp管理"
-				install wget curl
+				daimon_require_cmd wget && daimon_require_cmd curl || return 1
 				daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"
 				;;
 			2)
@@ -34,7 +34,7 @@ warp_manager() {
 				read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1
 				if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
 					send_stats "彻底删除warp"
-					install wget curl
+					daimon_require_cmd wget && daimon_require_cmd curl || return 1
 					daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh" u
 				else
 					echo "已取消"

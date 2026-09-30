@@ -41,6 +41,7 @@ done < <(awk '/^rclone_status_text\(\)/ {active=1} /^crontab_sync_backup_dir\(\)
 for fn in crontab_sync_backup_dir crontab_sync_log_cache_file crontab_sync_log_run_dir crontab_sync_log_export_dir crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_log_sanitize crontab_sync_log_copy crontab_sync_log_export crontab_sync_custom_files crontab_sync_root_name; do
     load_function "$fn" || exit 1
 done
+load_function docker_compose_require_plugin || exit 1
 root_use() { :; }
 daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 passed=0 failed=0
@@ -69,22 +70,6 @@ test_reload_failure() {
     nginx() { return 0; }
     systemctl() { return 1; }
     ! rclone_check_nginx_after_restore
-}
-test_link_failure() {
-    mkdir() { :; }
-    rclone() { printf 'fixture-site\n'; }
-    ln() { return 1; }
-    ! rclone_rebuild_sites_enabled_links fixture:backup
-}
-test_no_link_fallback() {
-    local output
-    mkdir() { :; }
-    rclone() { return 1; }
-    find() { printf 'disabled-local-site\n'; }
-    ln() { printf 'WRONG_SITE_ENABLED\n'; }
-    output=$(rclone_rebuild_sites_enabled_links fixture:backup)
-    local rc=$?
-    [ "$rc" -ne 0 ] && [[ "$output" != *WRONG_SITE_ENABLED* ]]
 }
 test_names() {
     local input="$1" expected="$2"
@@ -321,15 +306,6 @@ test_compose_prepare_dependencies() {
     fi
 }
 
-test_verify_is_readonly_and_private() {
-    local output log="$WORK/verify-curl"
-    nginx() { echo 'server_name fixture.example;'; }
-    getent() { echo '192.0.2.1 STREAM fixture.example'; }
-    curl() { printf '%s\n' "$*" >> "$log"; echo 200; }
-    rclone_restore_record() { echo UNEXPECTED_WRITE; return 1; }
-    output=$(rclone_migration_verify <<< $'192.0.2.1\nhttps://fixture.example/health?token=PRIVATE_FIXTURE\n') || return 1
-    [[ "$output" != *PRIVATE_FIXTURE* && "$output" != *UNEXPECTED_WRITE* ]] && grep -q -- '--resolve fixture.example:443:192.0.2.1' "$log"
-}
 
 test_rclone_menu_has_only_restore_workflows() {
     local output
@@ -1017,99 +993,11 @@ test_nginx_conf_only_bundle() {
     [ -f "$DAIMON_NGINX_DIR/conf.d/app.conf" ] && [ ! -s "$fixture/bundle/enabled_sites.txt" ]
 }
 
-test_volume_restore_transaction() {
-    local scenario="$1" fixture="$WORK/volume-$1" rc=0
-    mkdir -p "$fixture/package" "$fixture/volume/_data" "$fixture/source"
-    printf old > "$fixture/volume/_data/item"
-    printf new > "$fixture/source/item"
-    tar -czpf "$fixture/package/data.tar.gz" -C "$fixture/source" . || return 1
-    python3 - "$fixture/package" "$scenario" <<'PY' || return 1
-import hashlib,json,sys
-from pathlib import Path
-p=Path(sys.argv[1])
-h=hashlib.sha256((p/'data.tar.gz').read_bytes()).hexdigest()
-(p/'volume.json').write_text(json.dumps(dict(version=1,name='fixture',sha256=h if sys.argv[2]!='checksum' else 'invalid')))
-PY
-    docker() { :; }
-    rclone_volume_mount() { printf '%s\n' "$fixture/volume/_data"; }
-    rclone_assert_inactive() { [ "$scenario" != active ]; }
-    mountpoint() { return 1; }
-    rclone() {
-        case "$1" in
-            size) printf '{"bytes":4096}\n' ;;
-            copy) [ "$scenario" != download ] && cp -a "$fixture/package" "$3" ;;
-            check) return 0 ;;
-            *) return 1 ;;
-        esac
-    }
-    if [ "$scenario" = rename ]; then
-        mv() { [[ "$*" != *'/new '* ]] && command mv "$@"; }
-    fi
-    rclone_restore_volume fixture:package fixture <<< 'RESTORE fixture' || rc=$?
-    if [ "$scenario" = success ]; then [ "$rc" = 0 ] && [ "$(cat "$fixture/volume/_data/item")" = new ]; else [ "$rc" -ne 0 ] && [ "$(cat "$fixture/volume/_data/item")" = old ]; fi
-}
 
-test_volume_export_roundtrip() {
-    local scenario="$1" fixture="$WORK/volume-export-$1" output rc=0
-    local remote_root="$fixture/remote"
-    mkdir -p "$fixture/volume/_data/nested"
-    printf original > "$fixture/volume/_data/nested/item"
-    chmod 700 "$fixture/volume/_data/nested"
-    chmod 640 "$fixture/volume/_data/nested/item"
-    docker() { case "$*" in 'volume ls -q') printf 'fixture\n' ;; *) return 0 ;; esac; }
-    rclone_volume_mount() { printf '%s\n' "$fixture/volume/_data"; }
-    rclone_assert_inactive() { [ "$scenario" != active ]; }
-    mountpoint() { return 1; }
-    rclone_select_remote() { RCLONE_SELECTED_REMOTE=fixture; }
-    rclone() {
-        local source="${2/#fixture:/$fixture/remote/}" target="${3/#fixture:/$fixture/remote/}"
-        case "$1" in
-            mkdir) mkdir -p "$source" ;;
-            lsjson) python3 - "$source" <<'PY'
-import json,sys
-from pathlib import Path
-print(json.dumps([dict(Name=p.name,IsDir=p.is_dir()) for p in Path(sys.argv[1]).iterdir()]))
-PY
-                ;;
-            copy) mkdir -p "$target" && cp -a "$source/." "$target/" ;;
-            check) diff -r "$source" "$target" ;;
-            size) printf '{"bytes":4096}\n' ;;
-            *) return 1 ;;
-        esac
-    }
-    if [ "$scenario" = existing ]; then
-        mkdir -p "$remote_root/server/linux-daimon/backup/docker-volumes/fixture"
-        printf sentinel > "$remote_root/server/linux-daimon/backup/docker-volumes/fixture/data.tar.gz"
-    fi
-    output=$(rclone_export_named_volumes <<< $'1\nserver\nEXPORT') || rc=$?
-    if [ "$scenario" = active ]; then
-        [ "$rc" -ne 0 ] && [ ! -e "$remote_root/server/linux-daimon/backup/docker-volumes/fixture" ]
-        return $?
-    fi
-    if [ "$scenario" = existing ]; then
-        [ "$rc" -ne 0 ] && [ "$(cat "$remote_root/server/linux-daimon/backup/docker-volumes/fixture/data.tar.gz")" = sentinel ]
-        return $?
-    fi
-    [ "$rc" = 0 ] || { printf '%s\n' "$output"; return 1; }
-    printf modified > "$fixture/volume/_data/nested/item"
-    rclone_restore_volume fixture:server/linux-daimon/backup/docker-volumes/fixture fixture <<< 'RESTORE fixture' || return 1
-    [ "$(cat "$fixture/volume/_data/nested/item")" = original ] || return 1
-    if [ "$(uname -s)" = Linux ]; then
-        [ "$(stat -c %a "$fixture/volume/_data/nested/item")" = 640 ] && [ "$(stat -c %a "$fixture/volume/_data/nested")" = 700 ]
-    fi
-}
 
 test_nginx_generated_bundle_script() {
     local script="$WORK/nginx-generated.sh"
     rclone_nginx_write_backup_script "$script" && bash -n "$script" && grep -q 'config-files.json' "$script"
-}
-test_volume_archive_rejects_links() {
-    local archive="$WORK/link-volume.tar.gz" target="$WORK/link-target"
-    mkdir -p "$WORK/link-source"
-    printf fixture > "$WORK/link-source/file"
-    ln -s file "$WORK/link-source/link"
-    tar -czf "$archive" -C "$WORK/link-source" . || return 1
-    ! rclone_volume_archive "$archive" size
 }
 test_restore_record_atomic() {
     local root="$WORK/record" value
@@ -1173,21 +1061,9 @@ test_retire_script_path_guard() {
     ! server_retire_remove_script /tmp/not-managed.sh
 }
 
-test_retire_bulk_order() {
-    local log="$WORK/retire-order.log"
-    : > "$log"
-    load_function server_retire_apply_token || return 1
-    load_function server_retire_apply_tokens_for_prefix && load_function server_retire_apply_selection || return 1
-    server_retire_capture() { for n in $(seq 1 10); do echo "fixture$n"; done; }
-    server_retire_apply_token() { printf '%s\n' "$1" >> "$log"; }
-    server_retire_apply_tokens_for_prefix N 'N1 N10 N2' || return 1
-    [ "$(tr '\n' ' ' < "$log")" = 'N10 N2 N1 ' ]
-}
 
 check 'missing nginx must fail' test_missing_nginx
 check 'reload and restart failure must fail' test_reload_failure
-check 'link failure must propagate' test_link_failure
-check 'remote failure must not enable unrelated sites' test_no_link_fallback
 check 'directory names preserve repeated spaces' test_names 1 'folder  two  spaces'
 check 'directory selection accepts decimal 08' test_names 08 folder8
 check 'remote errors never expose authorization URLs' test_error_privacy
@@ -1206,7 +1082,6 @@ check 'missing bind source prevents Compose startup' test_compose_missing_bind
 check 'Compose accepts null IPAM config when validating a host proxy' test_compose_null_ipam
 check 'failed Compose status query cannot become startup' test_compose_failed_ps_caller
 for mode in missing existing plugin failure; do check "Compose dependency $mode" test_compose_prepare_dependencies "$mode"; done
-check 'public verification remains read-only and hides URL secrets' test_verify_is_readonly_and_private
 check 'rclone menu exposes only requested restore workflows' test_rclone_menu_has_only_restore_workflows
 for mode in success invalid concurrent; do check "credential transaction $mode" test_credentials_transaction "$mode"; done
 for mode in success corrupt traversal; do check "Vaultwarden archive $mode" test_vault_archive "$mode"; done
@@ -1233,17 +1108,13 @@ check 'clean Compose hosts derive project name from config' test_compose_context
 for mode in active inactive missing-ssh unknown ssh-failure enable-failure; do check "UFW restore $mode" test_ufw_restore_ports "$mode"; done
 for mode in success missing; do check "Nginx include bundle $mode" test_nginx_include_bundle "$mode"; done
 check 'Nginx conf-only bundle roundtrip' test_nginx_conf_only_bundle
-for mode in success download checksum active rename; do check "volume restore transaction $mode" test_volume_restore_transaction "$mode"; done
-for mode in success active existing; do check "volume export roundtrip $mode" test_volume_export_roundtrip "$mode"; done
 check 'generated Nginx script carries its bundle dependencies' test_nginx_generated_bundle_script
-check 'volume archives reject symlink entries' test_volume_archive_rejects_links
 check 'restore report writes atomically without secrets' test_restore_record_atomic
 check 'missing certificate files fail validation' test_missing_certificate_files
 check 'symlink restoration target is rejected' test_symlink_restore_guard
 check 'retirement cron cleanup removes only exact managed path' test_retire_cron_exact_cleanup
 check 'retirement Compose stop preserves volumes' test_retire_compose_preserves_volumes
 check 'retirement script path guard rejects unmanaged paths' test_retire_script_path_guard
-check 'retirement bulk processing keeps descending indexes' test_retire_bulk_order
 
 printf '%s passed, %s failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

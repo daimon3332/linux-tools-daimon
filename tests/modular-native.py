@@ -68,6 +68,25 @@ class Native(unittest.TestCase):
         result=subprocess.run(['bash','--noprofile','--norc'],input=script,text=True,capture_output=True)
         self.assertEqual(result.returncode,0,result.stderr)
 
+    def test_concurrent_launches_all_succeed(self):
+        release=self.install()
+        cmd=['python3',str(release/'scripts/lib/package.py'),'boot']
+        procs=[subprocess.Popen(cmd,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for _ in range(12)]
+        for proc in procs:
+            out,err=proc.communicate(timeout=60)
+            self.assertEqual(proc.returncode,0,err)
+            lines=out.splitlines()
+            self.assertEqual(lines[0],str(release))
+            self.assertIn('module=scripts/main.sh',lines)
+            self.assertIn('setting=canshu=default',lines)
+
+    def test_old_releases_are_pruned(self):
+        for rev in ('b'*40,'c'*40,'d'*40,'e'*40):
+            self.install(rev,self.make_archive(rev))
+        names=sorted(x.name for x in (self.root/'releases').iterdir() if not x.name.startswith('.'))
+        self.assertEqual(len(names),p.KEEP_RELEASES)
+        self.assertEqual(p.current(self.root).name,'e'*40)
+
     def test_settings_migrate_and_survive_update(self):
         self.bin.write_text('#!/bin/bash\nDAIMON_NAME="linux-tools-daimon"\ncanshu="V6"\npermission_granted="true"\nENABLE_STATS="false"\n')
         self.install()

@@ -35,9 +35,6 @@ crontab() { return 1; }
  def test_invalid_number_rejects_entire_selection(self):
   p,calls=self.run_case('server_retire_script_menu sync','1 1;d\ny\n')
   self.assertNotEqual(p.returncode,0);self.assertEqual(calls,'');self.assertTrue((self.work/'a').exists())
- def test_failure_cannot_be_hidden_by_later_success(self):
-  p,calls=self.run_case('server_retire_apply_tokens_for_prefix A "A1 A2"',extra='FAIL="$WORK/b"')
-  self.assertNotEqual(p.returncode,0)
  def test_cancel_is_noop(self):
   p,calls=self.run_case('server_retire_script_menu sync','1\nn\n');self.assertEqual(p.returncode,0);self.assertEqual(calls,'')
  def test_eof_is_noop(self):

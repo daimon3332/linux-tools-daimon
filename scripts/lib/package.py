@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.request
 from pathlib import Path, PurePosixPath
 
@@ -21,6 +22,8 @@ if os.name == 'posix':
 
 REPO = 'daimon3332/linux-tools-daimon'
 MAX_ARCHIVE = 16 * 1024 * 1024
+KEEP_RELEASES = 3
+LOCK_WAIT = 120
 NETWORK_FILES = {'tcp-tuning-lab.sh', 'tcp-tuning-client.ps1', 'tcp-tuning-control.py', 'tcp-tuning-score.py'}
 
 
@@ -302,14 +305,39 @@ def install(root, revision, publish, archive_path=None):
                 if temporary_link.is_symlink():
                     temporary_link.unlink()
             print('Complete release installed: ' + resolved, file=sys.stderr)
+            prune(releases, destination)
         else:
             print('Complete release staged: ' + resolved, file=sys.stderr)
         return destination
 
 
+def prune(releases, keep):
+    candidates = sorted((p for p in releases.iterdir() if p != keep and not p.is_symlink() and p.is_dir() and
+                         re.fullmatch(r'[a-f0-9]{40}', p.name)), key=lambda p: p.stat().st_mtime, reverse=True)
+    for old in candidates[KEEP_RELEASES - 1:]:
+        try:
+            private_directory(old)
+            shutil.rmtree(old)
+        except (OSError, ValueError) as error:
+            print('Old release kept: ' + old.name + ': ' + str(error), file=sys.stderr)
+
+
+def acquire(fd, exclusive):
+    mode = fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH
+    for attempt in range(LOCK_WAIT * 10):
+        try:
+            fcntl.flock(fd, mode | fcntl.LOCK_NB)
+            return
+        except BlockingIOError:
+            if attempt == 0:
+                print('Waiting for another toolbox update to finish...', file=sys.stderr, flush=True)
+            time.sleep(0.1)
+    raise ValueError('Another toolbox update is still running; try again later')
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('action', choices=('run', 'update', 'stage', 'verify', 'status', 'settings', 'setting', 'modules'))
+    parser.add_argument('action', choices=('run', 'boot', 'update', 'stage', 'verify', 'status', 'settings', 'setting', 'modules'))
     parser.add_argument('arguments', nargs='*')
     args = parser.parse_args()
     root = Path(os.environ.get('DAIMON_RUNTIME_ROOT', '/root/linux-daimon'))
@@ -334,15 +362,23 @@ def main():
     fd = os.open(lock, os.O_CREAT|os.O_RDWR|os.O_NOFOLLOW, 0o600)
     try:
         regular(lock)
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        exclusive = args.action in ('update', 'stage', 'setting') or (
+            args.action in ('run', 'boot') and not (root/'current').is_symlink())
+        acquire(fd, exclusive)
         if args.action in ('update', 'stage'):
             revision = args.arguments[0] if args.arguments else 'master'
             archive = args.arguments[1] if len(args.arguments) > 1 else None
             install(root, revision, args.action == 'update', archive)
-        elif args.action == 'run':
+        elif args.action in ('run', 'boot'):
             if not (root/'current').is_symlink():
                 install(root, 'master', True)
-            print(current(root))
+            release = current(root)
+            print(release)
+            if args.action == 'boot':
+                for name in manifest(release)['modules']:
+                    print('module=' + name)
+                for key, value in preferences(root).items():
+                    print('setting=' + key + '=' + value)
         elif args.action == 'status':
             release = current(root)
             print(json.dumps({'revision':release.name, 'files':len(manifest(release)['files']), 'path':str(release)}))

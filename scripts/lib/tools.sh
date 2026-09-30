@@ -1077,7 +1077,7 @@ EOF
   }
 
   install_nvm_lts_auto() {
-    install curl ca-certificates
+    install curl ca-certificates || return 1
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
     if [ ! -s "$NVM_DIR/nvm.sh" ]; then
@@ -1172,7 +1172,7 @@ PY
       load_nvm_env
       npm install -g @anthropic-ai/claude-code --registry=https://registry.npmmirror.com || return 1
     else
-      install curl
+      daimon_require_cmd curl || return 1
       curl -fsSL https://claude.ai/install.sh | bash || return 1
       export PATH="$HOME/.local/bin:$PATH"
     fi

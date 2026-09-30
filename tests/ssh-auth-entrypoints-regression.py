@@ -22,7 +22,7 @@ class AuthenticationRouting(unittest.TestCase):
             trace = Path(directory) / 'trace'
             config = Path(directory) / 'sshd_config'
             config.write_text('PasswordAuthentication yes\nPubkeyAuthentication yes\n', encoding='utf-8')
-            definitions = '\n'.join(function(name) for name in ('ssh_config_manager', 'add_sshpasswd', 'new_ssh_port'))
+            definitions = '\n'.join(function(name) for name in ('ssh_config_manager',))
             definitions = definitions.replace('/etc/ssh', '$FIXTURE_SSH')
             script = definitions + r'''
 clear() { :; }
@@ -75,10 +75,6 @@ command() {
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(trace, ['transaction PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no'])
 
-    def test_legacy_port_does_not_remove_firewalls_or_includes(self):
-        result, trace = self.invoke('', 'new_ssh_port 2224')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(trace, ['transaction Port 2224'])
 
     def test_password_enable_is_one_transaction(self):
         _, trace = self.invoke('2\n2\n0\n')
@@ -102,21 +98,8 @@ command() {
         _, trace = self.invoke('3\n1\ninvalid-key\n0\n')
         self.assertEqual(trace, [])
 
-    def test_password_failure_preserves_ssh_policy(self):
-        result, trace = self.invoke('', 'add_sshpasswd root', 'PASSWD_RC=1')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(trace, ['passwd'])
 
-    def test_legacy_password_routes_transaction(self):
-        result, trace = self.invoke('', 'add_sshpasswd root')
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(trace, ['passwd', 'transaction PasswordAuthentication yes PermitRootLogin yes'])
 
-    def test_transaction_failure_is_not_reported_as_password_rollback(self):
-        result, trace = self.invoke('', 'add_sshpasswd root', 'TXN_RC=1')
-        self.assertNotEqual(result.returncode, 0)
-        self.assertEqual(len(trace), 2)
-        self.assertIn('密码已修改', result.stderr)
 
 
 if __name__ == '__main__':

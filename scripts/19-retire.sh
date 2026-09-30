@@ -45,10 +45,6 @@ if __name__ == '__main__':
 PYRETIRE_COMPOSE
 }
 
-server_retire_compose_item() {
-	docker_compose_update_get_item_by_number "$1"
-}
-
 server_retire_nginx_items() {
 	local dir file canonical domains enabled link
 	local -A seen=()
@@ -68,15 +64,6 @@ server_retire_nginx_items() {
 			printf '%s\t%s\t%s\n' "$canonical" "$domains" "$enabled"
 		done < <(find "$dir" -maxdepth 1 \( -type f -o -type l \) -print0 2>/dev/null)
 	done | sort -u
-}
-
-server_retire_nginx_item() {
-	local target="$1" idx=0 file domains enabled
-	while IFS=$'\t' read -r file domains enabled; do
-		idx=$((idx + 1))
-		[ "$idx" -eq "$target" ] && { printf '%s\t%s\t%s\n' "$file" "$domains" "$enabled"; return 0; }
-	done < <(server_retire_nginx_items)
-	return 1
 }
 
 server_retire_nginx_remove() (
@@ -356,19 +343,6 @@ server_retire_apply_selection() {
 		server_retire_apply_token "$token" "$listing" || { echo "处理失败: $token"; failure=1; }
 	done <<< "$plan"
 	return "$failure"
-}
-
-server_retire_apply_tokens_for_prefix() {
-	local prefix="$1" nums="$2" token selected=""
-	local -A retire_snapshot=()
-	[[ "$prefix" =~ ^[CNAUR]$ ]] || return 1
-	retire_snapshot[$prefix]=$(server_retire_capture "$prefix") || return 1
-	for token in $nums; do
-		[[ "$token" =~ ^[CNAU][1-9][0-9]{0,5}$ || "$token" = R1 ]] || return 1
-		[[ "$token" != "$prefix"* ]] || selected+="$token"$'\n'
-	done
-	selected=$(printf '%s' "$selected" | sort -k1.2nr)
-	server_retire_apply_selection "$selected"
 }
 
 server_retire_bulk() {

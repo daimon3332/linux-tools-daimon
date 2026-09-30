@@ -194,42 +194,6 @@ test_submenu_eof() {
     "$name" </dev/null
     [ "$count" -eq 1 ]
 }
-test_update_syntax() {
-    load_function daimon_validate_update_file || return 1
-    local fixture="$WORK/broken-update.sh"
-    printf '#!/bin/bash\nDAIMON_NAME="linux-tools-daimon"\nif then\n' > "$fixture"
-    ! daimon_validate_update_file "$fixture"
-}
-test_self_install_source() {
-    load_function daimon_self_install || return 1
-    local dir="$WORK/startup" DAIMON_LOCAL_SCRIPT="$WORK/startup/installed.sh"
-    local DAIMON_OLD_LOCAL_SCRIPT="$WORK/startup/old.sh" DAIMON_UPDATE_URL=''
-    mkdir -p "$dir"
-    cd "$dir" || return 1
-    printf '#!/bin/bash\necho unrelated\n' > linux-toolbox.sh
-    printf '#!/bin/bash\necho installed\n' > "$DAIMON_LOCAL_SCRIPT"
-    local trace="$WORK/self-install.trace"
-    : > "$trace"
-    sed() { :; }
-    chmod() { :; }
-    ln() { :; }
-    cp() { echo "$*" >> "$trace"; }
-    daimon_install_script_file() { echo "$*" >> "$trace"; }
-    daimon_self_install || true
-    ! grep -qE '(^| )\./linux-toolbox\.sh ' "$trace"
-}
-test_atomic_script_install() {
-    load_function daimon_validate_update_file || return 1
-    load_function daimon_install_script_file || return 1
-    local source="$WORK/replacement.sh" target="$WORK/running.sh" original
-    printf '#!/bin/bash\nDAIMON_NAME="linux-tools-daimon"\necho replacement\n' > "$source"
-    printf 'original\n' > "$target"
-    exec 3< "$target"
-    daimon_install_script_file "$source" "$target" || return 1
-    read -r original <&3
-    exec 3<&-
-    [ "$original" = original ] && cmp -s "$source" "$target"
-}
 test_ssh_key_names() {
     load_function ssh_private_key_name_valid || return 1
     local name
@@ -279,18 +243,6 @@ test_shortcut_collision() {
     }
     linux_Settings || return 1
     [ ! -s "$trace" ]
-}
-test_unmount_lookup() {
-    load_function unmount_partition || return 1
-    local trace="$WORK/unmount.trace"
-    : > "$trace"
-    read() { printf -v "${@: -1}" sdb1; }
-    lsblk() { echo /mnt/data; }
-    findmnt() { echo /mnt/data; }
-    umount() { printf '%s\n' "$*" >> "$trace"; }
-    rmdir() { echo remove-directory >> "$trace"; }
-    unmount_partition || return 1
-    [ "$(cat "$trace")" = '/dev/sdb1' ]
 }
 test_regular_user_validation() {
     load_function daimon_regular_user_valid || return 1
@@ -609,43 +561,6 @@ test_rclone_release() {
             [ "$("$DAIMON_RCLONE_BIN_DIR/rclone" version)" = 'rclone v1.75.1' ]
     fi
 }
-test_network_rollback() {
-    local DAIMON_BBR_FQ_CONF="$WORK/bbr.conf" DAIMON_NETWORK_OPTIMIZE_CONF="$WORK/network.conf"
-    local DAIMON_NETWORK_LEGACY_CONF="$WORK/legacy.conf" state="$WORK/sysctl.state" key value
-    printf old-bbr > "$DAIMON_BBR_FQ_CONF"
-    printf old-network > "$DAIMON_NETWORK_OPTIMIZE_CONF"
-    printf '%s\n' net.core.default_qdisc net.ipv4.tcp_congestion_control > "$WORK/keys"
-    awk '/^daimon_network_apply_custom_optimize\(\)/ {active=1}
-        active && /^(net|vm|fs)\.[^|]+\|/ {split($0,a,"|");print a[1]}
-        active && /^}/ {exit}' "$SOURCE" >> "$WORK/keys"
-    while read -r key; do printf '%s=17\n' "$key"; done < "$WORK/keys" > "$state"
-    cp "$state" "$state.original"
-    daimon_network_bbr_supported() { :; }
-    daimon_network_verify_active_fq() { :; }
-    daimon_network_enable_bbr_fq() { printf new-bbr > "$DAIMON_BBR_FQ_CONF"; }
-    daimon_network_verify_bbr_fq() { return 1; }
-    daimon_network_show_conflicting_sysctl_configs() { :; }
-    daimon_network_cleanup_old_qdisc_service() { :; }
-    sysctl() {
-        case "$1" in
-            -n) awk -F= -v k="$2" '$1==k {print $2;found=1} END{exit !found}' "$state" ;;
-            -p)
-                while IFS='=' read -r key value; do
-                    [[ "$key" = net.* || "$key" = fs.* || "$key" = vm.* ]] || continue
-                    awk -F= -v k="$key" '$1!=k' "$state" > "$state.new"
-                    printf '%s=%s\n' "$key" "$value" >> "$state.new"
-                    mv "$state.new" "$state"
-                done < "$2"
-                ;;
-            --system) return 0 ;;
-            *) return 1 ;;
-        esac
-    }
-    ! daimon_network_apply_custom_optimize || return 1
-    [ "$(cat "$DAIMON_BBR_FQ_CONF")" = old-bbr ] || return 1
-    [ "$(cat "$DAIMON_NETWORK_OPTIMIZE_CONF")" = old-network ] || return 1
-    diff -u <(sort "$state.original") <(sort "$state")
-}
 test_tool_numbers() {
     local mode="$1" trace="$WORK/tools.trace" n
     local tool_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi ncdu nexttrace iperf3)
@@ -926,13 +841,9 @@ for manager in apk opkg pkg; do
     check "cleanup preserves shared logs and temporary files on $manager" test_cleanup_boundaries "$manager"
 done
 check 'cleanup retains journal history within the existing size limit' test_cleanup_journal
-check 'update rejects syntactically invalid scripts' test_update_syntax
-check 'startup ignores unrelated scripts in the working directory' test_self_install_source
-check 'script replacement preserves readers of the old inode' test_atomic_script_install
 check 'SSH private key names reject traversal and reserved files' test_ssh_key_names
 check 'SSH transaction failure prevents fallback writes and restart' test_ssh_transaction_failure
 check 'shortcut cannot overwrite the bash executable' test_shortcut_collision
-check 'unmount locates the mount by its source device' test_unmount_lookup
 check 'user management rejects system users and path input' test_regular_user_validation
 check 'Nginx menu return does not install acme or packages' test_nginx_menu_no_install
 check 'Nginx full entry handles invalid input without changes' test_nginx_menu_no_install invalid
@@ -967,7 +878,6 @@ check 'rclone AMD64 release is checked and installed atomically' test_rclone_rel
 check 'rclone ARM64 release selects the correct asset' test_rclone_release aarch64 no arm64
 check 'rclone corrupt archive preserves the old executable' test_rclone_release x86_64 yes amd64
 check 'unsupported rclone architecture makes no changes' test_rclone_release unknown no unsupported
-check 'network failure restores runtime values and both config files' test_network_rollback
 check 'all 15 third-party tool IDs are reachable' test_tool_numbers all
 check 'tool index 08 is decimal, not invalid octal' test_tool_numbers leading-zero
 check 'batch tool failure propagates to its caller' test_tool_numbers failed

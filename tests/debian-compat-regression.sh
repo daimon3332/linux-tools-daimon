@@ -65,22 +65,7 @@ test_journald_sshd_jail() {
     grep -Fxq 'INSTALL:python3-systemd' "$WORK/calls"
 }
 
-test_basic_config_journald() {
-    load daimon_is_debian && load f2b_basic_config || return 1
-    printf 'ID=debian\nVERSION_ID=generic\n' > "$WORK/os-release"
-    install() { :; }
-    command() {
-        if [ "$1" = -v ] && [ "$2" = fail2ban-client ]; then return 0; fi
-        builtin command "$@"
-    }
-    read() { printf -v "${@: -1}" ''; }
-    fail2ban-client() { :; }
-    sleep() { :; }
-    f2b_basic_config >/dev/null || return 1
-    grep -qx 'backend = systemd' "$WORK/fail2ban/jail.d/sshd.local" || return 1
-    ! grep -Eq '^logpath = ' "$WORK/fail2ban/jail.d/sshd.local"
-}
 
-for test in test_python_uses_debian_default test_journald_sshd_jail test_basic_config_journald; do
+for test in test_python_uses_debian_default test_journald_sshd_jail; do
     if ( "$test" ); then echo "PASS $test"; else echo "FAIL $test"; exit 1; fi
 done

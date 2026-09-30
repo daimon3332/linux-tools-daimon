@@ -12,10 +12,6 @@ crontab_sync_target_remote() {
 	echo "kissska1"
 }
 
-crontab_sync_timezone() {
-	echo "Asia/Shanghai"
-}
-
 crontab_sync_log_cache_file() { echo "${DAIMON_RCLONE_STATUS_CACHE:-/var/cache/daimon/rclone-sync-status.tsv}"; }
 
 crontab_sync_log_run_dir() { echo "${DAIMON_RCLONE_RUN_LOG_DIR:-/var/log/rclone/runs}"; }

@@ -18,10 +18,6 @@ send_stats() {
 
 }
 
-daimon_self_install() {
-    echo "完整版本已由入口安装器管理。"
-}
-
 install() {
 	if [ $# -eq 0 ]; then
 		echo "未提供软件包参数!"

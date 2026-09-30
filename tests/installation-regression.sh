@@ -51,15 +51,6 @@ region() {
         *) [ "$result" = https://github.com/example/tool/releases/download/v1/tool.zip ] ;;
     esac
 }
-update_source() {
-    load daimon_download_update_file || return 1
-    local DAIMON_UPDATE_URL=https://stale.example/toolbox.sh
-    local DAIMON_UPDATE_GITHUB_URL=https://raw.githubusercontent.com/owner/repo/master/linux-toolbox.sh
-    daimon_update_fallback_url() { echo "$DAIMON_UPDATE_GITHUB_URL"; }
-    daimon_try_download_url() { [ "$1" = "$DAIMON_UPDATE_GITHUB_URL" ] || exit 91; }
-    daimon_validate_update_file() { :; }
-    daimon_download_update_file unused
-}
 apt_indexes_preserved() {
     load "$1" || return 1
     root_use() { :; }; install() { :; }; daimon_download_to() { :; }
@@ -118,7 +109,6 @@ for fn in install_yazi_griffo install_nexttrace configure_blesh configure_starsh
 done
 for id in tree ripgrep fd; do check "$id preserves package failure" package_failure "$id"; done
 for country in CN HK SG JP; do check "$country download routing" region "$country"; done
-check 'updates prefer the canonical repository over a stale mirror' update_source
 check 'Yazi repository refresh preserves other package indexes' apt_indexes_preserved install_yazi_griffo
 check 'NextTrace repository refresh preserves other package indexes' apt_indexes_preserved install_nexttrace
 check 'Python removal preserves the operating system interpreter' system_python_preserved

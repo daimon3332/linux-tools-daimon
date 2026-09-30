@@ -10,6 +10,8 @@ load() { eval "$(sed -n "/^$1() {/,/^}/p" "$ROOT/scripts/21-network-optimization
 for fn in daimon_tcp_fw_open daimon_tcp_family_speed_block daimon_tcp_lab_menu_family daimon_tcp_lab_load daimon_tcp_public_ips; do
     load "$fn" || exit 1
 done
+eval "$(sed -n "/^daimon_require_cmd() {/,/^}/p" "$ROOT/scripts/lib/core.sh")"
+gl_kjlan='' gl_hong='' gl_bai=''
 passed=0 failed=0
 check() {
     if ( "$2" ) > "$WORK/output" 2>&1; then echo "PASS $1"; passed=$((passed+1))

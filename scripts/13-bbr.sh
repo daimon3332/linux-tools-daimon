@@ -3,7 +3,7 @@
 linux_bbr() {
 	clear
 	send_stats "bbr管理"
-	install wget curl
+	daimon_require_cmd wget && daimon_require_cmd curl || return 1
 	mkdir -p "$DAIMON_SCRIPT_DIR"
 	local tcpx="$DAIMON_SCRIPT_DIR/tcpx.sh" tmp
 	local tcpx_url="https://raw.githubusercontent.com/ylx2016/Linux-NetSpeed/master/tcpx.sh"

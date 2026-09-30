@@ -109,5 +109,6 @@ fi
 case "${1:-}" in
     --package-status) exec python3 "$manager" status ;;
 esac
-release=$(python3 "$manager" run) || exit 1
-exec bash "$release/scripts/lib/entry.sh" "$@"
+boot=$(python3 "$manager" boot 2>/dev/null) || boot=$(python3 "$manager" run) || exit 1
+export DAIMON_BOOT="$boot"
+exec bash "${boot%%$'\n'*}/scripts/lib/entry.sh" "$@"

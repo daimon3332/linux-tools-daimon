@@ -1009,3 +1009,187 @@ ssh_config_manager() {
 		break_end
 	done
 }
+
+add_sshkey() {
+	chmod 700 "${HOME}"
+	mkdir -p "${HOME}/.ssh"
+	chmod 700 "${HOME}/.ssh"
+	touch "${HOME}/.ssh/authorized_keys"
+
+	ssh-keygen -t ed25519 -C "xxxx@gmail.com" -f "${HOME}/.ssh/sshkey" -N "" || return 1
+
+	cat "${HOME}/.ssh/sshkey.pub" >> "${HOME}/.ssh/authorized_keys" || return 1
+	chmod 600 "${HOME}/.ssh/authorized_keys" || return 1
+
+	ip_address
+	echo -e "私钥信息已生成，务必复制保存，可保存成 ${gl_huang}${ipv4_address}_ssh.key${gl_bai} 文件，用于以后的SSH登录"
+
+	echo "--------------------------------"
+	cat "${HOME}/.ssh/sshkey"
+	echo "--------------------------------"
+
+	sshkey_on
+}
+
+fetch_github_ssh_keys() {
+
+	local username="$1"
+	local base_dir="${2:-$HOME}"
+
+	echo "操作前，请确保您已在 GitHub 账户中添加了 SSH 公钥："
+	echo "  1. 登录 ${gh_https_url}github.com/settings/keys"
+	echo "  2. 点击 New SSH key 或 Add SSH key"
+	echo "  3. Title 可随意填写（例如：Home Laptop 2026）"
+	echo "  4. 将本地公钥内容（通常是 ~/.ssh/id_ed25519.pub 或 id_rsa.pub 的全部内容）粘贴到 Key 字段"
+	echo "  5. 点击 Add SSH key 完成添加"
+	echo ""
+	echo "添加完成后，GitHub 会公开提供您的所有公钥，地址为："
+	echo "  ${gh_https_url}github.com/您的用户名.keys"
+	echo ""
+
+
+	if [[ -z "${username}" ]]; then
+		read -e -p "请输入您的 GitHub 用户名（username，不含 @）： " username || return 1
+	fi
+
+	if [[ -z "${username}" ]]; then
+		echo "错误：GitHub 用户名不能为空" >&2
+		return 1
+	fi
+
+	keys_url="${gh_https_url}github.com/${username}.keys"
+
+	fetch_remote_ssh_keys "${keys_url}" "${base_dir}"
+
+}
+
+kj_ssh_read_auth() {
+	local key_file="$1"
+	local password_or_key=""
+
+	echo "请选择身份验证方式:"
+	echo "1. 密码"
+	echo "2. 密钥"
+	read -e -p "请输入选择 (1/2): " auth_choice || return 1
+
+	case $auth_choice in
+		1)
+			read -s -p "请输入密码: " password_or_key || return 1
+			echo
+			if [ -z "$password_or_key" ]; then
+				echo "错误: 密码不能为空。"
+				return 1
+			fi
+			KJ_SSH_AUTH_METHOD="password"
+			KJ_SSH_AUTH_SECRET="$password_or_key"
+			;;
+		2)
+			echo "请粘贴密钥内容 (粘贴完成后按两次回车)："
+			while IFS= read -r line; do
+				if [[ -z "$line" && "$password_or_key" == *"-----BEGIN"* ]]; then
+					break
+				fi
+				if [[ -n "$line" || "$password_or_key" == *"-----BEGIN"* ]]; then
+					password_or_key+="${line}"$'\n'
+				fi
+			done
+
+			if [[ "$password_or_key" != *"-----BEGIN"* || "$password_or_key" != *"PRIVATE KEY-----"* ]]; then
+				echo "无效的密钥内容！"
+				return 1
+			fi
+
+			mkdir -p "$(dirname "$key_file")"
+			echo -n "$password_or_key" > "$key_file"
+			chmod 600 "$key_file"
+			KJ_SSH_AUTH_METHOD="key"
+			KJ_SSH_AUTH_SECRET="$key_file"
+			;;
+		*)
+			echo "无效的选择！"
+			return 1
+			;;
+	esac
+}
+
+list_connections() {
+	echo "已保存的连接:"
+	echo "------------------------"
+	cat "$CONFIG_FILE" | awk -F'|' '{print NR " - " $1 " (" $2 ")"}'
+	echo "------------------------"
+}
+
+add_connection() {
+	send_stats "添加新连接"
+	echo "创建新连接示例："
+	echo "  - 连接名称: my_server"
+	echo "  - IP地址: 192.168.1.100"
+	echo "  - 用户名: root"
+	echo "  - 端口: 22"
+	echo "------------------------"
+	read -e -p "请输入连接名称: " name || return 1
+
+	kj_ssh_read_host_user_port "请输入IP地址: " "请输入用户名 (默认: root): " "请输入端口号 (默认: 22): " "root" "22"
+	if ! kj_ssh_read_auth "$KEY_DIR/$name.key"; then
+		return
+	fi
+
+	echo "$name|$KJ_SSH_HOST|$KJ_SSH_USER|$KJ_SSH_PORT|$KJ_SSH_AUTH_SECRET" >> "$CONFIG_FILE"
+	echo "连接已保存!"
+}
+
+delete_connection() {
+	send_stats "删除连接"
+	read -e -p "请输入要删除的连接编号: " num || return 1
+
+	local connection=$(sed -n "${num}p" "$CONFIG_FILE")
+	if [[ -z "$connection" ]]; then
+		echo "错误：未找到对应的连接。"
+		return
+	fi
+
+	IFS='|' read -r name ip user port password_or_key <<< "$connection"
+
+	# 如果连接使用的是密钥文件，则删除该密钥文件
+	if [[ "$password_or_key" == "$KEY_DIR"* ]]; then
+		rm -f "$password_or_key"
+	fi
+
+	sed -i "${num}d" "$CONFIG_FILE"
+	echo "连接已删除!"
+}
+
+use_connection() {
+	send_stats "使用连接"
+	read -e -p "请输入要使用的连接编号: " num || return 1
+
+	local connection=$(sed -n "${num}p" "$CONFIG_FILE")
+	if [[ -z "$connection" ]]; then
+		echo "错误：未找到对应的连接。"
+		return
+	fi
+
+	IFS='|' read -r name ip user port password_or_key <<< "$connection"
+
+	echo "正在连接到 $name ($ip)..."
+	if [[ -f "$password_or_key" ]]; then
+		# 使用密钥连接
+		ssh -o StrictHostKeyChecking=no -i "$password_or_key" -p "$port" "$user@$ip"
+		if [[ $? -ne 0 ]]; then
+			echo "连接失败！请检查以下内容："
+			echo "1. 密钥文件路径是否正确：$password_or_key"
+			echo "2. 密钥文件权限是否正确（应为 600）。"
+			echo "3. 目标服务器是否允许使用密钥登录。"
+		fi
+	else
+		# 使用密码连接
+		daimon_require_cmd sshpass || return 1
+		sshpass -p "$password_or_key" ssh -o StrictHostKeyChecking=no -p "$port" "$user@$ip"
+		if [[ $? -ne 0 ]]; then
+			echo "连接失败！请检查以下内容："
+			echo "1. 用户名和密码是否正确。"
+			echo "2. 目标服务器是否允许密码登录。"
+			echo "3. 目标服务器的 SSH 服务是否正常运行。"
+		fi
+	fi
+}

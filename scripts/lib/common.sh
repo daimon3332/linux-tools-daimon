@@ -5,16 +5,23 @@ validate_tcp_port() {
 }
 
 daimon_country() {
-	if [ -n "${DAIMON_COUNTRY_CACHE:-}" ]; then
-		echo "$DAIMON_COUNTRY_CACHE"
-		return 0
-	fi
-	if command -v curl >/dev/null 2>&1; then
-		DAIMON_COUNTRY_CACHE=$(curl -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/json 2>/dev/null | grep -oE '"country"[[:space:]]*:[[:space:]]*"[A-Z]{2}"' | head -1 | cut -d'"' -f4)
-		if [ -z "$DAIMON_COUNTRY_CACHE" ]; then
-			DAIMON_COUNTRY_CACHE=$(curl -4 -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+	local cache="${DAIMON_ROOT_DIR:-/root/linux-daimon}/.country" value="" staged
+	if [ -z "${DAIMON_COUNTRY_CACHE:-}" ] && [ -f "$cache" ] && [ ! -L "$cache" ]; then
+		read -r value < "$cache" || value=""
+		if { [[ "$value" =~ ^[A-Z]{2}$ ]] && [ -n "$(find "$cache" -mmin -1440 2>/dev/null)" ]; } ||
+			{ [ "$value" = -- ] && [ -n "$(find "$cache" -mmin -60 2>/dev/null)" ]; }; then
+			[ "$value" != -- ] || { echo ""; return 0; }
+			DAIMON_COUNTRY_CACHE=$value
 		fi
-		[[ "$DAIMON_COUNTRY_CACHE" =~ ^[A-Z]{2}$ ]] || DAIMON_COUNTRY_CACHE=""
+	fi
+	if [ -z "${DAIMON_COUNTRY_CACHE:-}" ]; then
+		value=$(curl -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/json 2>/dev/null | grep -oE '"country"[[:space:]]*:[[:space:]]*"[A-Z]{2}"' | head -1 | cut -d'"' -f4)
+		[[ "$value" =~ ^[A-Z]{2}$ ]] || value=$(curl -4 -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/country 2>/dev/null | tr -d '[:space:]')
+		[[ "$value" =~ ^[A-Z]{2}$ ]] || value=""
+		DAIMON_COUNTRY_CACHE=$value
+		if [ -d "${cache%/*}" ] && staged=$(mktemp "$cache.XXXXXX" 2>/dev/null); then
+			printf '%s\n' "${value:---}" > "$staged" && mv -f -- "$staged" "$cache" || rm -f -- "$staged"
+		fi
 	fi
 	echo "$DAIMON_COUNTRY_CACHE"
 }
@@ -189,7 +196,7 @@ install_add_docker_cn() {
 
 linuxmirrors_install_docker() {
 
-local country=$(curl -s ipinfo.io/country)
+local country=$(daimon_country)
 if [ "$country" = "CN" ]; then
 	daimon_run_cached_script "https://linuxmirrors.cn/docker.sh" "linuxmirrors-docker.sh" \
 	  --source mirrors.huaweicloud.com/docker-ce \
@@ -234,61 +241,6 @@ check_crontab_installed() {
 		echo -e "${gl_hong}cron 服务未运行，定时任务不会执行。${gl_bai}" >&2
 		return 1
 	}
-}
-
-install_crontab() {
-
-	if [ -f /etc/os-release ]; then
-		. /etc/os-release
-		case "$ID" in
-			ubuntu|debian|kali)
-				apt update
-				apt install -y cron
-				systemctl enable cron
-				systemctl start cron
-				;;
-			centos|rhel|almalinux|rocky|fedora)
-				yum install -y cronie
-				systemctl enable crond
-				systemctl start crond
-				;;
-			alpine)
-				apk add --no-cache cronie
-				rc-update add crond
-				rc-service crond start
-				;;
-			arch|manjaro)
-				pacman -S --noconfirm cronie
-				systemctl enable cronie
-				systemctl start cronie
-				;;
-			opensuse|suse|opensuse-tumbleweed)
-				zypper install -y cron
-				systemctl enable cron
-				systemctl start cron
-				;;
-			iStoreOS|openwrt|ImmortalWrt|lede)
-				opkg update
-				opkg install cron
-				/etc/init.d/cron enable
-				/etc/init.d/cron start
-				;;
-			FreeBSD)
-				pkg install -y cronie
-				sysrc cron_enable="YES"
-				service cron start
-				;;
-			*)
-				echo "不支持的发行版: $ID"
-				return
-				;;
-		esac
-	else
-		echo "无法确定操作系统。"
-		return
-	fi
-
-	echo -e "${gl_lv}crontab 已安装且 cron 服务正在运行。${gl_bai}"
 }
 
 daimon_swap_is_active() {
@@ -719,4 +671,86 @@ daimon_is_debian() {
 	local ID
 	. /etc/os-release
 	[ "$ID" = debian ]
+}
+
+restart() {
+	local RC
+	systemctl restart "$@"
+	RC=$?
+	if [ "$RC" -ne 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		systemctl reset-failed "$@" >/dev/null 2>&1 || true
+		systemctl restart "$@"
+		RC=$?
+	fi
+	if [ "$RC" -eq 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ] && ! systemctl is-active --quiet "$@"; then
+		RC=1
+	fi
+	if [ "$RC" -eq 0 ]; then
+		echo "$1 服务已重启。"
+	else
+		echo "错误：重启 $1 服务失败。"
+	fi
+	return "$RC"
+}
+
+start() {
+	local RC
+	systemctl start "$@"
+	RC=$?
+	if [ "$RC" -ne 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ]; then
+		systemctl reset-failed "$@" >/dev/null 2>&1 || true
+		systemctl start "$@"
+		RC=$?
+	fi
+	if [ "$RC" -eq 0 ] && [ -r /etc/os-release ] && [ "$(. /etc/os-release; printf '%s' "$ID")" = debian ] && ! systemctl is-active --quiet "$@"; then
+		RC=1
+	fi
+	if [ "$RC" -eq 0 ]; then
+		echo "$1 服务已启动。"
+	else
+		echo "错误：启动 $1 服务失败。"
+	fi
+	return "$RC"
+}
+
+stop() {
+	local RC
+	systemctl stop "$@"
+	RC=$?
+	if [ "$RC" -eq 0 ]; then
+		echo "$1 服务已停止。"
+	else
+		echo "错误：停止 $1 服务失败。"
+	fi
+	return "$RC"
+}
+
+status() {
+	local RC
+	systemctl status "$@"
+	RC=$?
+	if [ "$RC" -eq 0 ]; then
+		echo "$1 服务状态已显示。"
+	else
+		echo "错误：无法显示 $1 服务状态。"
+	fi
+	return "$RC"
+}
+
+enable() {
+	local SERVICE_NAME="$1"
+	local RC
+	if command -v apk &>/dev/null; then
+		rc-update add "$SERVICE_NAME" default
+	else
+	   /bin/systemctl enable "$SERVICE_NAME"
+	fi
+	RC=$?
+
+	if [ "$RC" -eq 0 ]; then
+		echo "$SERVICE_NAME 已设置为开机自启。"
+	else
+		echo "错误：设置 $SERVICE_NAME 开机自启失败。"
+	fi
+	return "$RC"
 }
