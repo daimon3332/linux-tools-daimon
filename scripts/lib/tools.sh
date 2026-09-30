@@ -32,8 +32,12 @@ daimon_git_update() {
 }
 
 linux_tools() {
-  local DAIMON_COUNTRY_CACHE="${DAIMON_COUNTRY_CACHE:-}"
+  local DAIMON_COUNTRY_CACHE="${DAIMON_COUNTRY_CACHE:-}" tool_dir
   DAIMON_COUNTRY_CACHE=$(daimon_country)
+  for tool_dir in "$HOME/.bun/bin" "$HOME/.local/bin"; do
+    [ -d "$tool_dir" ] && [[ ":$PATH:" != *":$tool_dir:"* ]] && PATH="$tool_dir:$PATH"
+  done
+  [ -s "${NVM_DIR:-$HOME/.nvm}/nvm.sh" ] && . "${NVM_DIR:-$HOME/.nvm}/nvm.sh" >/dev/null 2>&1
   local thirdparty_ids=(vim cpcat ctrld starship bat btop tree ripgrep fd fzf blesh yazi ncdu nexttrace iperf3)
   local thirdparty_names=("vim" "cpcat" "Ctrl+D" "starship" "bat" "btop" "tree" "ripgrep" "fd" "fzf" "ble.sh" "yazi" "ncdu" "NextTrace" "iperf3")
   local thirdparty_desc=("文本编辑器+默认编辑器" "复制文件内容到剪贴板" "删除下一个单词绑定" "终端提示符美化" "终端高亮增强" "现代监控" "目录树" "快速文本搜索" "快速文件查找" "模糊搜索" "Bash 行编辑增强" "文件管理" "磁盘占用" "路由追踪" "网络性能测试")
