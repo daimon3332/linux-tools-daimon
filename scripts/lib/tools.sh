@@ -1082,6 +1082,7 @@ EOF
 
   install_nvm_lts_auto() {
     install curl ca-certificates || return 1
+    daimon_require_cmd git || return 1
     export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
 
     if [ ! -s "$NVM_DIR/nvm.sh" ]; then
