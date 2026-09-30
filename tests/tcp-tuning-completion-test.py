@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parent.parent
 BASH = os.environ.get('BASH_BIN') or shutil.which('bash')
 SHELLS = [path for name in ('powershell', 'pwsh') if (path := shutil.which(name))]
 FINISH = '''
-source ./tcp-tuning-lab.sh
+source ./scripts/network/tcp-tuning-lab.sh
 DAIMON_TCP_LAB_DIR="$1"
 command -v cygpath >/dev/null 2>&1 && DAIMON_TCP_LAB_DIR=$(cygpath -u "$1")
 DAIMON_TCP_LAB_ROUND=1
@@ -74,7 +74,7 @@ class CompletionTest(unittest.TestCase):
                 try:
                     env = os.environ.copy()
                     env['DAIMON_IPERF3'] = sys.executable
-                    command = (f"& '{ROOT / 'tcp-tuning-client.ps1'}' -Control "
+                    command = (f"& '{ROOT / 'scripts/network' / 'tcp-tuning-client.ps1'}' -Control "
                                f"'http://127.0.0.1:{server.server_port}' -Token test; 'PARENT_CONTINUED'")
                     result = subprocess.run([shell, '-NoProfile', '-NonInteractive', '-Command', command],
                         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -125,9 +125,9 @@ class CompletionTest(unittest.TestCase):
                 proxy = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Proxy)
                 proxy.daemon_threads = True
                 threading.Thread(target=proxy.serve_forever, daemon=True).start()
-                control = subprocess.Popen([sys.executable, str(ROOT / 'tcp-tuning-control.py'),
+                control = subprocess.Popen([sys.executable, str(ROOT / 'scripts/network' / 'tcp-tuning-control.py'),
                     '--bind', '127.0.0.1', '--port', str(port), '--token', 'test', '--state-dir', directory,
-                    '--client', str(ROOT / 'tcp-tuning-client.ps1')],
+                    '--client', str(ROOT / 'scripts/network' / 'tcp-tuning-client.ps1')],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 client = finisher = None
                 try:
@@ -139,7 +139,7 @@ class CompletionTest(unittest.TestCase):
                             time.sleep(0.1)
                     env = os.environ.copy()
                     env['DAIMON_IPERF3'] = sys.executable
-                    command = (f"& '{ROOT / 'tcp-tuning-client.ps1'}' -Control "
+                    command = (f"& '{ROOT / 'scripts/network' / 'tcp-tuning-client.ps1'}' -Control "
                                f"'http://127.0.0.1:{proxy.server_port}' -Token test; 'PARENT_CONTINUED'")
                     client = subprocess.Popen([shell, '-NoProfile', '-NonInteractive', '-Command', command],
                         env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,

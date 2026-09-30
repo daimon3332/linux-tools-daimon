@@ -5,7 +5,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/tcp-lab.XXXXXX")
 trap 'case "$WORK" in "$ROOT"/.tmp/tcp-lab.*) rm -rf -- "$WORK" ;; esac' EXIT
-source "$ROOT/tcp-tuning-lab.sh"
+source "$ROOT/scripts/network/tcp-tuning-lab.sh"
 
 DAIMON_TCP_STATE_DIR="$WORK"
 DAIMON_TCP_LAB_DIR="$WORK/session"

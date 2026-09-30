@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
 set -uo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-SOURCE=${DAIMON_TEST_SOURCE:-$ROOT/linux-toolbox.sh}
+mkdir -p "$ROOT/.tmp"
+SOURCE=$(mktemp "$ROOT/.tmp/test-source.XXXXXX") || exit 1
+"${PYTHON_BIN:-python3}" "$ROOT/tests/source.py" "$ROOT" > "$SOURCE" || exit 1
+trap 'rm -f -- "$SOURCE"' EXIT
 bash -n "$SOURCE" || exit 1
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/docker-migration.XXXXXX") || exit 1
 WORK=$(cd "$WORK" && pwd -P)
-trap 'case "$WORK" in "$ROOT"/.tmp/docker-migration.*) command rm -rf -- "$WORK" ;; esac' EXIT
+trap 'rm -f -- "$SOURCE"; case "$WORK" in "$ROOT"/.tmp/docker-migration.*) command rm -rf -- "$WORK" ;; esac' EXIT
 mkdir -p "$WORK/docker_backup_fixture/child" "$WORK/unrelated"
 load() {
     local body

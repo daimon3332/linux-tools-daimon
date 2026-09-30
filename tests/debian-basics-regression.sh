@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 set -uo pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-SOURCE=${DAIMON_TEST_SOURCE:-$ROOT/linux-toolbox.sh}
+mkdir -p "$ROOT/.tmp"
+SOURCE=$(mktemp "$ROOT/.tmp/test-source.XXXXXX") || exit 1
+"${PYTHON_BIN:-python3}" "$ROOT/tests/source.py" "$ROOT" > "$SOURCE" || exit 1
+trap 'rm -f -- "$SOURCE"' EXIT
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/debian-basics.XXXXXX") || exit 1
-trap 'case "$WORK" in "$ROOT"/.tmp/debian-basics.*) rm -rf -- "$WORK" ;; esac' EXIT
+trap 'rm -f -- "$SOURCE"; case "$WORK" in "$ROOT"/.tmp/debian-basics.*) rm -rf -- "$WORK" ;; esac' EXIT
 load() {
     local body
     body=$(tr -d '\r' < "$SOURCE" | awk -v name="$1" '

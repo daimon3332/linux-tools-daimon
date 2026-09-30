@@ -1,7 +1,8 @@
+from source import read_source
 import os,re,subprocess,tempfile,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-SOURCE=Path(os.environ.get('DAIMON_TEST_SOURCE',ROOT/'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE=read_source(ROOT)
 BASH=os.environ.get('BASH_BIN','/bin/bash')
 class RestoreRouting(unittest.TestCase):
     def test_restore_requires_confirmation_and_passes_paths_without_shell_expansion(self):

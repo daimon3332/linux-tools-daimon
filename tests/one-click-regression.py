@@ -1,3 +1,4 @@
+from source import read_source
 #!/usr/bin/env python3
 """Exercise actual menu completion in a PTY, isolating installer side effects."""
 import os
@@ -11,7 +12,7 @@ import tempfile
 import time
 import unittest
 
-SOURCE = pathlib.Path(os.environ.get('DAIMON_TEST_SOURCE', pathlib.Path(__file__).resolve().parents[1] / 'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE = read_source(pathlib.Path(__file__).resolve().parents[1])
 
 
 def function(name):

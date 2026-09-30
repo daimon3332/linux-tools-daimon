@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -uo pipefail
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-source "$ROOT/tcp-tuning-lab.sh"
+source "$ROOT/scripts/network/tcp-tuning-lab.sh"
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/tcp-interaction.XXXXXX") || exit 1
 trap 'case "$WORK" in "$ROOT"/.tmp/tcp-interaction.*) rm -rf -- "$WORK" ;; esac' EXIT
-load() { eval "$(sed -n "/^$1() {/,/^}/p" "$ROOT/linux-toolbox.sh")"; }
+load() { eval "$(sed -n "/^$1() {/,/^}/p" "$ROOT/scripts/21-network-optimization.sh")"; }
 for fn in daimon_tcp_fw_open daimon_tcp_family_speed_block daimon_tcp_lab_menu_family daimon_tcp_lab_load daimon_tcp_public_ips; do
     load "$fn" || exit 1
 done

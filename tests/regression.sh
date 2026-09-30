@@ -5,7 +5,7 @@ ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/regression.XXXXXX") || exit 1
 trap 'case "$WORK" in "$ROOT"/.tmp/regression.*) rm -rf -- "$WORK" ;; esac' EXIT
-tr -d '\r' < "${DAIMON_TEST_SOURCE:-$ROOT/linux-toolbox.sh}" > "$WORK/source.sh"
+"${PYTHON_BIN:-python3}" "$ROOT/tests/source.py" "$ROOT" > "$WORK/source.sh"
 SOURCE="$WORK/source.sh"
 export TMPDIR="$WORK"
 passed=0 failed=0
@@ -732,6 +732,7 @@ test_update_refreshes_cert_helper() {
     read() { printf '%s\n' "$*" >> "$trace"; return 0; }
     exec() { printf 'exec\n' >> "$trace"; return 0; }
     crontab() { return 1; }
+    python3() { echo package-update >> "$trace"; }
     kejilion_update || return 1
     [ -f "$DAIMON_CERT_HELPER_MARKER" ] &&
         grep -Fq 'exec' "$trace" &&
@@ -752,6 +753,7 @@ test_update_skips_uninstalled_cert_helper() {
     daimon_install_script_file() { :; }
     cp() { :; }; chmod() { :; }; ln() { :; }; rm() { :; }; sed() { :; }
     crontab() { return 1; }
+    python3() { echo package-update >> "$trace"; }
     read() { printf '%s\n' "$*" >> "$trace"; return 0; }
     exec() { printf 'exec\n' >> "$trace"; return 0; }
     kejilion_update || return 1
@@ -874,9 +876,9 @@ test_main_menu() {
     crontab_sync_reconcile_legacy() { :; }
     local DAIMON_CERT_HELPER_MARKER="$WORK/absent"
     for name in linux_info linux_update linux_clean one_click_config_manager linux_Settings \
-        linux_tools linux_docker ssh_config_manager ufw_manager ssl_nginx_manager fail2ban_manager \
+        linux_thirdparty_tools linux_programming_tools linux_docker ssh_config_manager ufw_manager ssl_nginx_manager fail2ban_manager \
         linux_bbr warp_manager rclone_manager bitwarden_manager crontab_sync_manager \
-        common_one_click_scripts server_retire_menu debian_basics_menu kejilion_update; do
+        common_one_click_scripts server_retire_menu debian_basics_menu daimon_tcp_tune_menu kejilion_update; do
         eval "$name() { echo '$name' >> \"\$trace\"; }"
     done
     while read -r number expected; do
@@ -889,8 +891,8 @@ test_main_menu() {
 3 linux_clean
 4 one_click_config_manager
 5 linux_Settings
-6 linux_tools
-7 linux_tools
+6 linux_thirdparty_tools
+7 linux_programming_tools
 8 linux_docker
 9 ssh_config_manager
 10 ufw_manager
@@ -904,6 +906,7 @@ test_main_menu() {
 18 common_one_click_scripts
 19 server_retire_menu
 20 debian_basics_menu
+21 daimon_tcp_tune_menu
 00 kejilion_update
 0
 EOF
@@ -982,6 +985,6 @@ check 'mq with fq leaf queues passes verification' test_active_qdisc good
 check 'fq_codel does not pass BBR+FQ verification' test_active_qdisc bad
 check 'batch installs continue to timezone step' test_batch_continues
 check 'Docker status detects missing binary before inspection' test_docker_status_without_binary
-check 'all 20 main-menu branches dispatch correctly' test_main_menu
+check 'all 21 main-menu branches dispatch correctly' test_main_menu
 printf '\n%d passed, %d failed\n' "$passed" "$failed"
 [ "$failed" -eq 0 ]

@@ -2,10 +2,13 @@
 set -o pipefail
 case "$(uname -s)" in MINGW*|MSYS*) echo 'SKIP: persistence permission tests require Linux/POSIX Python'; exit 77 ;; esac
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-SOURCE=${DAIMON_TEST_SOURCE:-$ROOT/linux-toolbox.sh}
+mkdir -p "$ROOT/.tmp"
+SOURCE=$(mktemp "$ROOT/.tmp/test-source.XXXXXX") || exit 1
+"${PYTHON_BIN:-python3}" "$ROOT/tests/source.py" "$ROOT" > "$SOURCE" || exit 1
+trap 'rm -f -- "$SOURCE"' EXIT
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/network-persistence.XXXXXX") || exit 1
-trap 'case "$WORK" in "$ROOT"/.tmp/network-persistence.*) rm -rf -- "$WORK" ;; esac' EXIT
+trap 'rm -f -- "$SOURCE"; case "$WORK" in "$ROOT"/.tmp/network-persistence.*) rm -rf -- "$WORK" ;; esac' EXIT
 if ! python3 --version >/dev/null 2>&1; then python3() { python "$@"; }; fi
 eval "$(tr -d '\r' < "$SOURCE" | sed -n '/^daimon_network_persist() {/,/^}/p')"
 declare -F daimon_network_persist >/dev/null || { echo 'FAIL persistence helper missing'; exit 1; }

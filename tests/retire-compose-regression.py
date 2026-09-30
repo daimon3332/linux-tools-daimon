@@ -1,7 +1,8 @@
+from source import read_source
 import os,re,subprocess,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
-SOURCE=Path(os.environ.get('DAIMON_TEST_SOURCE',ROOT/'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE=read_source(ROOT)
 class Retirement(unittest.TestCase):
     def test_never_uses_force_or_compose_down(self):
         m=re.search(r'(?m)^server_retire_compose_stop\(\) \{\n',SOURCE)

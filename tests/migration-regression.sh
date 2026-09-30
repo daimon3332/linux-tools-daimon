@@ -14,7 +14,7 @@ export DAIMON_LOCK_DIR="$WORK/locks"
 export DAIMON_RESTORE_ROOT="$WORK/root"
 export DAIMON_NGINX_DIR="$WORK/nginx"
 mkdir -p "$DAIMON_RESTORE_ROOT" "$DAIMON_NGINX_DIR"
-tr -d '\r' < "${DAIMON_TEST_SOURCE:-$ROOT/linux-toolbox.sh}" > "$WORK/source.sh"
+"${PYTHON_BIN:-python3}" "$ROOT/tests/source.py" "$ROOT" > "$WORK/source.sh"
 SOURCE="$WORK/source.sh"
 if ! python3 --version >/dev/null 2>&1; then
     python3() { python "$@" | tr -d '\r'; }

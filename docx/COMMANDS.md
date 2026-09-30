@@ -7,7 +7,7 @@
 ```bash
 bash <(curl -fsSL https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh)
 ```
-解释：在线拉取并运行主脚本。
+解释：运行轻量入口，安装同一 Git 提交的完整模块包；校验文件清单、SHA256 和语法后才切换版本。大陆优先代理，错误时保留旧完整版本；已安装时日常启动从本地加载。
 
 Debian 缺少 `curl` 时，先以 root 运行：
 
@@ -62,6 +62,7 @@ mkdir -p /root/linux-daimon/daimon
 18. 常用的一键脚本
 19. 服务器退役
 20. Debian 基础工具
+21. 网络自适应优化
 00. 脚本更新
 0. 退出脚本
 
@@ -241,7 +242,7 @@ bash /root/linux-daimon/daimon/install-docker-auto.sh 2   # 国外和香港：Do
 ```bash
 one_click_network_auto_optimize   # 只检查并保留 BBR + FQ
 ```
-解释：批量配置不能与本地 iperf3 客户端完成可靠多轮 A/B，因此第 8 项不再凭 TCPquality 公共端点的一次测速写全局缓冲参数。多轮动态调优须进入主菜单 `5 → 15`。
+解释：批量配置不能与本地 iperf3 客户端完成可靠多轮 A/B，因此第 8 项不再凭 TCPquality 公共端点的一次测速写全局缓冲参数。多轮动态调优须进入主菜单 `21`；旧 `5 → 15` 保留跳转。
 
 ### 4.9 安装第三方工具
 

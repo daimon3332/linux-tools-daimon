@@ -4,7 +4,7 @@ ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 mkdir -p "$ROOT/.tmp"
 WORK=$(mktemp -d "$ROOT/.tmp/tcp-session.XXXXXX") || exit 1
 trap 'case "$WORK" in "$ROOT"/.tmp/tcp-session.*) rm -rf -- "$WORK" ;; esac' EXIT
-source "$ROOT/tcp-tuning-lab.sh"
+source "$ROOT/scripts/network/tcp-tuning-lab.sh"
 PYTHON_BIN=python3
 command -v python >/dev/null 2>&1 && PYTHON_BIN=python
 passed=0 failed=0 skipped=0
@@ -130,7 +130,7 @@ actual_score_keeps_or_restores() {
         printf '%s\t4\t%s\t0\t100000000\t100\n' "$1" "$rate" >> "$DAIMON_TCP_LAB_DIR/records.tsv"
     }
     daimon_tcp_lab_score() {
-        command "$PYTHON_BIN" "$ROOT/tcp-tuning-score.py" "$1" "$DAIMON_TCP_LAB_DIR/records.tsv" 4 "$2" "${3:-}"
+        command "$PYTHON_BIN" "$ROOT/scripts/network/tcp-tuning-score.py" "$1" "$DAIMON_TCP_LAB_DIR/records.tsv" 4 "$2" "${3:-}"
     }
     local real_round real_score
     real_round=$(declare -f daimon_tcp_lab_profile_round)
@@ -198,7 +198,7 @@ capture_only_owned_keys() {
 }
 menu_restore_does_not_reload_unrelated_config() {
     fixture menu-restore
-    eval "$(sed -n '/^daimon_tcp_restore() {/,/^}/p' "$ROOT/linux-toolbox.sh")"
+    eval "$(sed -n '/^daimon_tcp_restore() {/,/^}/p' "$ROOT/scripts/21-network-optimization.sh")"
     DAIMON_TCP_TUNING_CONF="$DAIMON_TCP_STATE_DIR/tuning.conf"
     DAIMON_TCP_BBR_CONF=''
     gl_lv='' gl_bai='' gl_huang='' gl_hong=''

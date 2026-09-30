@@ -1,3 +1,4 @@
+from source import read_source
 import copy
 import os
 import re
@@ -7,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get('DAIMON_TEST_SOURCE', ROOT / 'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE = read_source(ROOT)
 PROGRAM = re.search(r"<<'PYSSH_TXN'\n(.*?)\nPYSSH_TXN", SOURCE, re.S).group(1)
 
 

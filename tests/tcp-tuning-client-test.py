@@ -38,9 +38,9 @@ class ClientTest(unittest.TestCase):
                 (state / 'stage.json').write_text(json.dumps(stage), encoding='utf-8')
                 server = subprocess.Popen([IPERF, '-s', '-1', '-4', '-p', str(data_port)],
                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                control = subprocess.Popen([sys.executable, str(ROOT / 'tcp-tuning-control.py'),
+                control = subprocess.Popen([sys.executable, str(ROOT / 'scripts/network' / 'tcp-tuning-control.py'),
                     '--bind', '127.0.0.1', '--port', str(control_port), '--token', 'test',
-                    '--state-dir', str(state), '--client', str(ROOT / 'tcp-tuning-client.ps1')],
+                    '--state-dir', str(state), '--client', str(ROOT / 'scripts/network' / 'tcp-tuning-client.ps1')],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 client = None
                 try:
@@ -51,7 +51,7 @@ class ClientTest(unittest.TestCase):
                                 break
                         except OSError:
                             time.sleep(0.1)
-                    command = (f"$env:DAIMON_IPERF3='{IPERF}'; & '{ROOT / 'tcp-tuning-client.ps1'}' "
+                    command = (f"$env:DAIMON_IPERF3='{IPERF}'; & '{ROOT / 'scripts/network' / 'tcp-tuning-client.ps1'}' "
                                f"-Control '{endpoint}' -Token test; Write-Output 'PARENT_CONTINUED'")
                     client = subprocess.Popen([shell, '-NoProfile', '-NonInteractive', '-Command', command],
                                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)

@@ -29,7 +29,8 @@ class Layout(unittest.TestCase):
                     self.assertTrue((path.parent / target).exists(), (path.name, target))
 
     def test_agreement_url_matches_published_layout(self):
-        source = (ROOT / 'linux-toolbox.sh').read_text(encoding='utf-8')
+        from source import read_source
+        source = read_source(ROOT)
         self.assertIn('DAIMON_AGREEMENT_URL="https://github.com/daimon3332/linux-tools-daimon/blob/master/docx/USER_AGREEMENT.md"', source)
 
     def test_legacy_directory_and_claude_are_absent(self):

@@ -27,12 +27,12 @@ class ControlServerTest(unittest.TestCase):
             server = subprocess.Popen(
                 [
                     sys.executable,
-                    str(ROOT / "tcp-tuning-control.py"),
+                    str(ROOT / 'scripts/network' / 'tcp-tuning-control.py'),
                     "--bind", "127.0.0.1",
                     "--port", str(port),
                     "--token", "secret",
                     "--state-dir", str(state),
-                    "--client", str(ROOT / "tcp-tuning-client.ps1"),
+                    "--client", str(ROOT / 'scripts/network' / 'tcp-tuning-client.ps1'),
                 ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,

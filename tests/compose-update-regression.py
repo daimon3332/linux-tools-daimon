@@ -1,3 +1,4 @@
+from source import read_source
 import json
 import os
 import re
@@ -9,7 +10,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get('DAIMON_TEST_SOURCE', ROOT / 'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE = read_source(ROOT)
 BASH = os.environ.get('BASH_BIN', '/bin/bash')
 OLD = 'sha256:' + '1' * 64
 NEW = 'sha256:' + '2' * 64

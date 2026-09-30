@@ -1,3 +1,4 @@
+from source import read_source
 #!/usr/bin/env python3
 """Exercise the generated root task without stopping production containers."""
 import os
@@ -10,7 +11,7 @@ import unittest
 import json
 import time
 
-SOURCE = pathlib.Path(os.environ.get('DAIMON_TEST_SOURCE', pathlib.Path(__file__).resolve().parents[1] / 'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE = read_source(pathlib.Path(__file__).resolve().parents[1])
 
 
 def function(name):

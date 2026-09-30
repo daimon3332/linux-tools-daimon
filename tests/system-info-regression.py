@@ -1,3 +1,4 @@
+from source import read_source
 import os
 import re
 import subprocess
@@ -7,7 +8,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = Path(os.environ.get('DAIMON_TEST_SOURCE', ROOT / 'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE = read_source(ROOT)
 BASH = os.environ.get('BASH_BIN', '/bin/bash')
 
 
@@ -16,7 +17,8 @@ def function(name):
     if not match:
         raise AssertionError('Missing function: ' + name)
     if name == 'ip_address':
-        return SOURCE[match.start():SOURCE.index('\ninstall() {', match.end())].strip()
+        end = SOURCE.index('\n}', SOURCE.index('ipv6_address=$(curl', match.end())) + 2
+        return SOURCE[match.start():end]
     return SOURCE[match.start():SOURCE.index('\n}', match.end()) + 2]
 
 

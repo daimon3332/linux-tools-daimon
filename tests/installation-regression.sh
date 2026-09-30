@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -o pipefail
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-SOURCE=${DAIMON_TEST_SOURCE:-$ROOT/linux-toolbox.sh}
+mkdir -p "$ROOT/.tmp"
+SOURCE=$(mktemp "$ROOT/.tmp/test-source.XXXXXX") || exit 1
+"${PYTHON_BIN:-python3}" "$ROOT/tests/source.py" "$ROOT" > "$SOURCE" || exit 1
+trap 'rm -f -- "$SOURCE"' EXIT
 passed=0 failed=0
 load() {
     local body

@@ -1,8 +1,15 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 
 const sourcePath = process.env.DAIMON_TEST_SOURCE || 'linux-toolbox.sh';
-const source = Buffer.from(fs.readFileSync(sourcePath, 'utf8').replace(/\r/g, ''));
+let sourceText = fs.readFileSync(sourcePath, 'utf8');
+if (sourceText.includes('# DAIMON_MODULAR_BOOTSTRAP=1')) {
+  const root = path.dirname(path.resolve(sourcePath));
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'runtime.json'), 'utf8'));
+  sourceText += '\n' + manifest.modules.map(name => fs.readFileSync(path.join(root, name), 'utf8')).join('\n');
+}
+const source = Buffer.from(sourceText.replace(/\r/g, ''));
 if (['moltbot_menu', 'openclaw_', 'claw|oc|OpenClaw'].some(name => source.includes(name))) {
   throw new Error('Removed OpenClaw feature remains reachable or defined');
 }

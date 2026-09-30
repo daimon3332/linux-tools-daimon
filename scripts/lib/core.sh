@@ -1,0 +1,140 @@
+#!/bin/bash
+
+send_stats() {
+	if [ "$ENABLE_STATS" == "false" ]; then
+		return
+	fi
+
+	local country=$(curl -s --connect-timeout 3 --max-time 5 ipinfo.io/country)
+	local os_info=$(grep PRETTY_NAME /etc/os-release | cut -d '=' -f2 | tr -d '"')
+	local cpu_arch=$(uname -m)
+
+	(
+		curl -s --connect-timeout 3 --max-time 5 -X POST "https://api.kejilion.pro/api/log" \
+			-H "Content-Type: application/json" \
+			-d "{\"action\":\"$1\",\"timestamp\":\"$(date -u '+%Y-%m-%d %H:%M:%S')\",\"country\":\"$country\",\"os_info\":\"$os_info\",\"cpu_arch\":\"$cpu_arch\",\"version\":\"$sh_v\"}" \
+		&>/dev/null
+	) &
+
+}
+
+daimon_self_install() {
+    echo "完整版本已由入口安装器管理。"
+}
+
+install() {
+	if [ $# -eq 0 ]; then
+		echo "未提供软件包参数!"
+		return 1
+	fi
+
+	local package apt_updated=0
+	for package in "$@"; do
+		if command -v apt >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1 &&
+			[ "$(dpkg-query -W -f='${Status}' "$package" 2>/dev/null)" = "install ok installed" ]; then
+			continue
+		fi
+		if ! command -v "$package" &>/dev/null; then
+			echo -e "${gl_kjlan}正在安装 $package...${gl_bai}"
+			if command -v dnf &>/dev/null; then
+				dnf makecache || return 1
+				dnf install -y epel-release || return 1
+				dnf install -y "$package" || return 1
+			elif command -v yum &>/dev/null; then
+				yum makecache || return 1
+				yum install -y epel-release || return 1
+				yum install -y "$package" || return 1
+			elif command -v apt &>/dev/null; then
+				if [ "$apt_updated" -eq 0 ]; then
+					DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt update -y || return 1
+					apt_updated=1
+				fi
+				DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a APT_LISTCHANGES_FRONTEND=none apt install -y \
+					-o Dpkg::Options::="--force-confdef" \
+					-o Dpkg::Options::="--force-confold" \
+					"$package" || return 1
+			elif command -v apk &>/dev/null; then
+				apk update || return 1
+				apk add "$package" || return 1
+			elif command -v pacman &>/dev/null; then
+				pacman -Syu --noconfirm "$package" || return 1
+			elif command -v zypper &>/dev/null; then
+				zypper refresh || return 1
+				zypper install -y "$package" || return 1
+			elif command -v opkg &>/dev/null; then
+				opkg update || return 1
+				opkg install "$package" || return 1
+			elif command -v pkg &>/dev/null; then
+				pkg update || return 1
+				pkg install -y "$package" || return 1
+			else
+				echo "未知的包管理器!"
+				return 1
+			fi
+		fi
+	done
+}
+
+remove() {
+	if [ $# -eq 0 ]; then
+		echo "未提供软件包参数!"
+		return 1
+	fi
+
+	for package in "$@"; do
+		echo -e "${gl_kjlan}正在卸载 $package...${gl_bai}"
+		if command -v dnf &>/dev/null; then
+			dnf remove -y "$package"
+		elif command -v yum &>/dev/null; then
+			yum remove -y "$package"
+		elif command -v apt &>/dev/null; then
+			apt purge -y "$package"
+		elif command -v apk &>/dev/null; then
+			apk del "$package"
+		elif command -v pacman &>/dev/null; then
+			pacman -Rns --noconfirm "$package"
+		elif command -v zypper &>/dev/null; then
+			zypper remove -y "$package"
+		elif command -v opkg &>/dev/null; then
+			opkg remove "$package"
+		elif command -v pkg &>/dev/null; then
+			pkg delete -y "$package"
+		else
+			echo "未知的包管理器!"
+			return 1
+		fi
+	done
+}
+
+break_end() {
+	  [ "${DAIMON_BATCH_MODE:-0}" = 1 ] && return 0
+	  echo -e "${gl_lv}操作完成${gl_bai}"
+	  echo "按任意键继续..."
+	  read -n 1 -s -r -p ""
+	  echo ""
+	  clear
+}
+
+kejilion() {
+			cd ~
+			kejilion_sh
+}
+
+root_use() {
+clear
+[ "$EUID" -ne 0 ] && echo -e "${gl_huang}提示: ${gl_bai}该功能需要root用户才能运行！" && break_end && kejilion
+}
+
+kejilion_update() {
+    root_use
+    echo "linux-tools-daimon 完整组件更新"
+    if ! python3 "$DAIMON_RELEASE_DIR/scripts/lib/package.py" update "${DAIMON_UPDATE_REVISION:-master}"; then
+        echo "更新失败，原完整版本保留。" >&2
+        return 1
+    fi
+    if [ -f "$DAIMON_SCRIPT_DIR/cert_nginx.sh" ] || [ -f "$DAIMON_ROOT_DIR/cert-renew.sh" ]; then
+        : > "$DAIMON_CERT_HELPER_MARKER" || return 1
+    fi
+    echo "完整版本已校验并更新。"
+    exec "${DAIMON_INSTALL_BIN:-/usr/local/bin/d}"
+}

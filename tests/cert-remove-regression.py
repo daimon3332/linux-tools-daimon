@@ -1,8 +1,9 @@
+from source import read_source
 import os,re,subprocess,tempfile,unittest
 from pathlib import Path
 from unittest.mock import patch
 ROOT=Path(__file__).resolve().parents[1]
-SOURCE=Path(os.environ.get('DAIMON_TEST_SOURCE',ROOT/'linux-toolbox.sh')).read_text(encoding='utf-8')
+SOURCE=read_source(ROOT)
 class Entry(unittest.TestCase):
     def test_no_recursive_delete_in_certificate_entrypoints(self):
         for name in ('remove_cert','remove_nginx_and_cert','cleanup_nginx_and_cert','cleanup_failed_cert_request'):

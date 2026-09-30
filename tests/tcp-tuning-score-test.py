@@ -4,7 +4,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-spec = importlib.util.spec_from_file_location("tcp_tuning_score", ROOT / "tcp-tuning-score.py")
+spec = importlib.util.spec_from_file_location("tcp_tuning_score", ROOT / 'scripts/network' / 'tcp-tuning-score.py')
 score = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(score)
 

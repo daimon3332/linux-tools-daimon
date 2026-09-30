@@ -2,16 +2,14 @@
 # DAIMON_TCP_LAB_VERSION=2
 
 daimon_tcp_lab_download_helpers() {
-    local base="https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master" name target
-    mkdir -p "$DAIMON_TCP_STATE_DIR" || return 1
-    chmod 700 "$DAIMON_TCP_STATE_DIR" || return 1
+    local name target source
+    mkdir -p "$DAIMON_TCP_STATE_DIR" && chmod 700 "$DAIMON_TCP_STATE_DIR" || return 1
     for name in tcp-tuning-control.py tcp-tuning-client.ps1 tcp-tuning-score.py; do
+        source="$DAIMON_RELEASE_DIR/scripts/network/$name"
         target="$DAIMON_TCP_STATE_DIR/$name"
-        daimon_download_to "$base/$name?cb=$(date +%s)" "$target" 60 || return 1
-        chmod 600 "$target" || return 1
+        cp -- "$source" "$target" && chmod 600 "$target" || return 1
     done
-    python3 -m py_compile "$DAIMON_TCP_STATE_DIR/tcp-tuning-control.py" "$DAIMON_TCP_STATE_DIR/tcp-tuning-score.py" || return 1
-    command -v sha256sum >/dev/null 2>&1 || return 1
+    python3 -m py_compile "$DAIMON_TCP_STATE_DIR/tcp-tuning-control.py" "$DAIMON_TCP_STATE_DIR/tcp-tuning-score.py"
 }
 
 daimon_tcp_lab_ufw_allowed() {
