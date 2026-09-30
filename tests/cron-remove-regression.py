@@ -36,6 +36,7 @@ class Removal(unittest.TestCase):
                      'server_retire_remove_cron_path', 'server_retire_filter_cron', 'rsync_cron_read']
             body = '\n'.join(function(n) for n in names) + r'''
 root_use() { :; }
+daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 server_retire_sync_dirs() { echo "$WORK"; }
 server_retire_update_dirs() { :; }
 crontab_sync_runner_file() { echo "$WORK/runner.sh"; }

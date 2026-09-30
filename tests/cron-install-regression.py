@@ -32,6 +32,8 @@ class InstallPreflight(unittest.TestCase):
             body = '\n'.join(function(n) for n in ['crontab_sync_install_one', 'rsync_cron_read', 'server_retire_filter_cron']) + r'''
 root_use() { :; }
 rclone() { :; }
+rclone_require() { :; }
+daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 check_crontab_installed() { [ "$FAILURE" != dependency ]; }
 crontab_sync_runner_file() { printf '%s\n' "$WORK/runner.sh"; }
 crontab_sync_write_script() { [ "$FAILURE" != generate ] || return 1; echo changed > "$2"; chmod 700 "$2"; }
