@@ -172,6 +172,20 @@ class ComposeUpdate(unittest.TestCase):
         self.assertEqual(rc, 0, err + out)
         self.assertFalse(any((' pull ' in line or ' up ' in line) and '--help' not in line for line in trace))
 
+    def test_install_dependency_failure_is_visible_and_stops_task_creation(self):
+        definitions = function('docker_compose_update_install_one', 'docker_compose_update_remove_one')
+        script = definitions + '''
+root_use() { :; }
+check_crontab_installed() { :; }
+docker_config_require_tool() { echo "dependency $1 failed" >&2; return 1; }
+docker_compose_update_write_script() { echo unexpected-write; }
+docker_compose_update_install_one 1 fixture /unused ""
+'''
+        p = subprocess.run([BASH, '--noprofile', '--norc'], input=script.encode(), capture_output=True)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn('python3', p.stderr.decode())
+        self.assertNotIn('unexpected-write', p.stdout.decode())
+
 
 if __name__ == '__main__':
     (ROOT / '.tmp').mkdir(exist_ok=True)

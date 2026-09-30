@@ -14552,6 +14552,11 @@ docker_compose_update_install_one() {
 	local -a compose_config_files
 	root_use
 	check_crontab_installed
+	docker_config_require_tool python3 || return 1
+	if ! command -v timeout >/dev/null 2>&1; then
+		install coreutils || { echo "无法安装 timeout 所需的 coreutils，未配置自动更新。" >&2; return 1; }
+		command -v timeout >/dev/null 2>&1 || { echo "仍缺少 timeout，未配置自动更新。" >&2; return 1; }
+	fi
 	if ! docker compose version >/dev/null 2>&1; then
 		echo -e "${gl_hong}Docker Compose 插件不可用，无法配置自动更新。${gl_bai}"
 		return 1
