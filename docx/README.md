@@ -55,6 +55,39 @@ bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/daimon3
 | 20 | Debian 基础工具 | 仅 Debian：补齐 ca-certificates、curl、wget、jq |
 | 21 | 网络自适应优化 | 本地 PowerShell 客户端配合 iperf3 多轮对照调优发送缓冲、恢复调优前参数、只测速 |
 
+### 第三方工具（菜单 6）
+
+| 序号 | 名称 | 作用 |
+|---:|---|---|
+| 1 | vim | 文本编辑器，设为默认编辑器 |
+| 2 | cpcat | 通过 OSC 52 复制文件内容到本地剪贴板 |
+| 3 | Ctrl+D | Bash 中 Ctrl+D 改为删除下一个单词 |
+| 4 | starship | 终端提示符美化 |
+| 5 | bat | 终端输出高亮，提供 bauto、blog 等命令 |
+| 6 | btop | 系统资源监控 |
+| 7 | tree | 树形查看目录 |
+| 8 | ripgrep | 快速文本搜索（rg） |
+| 9 | fd | 快速文件查找 |
+| 10 | fzf | 命令行模糊搜索 |
+| 11 | ble.sh | Bash 行编辑与自动补全 |
+| 12 | yazi | 终端文件管理器 |
+| 13 | ncdu | 磁盘占用分析 |
+| 14 | NextTrace | 可视化路由追踪 |
+| 15 | iperf3 | 网络性能测试 |
+
+### 编程工具（菜单 7）
+
+| 序号 | 名称 | 作用 |
+|---:|---|---|
+| 1 | python | Python 运行环境（Debian 使用发行版 Python，不替换系统解释器） |
+| 2 | npm | 通过 nvm 安装 Node.js LTS 提供 npm |
+| 3 | nodejs | Node.js LTS |
+| 4 | bun | Bun 运行时与包管理器 |
+| 5 | uv | Python 包与项目管理 |
+| 6 | git | 版本控制 |
+| 7 | ClaudeCode | Claude Code 命令行工具 |
+| 8 | Codex | Codex 命令行工具 |
+
 ### 一键配置（菜单 4）
 
 | 序号 | 选项 | 说明 |
