@@ -14156,8 +14156,8 @@ docker_compose_update_cron_line() {
 	minute=$(( (idx * 7) % 60 ))
 	hour=$(( 3 + ((idx - 1) / 8) ))
 	[ "$hour" -gt 6 ] && hour=6
-	printf "%d %d * * * /bin/bash %s >> %s/cron_%s.log 2>&1" \
-		"$minute" "$hour" "$script_file" "$(docker_compose_update_log_dir)" "$(basename "$script_file" .sh)"
+	printf '* * * * * [ "$(TZ=Asia/Shanghai date +\\%%H:\\%%M)" = "%02d:%02d" ] && /bin/bash %s >> %s/cron_%s.log 2>&1' \
+		"$hour" "$minute" "$script_file" "$(docker_compose_update_log_dir)" "$(basename "$script_file" .sh)"
 }
 
 docker_compose_update_status_text() {
@@ -14168,7 +14168,11 @@ docker_compose_update_status_text() {
 	cron_output=$(crontab -l 2>/dev/null || true)
 	if [ -f "$script_file" ] && printf '%s\n' "$cron_output" | grep -Fq "$script_file"; then
 		if bash -n "$script_file" 2>/dev/null && grep -Fqx "# compose-update-id: $project_id" "$script_file"; then
-			echo -e "${gl_lv}已配置${gl_bai}"
+			if grep -Fqx '# compose-update-version: 2' "$script_file"; then
+				echo -e "${gl_lv}已配置${gl_bai}"
+			else
+				echo -e "${gl_huang}旧版任务，需重新安装${gl_bai}"
+			fi
 		else
 			echo -e "${gl_hong}脚本异常，请重新安装${gl_bai}"
 		fi
@@ -14248,18 +14252,22 @@ umask 077
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 EOF
 		printf '# compose-update-id: %s\n' "$project_id"
+		printf '# compose-update-version: 2\n'
 		printf 'COMPOSE_UPDATE_ID=%q\n' "$project_id"
 		printf 'COMPOSE_PROJECT=%q\n' "$project"
 		printf 'COMPOSE_PATH=%q\n' "$workdir"
 		printf 'COMPOSE_CONFIG_FILES=%q\n' "$config_files"
 		cat <<'EOF'
 WAIT_TIMEOUT="${COMPOSE_UPDATE_WAIT_TIMEOUT:-120}"
+PULL_ATTEMPTS="${COMPOSE_UPDATE_PULL_ATTEMPTS:-3}"
+PULL_RETRY_DELAY="${COMPOSE_UPDATE_PULL_RETRY_DELAY:-10}"
+PULL_TIMEOUT="${COMPOSE_UPDATE_PULL_TIMEOUT:-300}"
 LOCK_FILE="/run/lock/docker-compose-update-${COMPOSE_UPDATE_ID}.lock"
 LOCK_DIR="${LOCK_FILE}.d"
 COMPOSE_ARGS=(-p "$COMPOSE_PROJECT")
 TARGET_SERVICES=()
 declare -A PREVIOUS_IMAGES=()
-ROLLBACK_READY=true
+declare -A SERVICE_IMAGES=() EXPECTED_IMAGES=()
 
 log() {
 	printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
@@ -14280,7 +14288,6 @@ run_compose() {
 
 restore_previous_images() {
 	local image failed=0
-	[ "$ROLLBACK_READY" = "true" ] || return 1
 	[ "${#PREVIOUS_IMAGES[@]}" -gt 0 ] || return 1
 	for image in "${!PREVIOUS_IMAGES[@]}"; do
 		if ! docker image tag "${PREVIOUS_IMAGES[$image]}" "$image" >/dev/null; then
@@ -14292,16 +14299,41 @@ restore_previous_images() {
 
 start_services() {
 	local recreate="${1:-false}"
-	local args=(up -d --no-deps --wait --wait-timeout "$WAIT_TIMEOUT")
+	local args=(up -d --no-deps --no-build --pull never --wait --wait-timeout "$WAIT_TIMEOUT")
 	[ "$recreate" = "true" ] && args+=(--force-recreate)
 	[ "${#TARGET_SERVICES[@]}" -gt 0 ] && args+=("${TARGET_SERVICES[@]}")
 	run_compose "${args[@]}"
+}
+
+service_image() {
+	local service="$1" ids cid image result=""
+	ids=$(run_compose ps -q "$service") || return 1
+	[ -n "$ids" ] || return 1
+	while IFS= read -r cid; do
+		[ "$(docker inspect -f '{{.State.Running}}' "$cid")" = true ] || return 1
+		image=$(docker inspect -f '{{.Image}}' "$cid") || return 1
+		[[ "$image" =~ ^sha256:[a-f0-9]{64}$ ]] || return 1
+		[ -z "$result" ] || [ "$result" = "$image" ] || return 1
+		result="$image"
+	done <<< "$ids"
+	printf '%s\n' "$result"
+}
+
+verify_images() {
+	local service expected
+	for service in "${TARGET_SERVICES[@]}"; do
+		expected="${EXPECTED_IMAGES[$service]}"
+		[ "$(service_image "$service")" = "$expected" ] || return 1
+	done
 }
 
 case "$WAIT_TIMEOUT" in
 	''|*[!0-9]*) fail "COMPOSE_UPDATE_WAIT_TIMEOUT 必须是正整数" ;;
 	0) fail "COMPOSE_UPDATE_WAIT_TIMEOUT 必须大于 0" ;;
 esac
+[[ "$PULL_ATTEMPTS" =~ ^[1-5]$ ]] || fail "COMPOSE_UPDATE_PULL_ATTEMPTS 必须为 1 到 5"
+[[ "$PULL_RETRY_DELAY" =~ ^[0-9]+$ ]] && [ "$PULL_RETRY_DELAY" -le 300 ] || fail "拉取重试间隔必须为 0 到 300 秒"
+[[ "$PULL_TIMEOUT" =~ ^[0-9]+$ ]] && [ "$PULL_TIMEOUT" -ge 1 ] && [ "$PULL_TIMEOUT" -le 1800 ] || fail "单次拉取超时必须为 1 到 1800 秒"
 
 mkdir -p /run/lock || fail "无法创建锁目录"
 if command -v flock >/dev/null 2>&1; then
@@ -14321,7 +14353,12 @@ fi
 
 command -v docker >/dev/null 2>&1 || fail "未找到 docker 命令"
 docker compose version >/dev/null 2>&1 || fail "Docker Compose 插件不可用"
-run_compose up --help 2>/dev/null | grep -q -- '--wait' || fail "Docker Compose 版本过旧，不支持健康等待"
+command -v python3 >/dev/null 2>&1 || fail "需要 Python 3 解析 Compose 服务配置"
+command -v timeout >/dev/null 2>&1 || fail "需要 timeout 限制镜像拉取耗时"
+up_help=$(run_compose up --help 2>/dev/null) || fail "无法检查 Compose 功能"
+for flag in --wait --pull --no-build; do
+	grep -q -- "$flag" <<< "$up_help" || fail "Docker Compose 不支持 $flag，请先更新 Docker"
+done
 [ -d "$COMPOSE_PATH" ] || fail "项目目录不存在: $COMPOSE_PATH"
 cd "$COMPOSE_PATH" || fail "无法进入项目目录: $COMPOSE_PATH"
 
@@ -14345,38 +14382,80 @@ else
 	exit 0
 fi
 
-config_command=(config --images)
-image_output=$(run_compose "${config_command[@]}" 2>/dev/null) || fail "无法解析 Compose 镜像配置"
-while IFS= read -r image; do
-	[ -n "$image" ] || continue
-	case "$image" in *@sha256:*) continue ;; esac
-	image_id=$(docker image inspect -f '{{.Id}}' "$image" 2>/dev/null || true)
-	if [ -n "$image_id" ]; then
-		PREVIOUS_IMAGES["$image"]="$image_id"
-	else
-		ROLLBACK_READY=false
+config_json=$(run_compose config --format json 2>/dev/null) || fail "无法解析 Compose 配置"
+service_plan=$(printf '%s' "$config_json" | python3 -c '
+import json,re,sys
+services=json.load(sys.stdin)["services"]
+for name in sys.argv[1:]:
+    service=services[name]
+    image=service.get("image", "")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", name): raise ValueError("Invalid service name")
+    if service.get("build") is not None: mode="SKIPPED_BUILD"
+    elif not image: mode="SKIPPED_NO_IMAGE"
+    elif service.get("pull_policy")=="never": mode="SKIPPED_POLICY"
+    elif "@sha256:" in image: mode="SKIPPED_PINNED"
+    else: mode="PULL"
+    if mode=="PULL" and (image.startswith("-") or any(c.isspace() for c in image)): raise ValueError("Invalid image reference")
+    print(name, mode, image if mode=="PULL" else "-", sep="\t")
+' "${TARGET_SERVICES[@]}" 2>/dev/null) || fail "无法分类运行中的服务"
+unset config_json
+TARGET_SERVICES=()
+while IFS=$'\t' read -r service mode image; do
+	if [ "$mode" != PULL ]; then
+		log "$mode: $service 未自动更新；本地构建需单独更新源码并构建，固定镜像或禁止拉取策略保持不变"
+		continue
 	fi
-done < <(printf '%s\n' "$image_output" | sort -u)
+	image_id=$(service_image "$service") || fail "无法确认 $service 的原运行镜像，未拉取或重建"
+	if [ -n "${PREVIOUS_IMAGES[$image]:-}" ] && [ "${PREVIOUS_IMAGES[$image]}" != "$image_id" ]; then
+		fail "共享镜像的服务运行不同版本，无法安全恢复"
+	fi
+	PREVIOUS_IMAGES["$image"]="$image_id"
+	SERVICE_IMAGES["$service"]="$image"
+	TARGET_SERVICES+=("$service")
+done <<< "$service_plan"
+[ "${#TARGET_SERVICES[@]}" -gt 0 ] || { log "SKIPPED: 没有可自动拉取更新的运行服务"; exit 0; }
 
-pull_command=(pull)
-run_compose pull --help 2>/dev/null | grep -q -- '--ignore-buildable' && pull_command+=(--ignore-buildable)
-[ "${#TARGET_SERVICES[@]}" -gt 0 ] && pull_command+=("${TARGET_SERVICES[@]}")
-log "正在拉取镜像"
-if ! run_compose "${pull_command[@]}"; then
+pulled=false
+for ((attempt=1; attempt<=PULL_ATTEMPTS; attempt++)); do
+	log "正在拉取镜像 ($attempt/$PULL_ATTEMPTS)"
+	if timeout --signal=TERM --kill-after=30s "$PULL_TIMEOUT" docker compose "${COMPOSE_ARGS[@]}" pull --policy always "${TARGET_SERVICES[@]}"; then
+		pulled=true
+		break
+	fi
+	[ "$attempt" -eq "$PULL_ATTEMPTS" ] || sleep "$PULL_RETRY_DELAY"
+done
+if [ "$pulled" != true ]; then
 	restore_previous_images || log "警告: 部分旧镜像标签恢复失败"
-	fail "镜像拉取失败，现有容器保持运行"
+	fail "镜像拉取重试耗尽，现有容器保持运行"
+fi
+
+changed=0
+for service in "${TARGET_SERVICES[@]}"; do
+	image="${SERVICE_IMAGES[$service]}"
+	image_id=$(docker image inspect -f '{{.Id}}' "$image") || fail "拉取后镜像不存在: $image"
+	[[ "$image_id" =~ ^sha256:[a-f0-9]{64}$ ]] || fail "镜像 ID 无效"
+	EXPECTED_IMAGES["$service"]="$image_id"
+	[ "$image_id" = "${PREVIOUS_IMAGES[$image]}" ] || changed=$((changed + 1))
+done
+if [ "$changed" -eq 0 ]; then
+	verify_images || fail "镜像拉取期间运行容器发生变化，请检查项目"
+	log "NO_CHANGE: 镜像未变化，没有重建容器"
+	exit 0
 fi
 
 log "正在应用更新"
-if ! start_services false; then
+if ! start_services false || ! verify_images; then
 	log "更新启动或健康检查失败，开始恢复旧镜像"
-	if restore_previous_images && start_services true; then
+	for service in "${TARGET_SERVICES[@]}"; do
+		EXPECTED_IMAGES["$service"]="${PREVIOUS_IMAGES[${SERVICE_IMAGES[$service]}]}"
+	done
+	if restore_previous_images && start_services true && verify_images; then
 		fail "更新失败，已恢复到更新前镜像"
 	fi
 	fail "更新失败，自动恢复也未成功，请立即检查容器"
 fi
 
-log "更新成功"
+log "UPDATED: 更新成功，$changed 个服务的镜像发生变化并通过运行/健康等待与镜像 ID 校验"
 EOF
 	} > "$temp_file"; then
 		rm -f "$temp_file"

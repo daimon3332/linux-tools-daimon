@@ -1037,10 +1037,14 @@ crontab -l
 
 ```bash
 mkdir -p /root/linux-daimon/docker-compose-update /var/log/docker-compose-update
-docker compose -p 项目名 -f /项目路径/docker-compose.yml pull --ignore-buildable 运行服务...
-docker compose -p 项目名 -f /项目路径/docker-compose.yml up -d --no-deps --wait --wait-timeout 120 运行服务...
+timeout --signal=TERM --kill-after=30s 300 docker compose -p 项目名 -f /项目路径/docker-compose.yml pull --policy always 可拉取的运行服务...
+docker compose -p 项目名 -f /项目路径/docker-compose.yml up -d --no-deps --no-build --pull never --wait --wait-timeout 120 可拉取的运行服务...
 ```
-解释：以上命令由脚本自动生成，不需要手工执行。任务文件名使用项目名和项目身份哈希，避免路径清理后的同名覆盖；项目名和全部 `-f` 配置会被保留。执行时使用独立锁并读取当前运行服务；没有运行服务时跳过，避免重新启动用户主动停止的项目。任务先保存旧镜像 ID，再拉取和启动，不会预先停止容器。拉取失败时保持现有容器运行；启动或健康检查失败且旧镜像完整可用时自动恢复，并以非零状态退出。定时任务按项目编号错开执行，日志由 `/etc/logrotate.d/docker-compose-update` 每天轮转，保留 14 份，单文件上限 10 MB。
+解释：以上命令由脚本自动生成，不需要手工执行。项目名和完整 `-f` 清单保留；独立锁保护本项目。任务按 `Asia/Shanghai` 的每分钟时间判断执行，保留按项目编号错开的凌晨时间，不依赖 cron 进程缓存的时区。没有运行服务时跳过；本地构建、固定 digest 和禁止拉取策略明确记录为跳过，不自动同步源码或构建。
+
+任务保存实际运行镜像 ID，默认拉取最多 3 次、间隔 10 秒、单次超时 300 秒；分别由 `COMPOSE_UPDATE_PULL_ATTEMPTS`（1-5）、`COMPOSE_UPDATE_PULL_RETRY_DELAY`（0-300）、`COMPOSE_UPDATE_PULL_TIMEOUT`（1-1800）控制。拉取失败不重建容器；镜像未变记为 `NO_CHANGE`，不无谓重建。启动和恢复都禁用再次拉取/构建，完成后复核运行镜像 ID，启动/健康等待或 ID 不符时尝试恢复原镜像并返回失败。`UPDATED` 表示镜像确实变化且已验证，`SKIPPED_*` 不表示更新成功。日志轮转保留原设置。
+
+主工具箱升级不会自动覆盖已有任务；自动更新菜单显示版本 2 标识，旧任务需重新安装以刷新脚本和调度。
 
 卸载自动更新：
 
