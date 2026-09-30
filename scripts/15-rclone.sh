@@ -466,7 +466,7 @@ for e in json.load(sys.stdin):
 	echo "仅恢复选中的子目录；不包含根层文件、未备份的隐藏配置、/data、Docker volumes 或系统 cron。"
 	echo "云文件恢复不保证原主机的 UID/GID、权限及符号链接；启动服务前必须检查数据挂载。"
 	read -r -p "同名文件处理：1 保留本机并补齐缺项，2 使用远程版本（0 返回）: " policy || return 1
-	case "$policy" in 1) policy=keep ;; 2) policy=replace ;; *) return 0 ;; esac
+	case "$policy" in 1) policy=keep ;; 2) policy=replace ;; *) echo "已取消"; return 0 ;; esac
 	read -e -p "确认恢复以上 ${#restore_dirs[@]} 个文件夹？(y/N): " confirm || return 1
 	[ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return; }
 
@@ -899,23 +899,23 @@ rclone_compose_add_project() {
 	local dir file project args=()
 	read -r -e -p "额外项目或重设上下文的绝对目录（回车跳过）: " dir || return 0
 	[ -n "$dir" ] || return 0
-	[ -d "$dir" ] && [ "$dir" != / ] && [ "$(realpath -e -- "$dir")" = "$dir" ] && [[ "$dir" != *[[:cntrl:]]* ]] || return 1
+	[ -d "$dir" ] && [ "$dir" != / ] && [ "$(realpath -e -- "$dir")" = "$dir" ] && [[ "$dir" != *[[:cntrl:]]* ]] || { echo "目录无效：需要已存在的绝对路径，且不能是符号链接；未启动任何项目。"; return 1; }
 	while true; do
 		read -r -e -p "Compose 配置路径（按 -f 顺序逐个输入，回车结束，空列表用默认发现）: " file || return 1
 		[ -n "$file" ] || break
 		[[ "$file" = /* ]] || file="$dir/$file"
-		[ -f "$file" ] && [[ "$file" != *[[:cntrl:]]* ]] || return 1
+		[ -f "$file" ] && [[ "$file" != *[[:cntrl:]]* ]] || { echo "Compose 配置文件不存在: $file"; return 1; }
 		args+=(-f "$file")
 	done
 	read -r -e -p "额外环境文件路径（回车用 .env）: " file || return 1
 	if [ -n "$file" ]; then
 		[[ "$file" = /* ]] || file="$dir/$file"
-		[ -f "$file" ] && [[ "$file" != *[[:cntrl:]]* ]] || return 1
+		[ -f "$file" ] && [[ "$file" != *[[:cntrl:]]* ]] || { echo "环境文件不存在: $file"; return 1; }
 		args+=(--env-file "$file")
 	fi
 	read -r -p "Compose 项目名（回车用 name:/默认名称）: " project || return 1
 	if [ -n "$project" ]; then
-		[[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || return 1
+		[[ "$project" =~ ^[a-z0-9][a-z0-9_-]*$ ]] || { echo "项目名只能包含小写字母、数字、- 和 _。"; return 1; }
 		args+=(-p "$project")
 	fi
 	RCLONE_COMPOSE_ARGS=("${args[@]}")
