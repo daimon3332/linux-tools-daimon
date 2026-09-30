@@ -167,6 +167,7 @@ systemctl() {
 
     def test_missing_dependency_reports_failure(self):
         extra = '''
+id() { echo 0; }
 command() {
     if [ "$1" = -v ] && [ "$2" = jq ]; then return 1; fi
     builtin command "$@"
@@ -182,6 +183,7 @@ command() {
 
     def test_successful_installer_without_command_is_not_success(self):
         extra = '''
+id() { echo 0; }
 install() { return 0; }
 command() {
     if [ "$1" = -v ] && [ "$2" = jq ]; then return 1; fi
