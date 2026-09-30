@@ -60,8 +60,11 @@ PY
 
 restore_dns_config() (
 	local target service source="" work attrs locked=0 committed=0
-	for target in /run/systemd/resolve/resolv.conf /run/NetworkManager/resolv.conf /run/resolvconf/resolv.conf; do
+	for target in /run/systemd/resolve/stub-resolv.conf /run/systemd/resolve/resolv.conf /run/NetworkManager/resolv.conf /run/resolvconf/resolv.conf; do
 		case "$target" in
+			*/stub-resolv.conf)
+				service=systemd-resolved
+				! grep -qsiE '^[[:space:]]*DNSStubListener[[:space:]]*=[[:space:]]*(no|false|0)' /etc/systemd/resolved.conf /etc/systemd/resolved.conf.d/*.conf || continue ;;
 			/run/systemd/resolve/*) service=systemd-resolved ;;
 			/run/NetworkManager/*) service=NetworkManager ;;
 			/run/resolvconf/*) service=resolvconf ;;

@@ -35,7 +35,7 @@
     "scripts/02-system-update.sh": "f9d8879bb5660c1244106c69fe25453c996b32c51313c73d32d57ca99dadb07a",
     "scripts/03-system-clean.sh": "160e06bbd68d7c51d7326c59cf76bfb085fafaa328f9dcb5bb67344a18f48f03",
     "scripts/04-one-click.sh": "330a6ee5960fda32d726ff45f7b9d8004498865ce4c56dbab63fdc503f53f52d",
-    "scripts/05-system-tools.sh": "0af1507952401b8f026aaafea96a2afd849ab1ff419f9d68348d907b4fda8081",
+    "scripts/05-system-tools.sh": "180e2a48e7e91dfc57a94fd64e39b3de2a88ae8ddd20a1f1c401056ec8be8353",
     "scripts/06-third-party.sh": "c775a4ebc58b8c5e0840b9bded7785371d6bb2cafa90ba25ed1d5bf84849d924",
     "scripts/07-programming.sh": "7426758703720e322143ee03a77213ec84620d9d614cf4ffb9f7c30089648f67",
     "scripts/08-docker.sh": "c0937f76470f34088691767b4c660e96d021984461bc449973d1afe58a87ba8a",
