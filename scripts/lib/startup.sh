@@ -90,10 +90,8 @@ UserLicenseAgreement() {
 
 
 	if [ "$user_input" = "y" ] || [ "$user_input" = "Y" ]; then
-		send_stats "许可同意"
 		daimon_preference_set permission_granted true || return 1
 	else
-		send_stats "许可拒绝"
 		clear
 		exit
 	fi

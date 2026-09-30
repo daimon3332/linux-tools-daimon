@@ -349,7 +349,6 @@ docker_uninstall_environment() {
 docker_ps() {
 while true; do
 	clear
-	send_stats "Docker容器管理"
 	echo "Docker容器列表"
 	docker ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"
 	echo ""
@@ -372,40 +371,32 @@ while true; do
 	read -e -p "请输入你的选择: " sub_choice || return 1
 	case $sub_choice in
 		1)
-			send_stats "新建容器"
 			read -e -p "请输入创建命令: " dockername || return 1
 			$dockername
 			;;
 		2)
-			send_stats "启动指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
 			docker start $dockername
 			;;
 		3)
-			send_stats "停止指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
 			docker stop $dockername
 			;;
 		4)
-			send_stats "删除指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
 			docker rm -f $dockername
 			;;
 		5)
-			send_stats "重启指定容器"
 			read -e -p "请输入容器名（多个容器名请用空格分隔）: " dockername || return 1
 			docker restart $dockername
 			;;
 		6)
-			send_stats "启动所有容器"
 			docker start $(docker ps -a -q)
 			;;
 		7)
-			send_stats "停止所有容器"
 			docker stop $(docker ps -q)
 			;;
 		8)
-			send_stats "删除所有容器"
 			read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有容器吗？(Y/N): ")" choice || return 1
 			case "$choice" in
 			  [Yy])
@@ -419,23 +410,19 @@ while true; do
 			esac
 			;;
 		9)
-			send_stats "重启所有容器"
 			docker restart $(docker ps -q)
 			;;
 		11)
-			send_stats "进入容器"
 			read -e -p "请输入容器名: " dockername || return 1
 			docker exec -it $dockername /bin/sh
 			break_end
 			;;
 		12)
-			send_stats "查看容器日志"
 			read -e -p "请输入容器名: " dockername || return 1
 			docker logs $dockername
 			break_end
 			;;
 		13)
-			send_stats "查看容器网络"
 			echo ""
 			container_ids=$(docker ps -q)
 			echo "------------------------------------------------------------"
@@ -453,13 +440,11 @@ while true; do
 			break_end
 			;;
 		14)
-			send_stats "查看容器占用"
 			docker stats --no-stream
 			break_end
 			;;
 
 		15)
-			send_stats "允许容器端口访问"
 			read -e -p "请输入容器名: " docker_name || return 1
 			ip_address
 			clear_container_rules "$docker_name" "$ipv4_address"
@@ -469,7 +454,6 @@ while true; do
 			;;
 
 		16)
-			send_stats "阻止容器端口访问"
 			read -e -p "请输入容器名: " docker_name || return 1
 			ip_address
 			block_container_port "$docker_name" "$ipv4_address"
@@ -491,7 +475,6 @@ done
 docker_image() {
 while true; do
 	clear
-	send_stats "Docker镜像管理"
 	echo "Docker镜像列表"
 	docker image ls
 	echo ""
@@ -505,7 +488,6 @@ while true; do
 	read -e -p "请输入你的选择: " sub_choice || return 1
 	case $sub_choice in
 		1)
-			send_stats "拉取镜像"
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames || return 1
 			for name in $imagenames; do
 				echo -e "${gl_kjlan}正在获取镜像: $name${gl_bai}"
@@ -513,7 +495,6 @@ while true; do
 			done
 			;;
 		2)
-			send_stats "更新镜像"
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames || return 1
 			for name in $imagenames; do
 				echo -e "${gl_kjlan}正在更新镜像: $name${gl_bai}"
@@ -521,14 +502,12 @@ while true; do
 			done
 			;;
 		3)
-			send_stats "删除镜像"
 			read -e -p "请输入镜像名（多个镜像名请用空格分隔）: " imagenames || return 1
 			for name in $imagenames; do
 				docker rmi -f $name
 			done
 			;;
 		4)
-			send_stats "删除所有镜像"
 			read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有镜像吗？(Y/N): ")" choice || return 1
 			case "$choice" in
 			  [Yy])
@@ -1304,7 +1283,6 @@ docker_ssh_migration() {
 	# 迁移
 	# ----------------------------
 	docker_migration_migrate() {
-		send_stats "Docker迁移"
 		local BACKUP_DIR TARGET_IP TARGET_USER TARGET_PORT
 		read -e -p  "请输入要迁移的备份目录: " BACKUP_DIR || return 1
 		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
@@ -1328,7 +1306,6 @@ docker_ssh_migration() {
 	# 删除备份
 	# ----------------------------
 	docker_migration_delete_backup() {
-		send_stats "Docker备份文件删除"
 		local BACKUP_DIR confirm
 		read -e -p  "请输入要删除的备份目录: " BACKUP_DIR || return 1
 		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
@@ -1345,7 +1322,6 @@ docker_ssh_migration() {
 	# 主菜单
 	# ----------------------------
 	main_menu() {
-		send_stats "Docker备份迁移还原"
 		while true; do
 			clear
 			echo "------------------------"
@@ -2067,7 +2043,6 @@ linux_docker() {
 
 	while true; do
 	  clear
-	  # send_stats "docker管理"
 	  echo -e "Docker管理"
 	  docker_tato
 	  echo -e "${gl_kjlan}------------------------"
@@ -2100,7 +2075,6 @@ linux_docker() {
 	  case $sub_choice in
 		  1)
 			clear
-			send_stats "安装docker环境"
 			install_add_docker
 
 			  ;;
@@ -2116,7 +2090,6 @@ linux_docker() {
 			  local network_count=$(docker network ls -q 2>/dev/null | wc -l)
 			  local volume_count=$(docker volume ls -q 2>/dev/null | wc -l)
 
-			  send_stats "docker全局状态"
 			  echo "Docker版本"
 			  docker -v
 			  docker compose version
@@ -2147,7 +2120,6 @@ linux_docker() {
 		  5)
 			  while true; do
 				  clear
-				  send_stats "Docker网络管理"
 				  echo "Docker网络列表"
 				  echo "------------------------------------------------------------"
 				  docker network ls
@@ -2185,12 +2157,10 @@ linux_docker() {
 
 				  case $sub_choice in
 					  1)
-						  send_stats "创建网络"
 						  read -e -p "设置新网络名: " dockernetwork || return 1
 						  docker network create $dockernetwork
 						  ;;
 					  2)
-						  send_stats "加入网络"
 						  read -e -p "加入网络名: " dockernetwork || return 1
 						  read -e -p "那些容器加入该网络（多个容器名请用空格分隔）: " dockernames || return 1
 
@@ -2199,7 +2169,6 @@ linux_docker() {
 						  done
 						  ;;
 					  3)
-						  send_stats "加入网络"
 						  read -e -p "退出网络名: " dockernetwork || return 1
 						  read -e -p "那些容器退出该网络（多个容器名请用空格分隔）: " dockernames || return 1
 
@@ -2210,7 +2179,6 @@ linux_docker() {
 						  ;;
 
 					  4)
-						  send_stats "删除网络"
 						  read -e -p "请输入要删除的网络名: " dockernetwork || return 1
 						  docker network rm $dockernetwork
 						  ;;
@@ -2228,7 +2196,6 @@ linux_docker() {
 		  6)
 			  while true; do
 				  clear
-				  send_stats "Docker卷管理"
 				  echo "Docker卷列表"
 				  docker volume ls
 				  echo ""
@@ -2244,7 +2211,6 @@ linux_docker() {
 
 				  case $sub_choice in
 					  1)
-						  send_stats "新建卷"
 						  read -e -p "设置新卷名: " dockerjuan || return 1
 						  docker volume create $dockerjuan
 
@@ -2259,7 +2225,6 @@ linux_docker() {
 						  ;;
 
 					   3)
-						  send_stats "删除所有卷"
 						  read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定删除所有未使用的卷吗？(Y/N): ")" choice || return 1
 						  case "$choice" in
 							[Yy])
@@ -2284,7 +2249,6 @@ linux_docker() {
 			  ;;
 		  7)
 			  clear
-			  send_stats "Docker清理"
 			  read -e -p "$(echo -e "${gl_huang}提示: ${gl_bai}将清理无用的镜像容器网络，包括停止的容器，确定清理吗？(Y/N): ")" choice || return 1
 			  case "$choice" in
 				[Yy])
@@ -2299,7 +2263,6 @@ linux_docker() {
 			  ;;
 		  8)
 			  clear
-			  send_stats "Docker源"
 			  docker_mirror_menu || { [ "$?" -eq 90 ] && continue; false; }
 			  ;;
 
@@ -2318,13 +2281,11 @@ linux_docker() {
 
 		  11)
 			  clear
-			  send_stats "Docker v6 开"
 			  docker_ipv6_on
 			  ;;
 
 		  12)
 			  clear
-			  send_stats "Docker v6 关"
 			  docker_ipv6_off
 			  ;;
 
@@ -2336,7 +2297,6 @@ linux_docker() {
 
 		  20)
 			  clear
-			  send_stats "Docker卸载"
 			  read -e -p "$(echo -e "${gl_hong}注意: ${gl_bai}确定卸载docker环境吗？(Y/N): ")" choice || return 1
 			  case "$choice" in
 				[Yy])

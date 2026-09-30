@@ -18,7 +18,6 @@ daimon_gai_preference() {
 	fi
 	daimon_config_commit "$file" "$staged" || return 1
 	echo "已切换为 IPv${family} 优先"
-	send_stats "已切换为 IPv${family} 优先"
 }
 
 prefer_ipv4() {
@@ -92,7 +91,6 @@ restore_dns_config() (
 
 set_dns_ui() {
 root_use
-send_stats "优化DNS"
 while true; do
 	clear
 	echo "优化DNS地址"
@@ -119,20 +117,20 @@ while true; do
 		local dns2_ipv4="8.8.8.8"
 		local dns1_ipv6="2606:4700:4700::1111"
 		local dns2_ipv6="2001:4860:4860::8888"
-		set_dns && send_stats "国外DNS优化"
+		set_dns
 		;;
 	  2)
 		local dns1_ipv4="223.5.5.5"
 		local dns2_ipv4="119.29.29.29"
 		local dns1_ipv6="2400:3200::1"
 		local dns2_ipv6="2402:4e00::"
-		set_dns && send_stats "国内DNS优化"
+		set_dns
 		;;
 	  3)
-		edit_dns_config && send_stats "手动编辑DNS配置"
+		edit_dns_config
 		;;
 	  4)
-		restore_dns_config && send_stats "恢复DNS配置"
+		restore_dns_config
 		;;
 	  *)
 		break
@@ -225,7 +223,6 @@ fetch_remote_ssh_keys() {
 
 linux_language() {
 root_use
-send_stats "切换系统语言"
 while true; do
   clear
   echo "当前系统语言: $LANG"
@@ -243,39 +240,30 @@ while true; do
   case $choice in
 	  1)
 		  update_locale "en_US.UTF-8" "en_US.UTF-8"
-		  send_stats "切换到英文"
 		  ;;
 	  2)
 		  update_locale "zh_CN.UTF-8" "zh_CN.UTF-8"
-		  send_stats "切换到简体中文"
 		  ;;
 	  3)
 		  update_locale "zh_TW.UTF-8" "zh_TW.UTF-8"
-		  send_stats "切换到繁体中文"
 		  ;;
 	  4)
 		  update_locale "ja_JP.UTF-8" "ja_JP.UTF-8"
-		  send_stats "切换到日文"
 		  ;;
 	  5)
 		  update_locale "ko_KR.UTF-8" "ko_KR.UTF-8"
-		  send_stats "切换到韩文"
 		  ;;
 	  6)
 		  update_locale "de_DE.UTF-8" "de_DE.UTF-8"
-		  send_stats "切换到德文"
 		  ;;
 	  7)
 		  update_locale "fr_FR.UTF-8" "fr_FR.UTF-8"
-		  send_stats "切换到法文"
 		  ;;
 	  8)
 		  update_locale "es_ES.UTF-8" "es_ES.UTF-8"
-		  send_stats "切换到西班牙文"
 		  ;;
 	  9)
 		  update_locale "ru_RU.UTF-8" "ru_RU.UTF-8"
-		  send_stats "切换到俄文"
 		  ;;
 	  *)
 		  break
@@ -729,7 +717,6 @@ github_proxy_manager() {
 
 show_ssh_ip_info() {
 	clear
-	send_stats "查看ssh的ip"
 	echo "查看ssh的ip"
 	echo "------------------------------------------------"
 	local current_ip="" current_port=""
@@ -875,7 +862,6 @@ daimon_journal_configure() (
 
 journalctl_log_manager() {
 	root_use
-	send_stats "journalctl日志管理"
 	while true; do
 		clear
 		echo "journalctl日志管理"
@@ -1116,7 +1102,6 @@ system_disable_ipv6() {
 	daimon_ipv6_configure 1 || { echo "IPv6 禁用未完成，请检查上方错误。"; return 1; }
 	echo -e "${gl_lv}IPv6 已禁用。配置文件: /etc/sysctl.d/99-daimon-ipv6.conf${gl_bai}"
 	system_ipv6_status || return 1
-	send_stats "禁用IPv6"
 }
 
 system_enable_ipv6() {
@@ -1125,7 +1110,6 @@ system_enable_ipv6() {
 	echo -e "${gl_lv}IPv6 已开启。配置文件: /etc/sysctl.d/99-daimon-ipv6.conf${gl_bai}"
 	echo "允许 IPv6 不等于恢复静态地址、路由或公网连通性；请核查网络管理器配置。"
 	system_ipv6_status || return 1
-	send_stats "开启IPv6"
 }
 
 daimon_hosts_edit() {
@@ -1327,14 +1311,12 @@ linux_Settings() {
 						echo "快捷键创建失败"; break_end; continue
 					fi
 					echo "快捷键已设置: $kuaijiejian"
-					send_stats "脚本快捷键已设置"
 					break_end
 					break
 				done
 				;;
 			2)
 				root_use
-				send_stats "更换系统软件包镜像源"
 				clear
 				echo "更换系统软件包镜像源"
 				echo "下载并校验后执行 LinuxMirrors 脚本；下载失败时不会执行部分内容。"
@@ -1344,7 +1326,6 @@ linux_Settings() {
 			3) set_dns_ui ;;
 			4)
 				root_use
-				send_stats "设置v4/v6优先级"
 				while true; do
 					clear
 					echo "设置v4/v6优先级"
@@ -1364,7 +1345,7 @@ linux_Settings() {
 					case "$choice" in
 						1) prefer_ipv4 ;;
 						2) prefer_ipv6 ;;
-						3) clear; daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"; echo "该功能由jhb大神提供，感谢他！"; send_stats "ipv6修复" ;;
+						3) clear; daimon_run_cached_script "https://jhb.ovh/jb/v6.sh" "jhb-v6.sh"; echo "该功能由jhb大神提供，感谢他！" ;;
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
@@ -1373,7 +1354,6 @@ linux_Settings() {
 				;;
 			5)
 				root_use
-				send_stats "设置虚拟内存"
 				while true; do
 					clear
 					echo "设置虚拟内存"
@@ -1390,11 +1370,11 @@ linux_Settings() {
 					echo "------------------------"
 					read -e -p "请输入你的选择: " choice || return 1
 					case "$choice" in
-						1) send_stats "已设置1G虚拟内存"; add_swap 1024 ;;
-						2) send_stats "已设置2G虚拟内存"; add_swap 2048 ;;
-						3) send_stats "已设置4G虚拟内存"; add_swap 4096 ;;
-						4) read -e -p "请输入虚拟内存大小（单位M）: " new_swap || return 1; [ -n "$new_swap" ] && add_swap "$new_swap"; send_stats "已设置自定义虚拟内存" ;;
-						5) send_stats "删除虚拟内存"; delete_swap ;;
+						1) add_swap 1024 ;;
+						2) add_swap 2048 ;;
+						3) add_swap 4096 ;;
+						4) read -e -p "请输入虚拟内存大小（单位M）: " new_swap || return 1; [ -n "$new_swap" ] && add_swap "$new_swap" ;;
+						5) delete_swap ;;
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
@@ -1404,7 +1384,6 @@ linux_Settings() {
 			6)
 				while true; do
 					root_use
-					send_stats "用户管理"
 					clear
 					echo "用户列表"
 					echo "----------------------------------------------------------------------------"
@@ -1458,7 +1437,6 @@ linux_Settings() {
 				;;
 			7)
 				root_use
-				send_stats "换时区"
 				while true; do
 					clear
 					echo "系统时间信息"
@@ -1523,7 +1501,6 @@ linux_Settings() {
 				;;
 			8)
 				root_use
-				send_stats "修改主机名"
 				while true; do
 					clear
 					local current_hostname new_hostname
@@ -1532,7 +1509,7 @@ linux_Settings() {
 					echo "------------------------"
 					read -e -p "请输入新的主机名（输入0退出）: " new_hostname || return 1
 					if [ -n "$new_hostname" ] && [ "$new_hostname" != "0" ]; then
-						daimon_set_hostname "$new_hostname" && send_stats "主机名已更改" || { echo "主机名修改失败，请检查上方错误。"; false; }
+						daimon_set_hostname "$new_hostname" || { echo "主机名修改失败，请检查上方错误。"; false; }
 						break_end
 					else
 						break
@@ -1541,7 +1518,6 @@ linux_Settings() {
 				;;
 			9)
 				root_use
-				send_stats "本地host解析"
 				while true; do
 					clear
 					echo "本机host解析列表"
@@ -1556,8 +1532,8 @@ linux_Settings() {
 					echo "------------------------"
 					read -e -p "请输入你的选择: " host_dns || return 1
 					case "$host_dns" in
-						1) read -r -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost || return 1; [ -n "$addhost" ] && daimon_hosts_edit add "$addhost" && send_stats "本地host解析新增" ;;
-						2) read -r -e -p "请输入需要删除的解析内容关键字（按字面匹配）: " delhost || return 1; [ -n "$delhost" ] && daimon_hosts_edit delete "$delhost" && send_stats "本地host解析删除" ;;
+						1) read -r -e -p "请输入新的解析记录 格式: 110.25.5.33 example.com : " addhost || return 1; [ -n "$addhost" ] && daimon_hosts_edit add "$addhost" ;;
+						2) read -r -e -p "请输入需要删除的解析内容关键字（按字面匹配）: " delhost || return 1; [ -n "$delhost" ] && daimon_hosts_edit delete "$delhost" ;;
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
@@ -1576,7 +1552,6 @@ linux_Settings() {
 			19) docker_mirror_speed_test_menu ;;
 			20)
 				clear
-				send_stats "卸载daimon脚本"
 				echo "卸载daimon脚本"
 				echo "------------------------------------------------"
 				echo "删除工具箱主脚本及其快捷键；保留已安装服务、辅助脚本和定时任务。"

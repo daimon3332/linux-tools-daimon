@@ -24,7 +24,6 @@ warp_manager() {
 		case $sub_choice in
 			1)
 				clear
-				send_stats "warp管理"
 				daimon_require_cmd wget && daimon_require_cmd curl || return 1
 				daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh"
 				;;
@@ -33,7 +32,6 @@ warp_manager() {
 				echo -e "${gl_hong}警告：此操作会永久关闭并彻底删除 WARP 网络接口、WARP Linux Client 和 WireProxy。${gl_bai}"
 				read -e -p "确认彻底删除 WARP？(y/N): " confirm || return 1
 				if [ "$confirm" = "y" ] || [ "$confirm" = "Y" ]; then
-					send_stats "彻底删除warp"
 					daimon_require_cmd wget && daimon_require_cmd curl || return 1
 					daimon_run_cached_script "https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh" "warp-menu.sh" u
 				else

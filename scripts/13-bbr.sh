@@ -2,7 +2,6 @@
 
 linux_bbr() {
 	clear
-	send_stats "bbr管理"
 	daimon_require_cmd wget && daimon_require_cmd curl || return 1
 	mkdir -p "$DAIMON_SCRIPT_DIR"
 	local tcpx="$DAIMON_SCRIPT_DIR/tcpx.sh" tmp

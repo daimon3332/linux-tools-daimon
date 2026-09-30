@@ -51,8 +51,8 @@ read -e -p "请输入你的选择: " choice || return 0
 pause_after=true
 case $choice in
   1) linux_info ;;
-  2) clear ; send_stats "系统更新" ; linux_update ;;
-  3) clear ; send_stats "系统清理" ; linux_clean ;;
+  2) clear ; linux_update ;;
+  3) clear ; linux_clean ;;
   4) one_click_config_manager; pause_after=false ;;
   5) linux_Settings; pause_after=false ;;
   6) linux_thirdparty_tools; pause_after=false ;;
@@ -80,7 +80,6 @@ done
 }
 
 k_info() {
-send_stats "d命令参考用例"
 echo "-------------------"
 echo "以下是 d 命令参考用例："
 echo "启动脚本            d"
@@ -106,24 +105,24 @@ if [ "$#" -eq 0 ]; then
 	return
 fi
 case $1 in
-	install|add|安装) shift; send_stats "安装软件"; install "$@" ;;
-	remove|del|uninstall|卸载) shift; send_stats "卸载软件"; remove "$@" ;;
+	install|add|安装) shift; install "$@" ;;
+	remove|del|uninstall|卸载) shift; remove "$@" ;;
 	update|更新) linux_update ;;
 	clean|清理) linux_clean ;;
 	ssh|远程连接) ssh_manager ;;
-	swap) shift; send_stats "快速设置虚拟内存"; add_swap "$@" ;;
-	time|时区) shift; send_stats "快速设置时区"; set_timedate "$@" ;;
-	status|状态) shift; send_stats "软件状态查看"; status "$@" ;;
-	start|启动) shift; send_stats "软件启动"; start "$@" ;;
-	stop|停止) shift; send_stats "软件暂停"; stop "$@" ;;
-	restart|重启) shift; send_stats "软件重启"; restart "$@" ;;
-	enable|autostart|开机启动) shift; send_stats "软件开机自启"; enable "$@" ;;
+	swap) shift; add_swap "$@" ;;
+	time|时区) shift; set_timedate "$@" ;;
+	status|状态) shift; status "$@" ;;
+	start|启动) shift; start "$@" ;;
+	stop|停止) shift; stop "$@" ;;
+	restart|重启) shift; restart "$@" ;;
+	enable|autostart|开机启动) shift; enable "$@" ;;
 	docker)
 		shift
 		case $1 in
-			install|安装) send_stats "快捷安装docker"; install_docker ;;
-			ps|容器) send_stats "快捷容器管理"; docker_ps ;;
-			img|镜像) send_stats "快捷镜像管理"; docker_image ;;
+			install|安装) install_docker ;;
+			ps|容器) docker_ps ;;
+			img|镜像) docker_image ;;
 			*) linux_docker ;;
 		esac
 		;;
@@ -136,10 +135,10 @@ case $1 in
 	sshkey)
 		shift
 		case "$1" in
-			"") send_stats "SSHKey 交互菜单"; sshkey_panel ;;
-			github) shift; send_stats "从 GitHub 导入 SSH 公钥"; fetch_github_ssh_keys "$1" ;;
-			http://*|https://*) send_stats "从 URL 导入 SSH 公钥"; fetch_remote_ssh_keys "$1" ;;
-			ssh-rsa*|ssh-ed25519*|ssh-ecdsa*) send_stats "公钥直接导入"; import_sshkey "$1" ;;
+			"") sshkey_panel ;;
+			github) shift; fetch_github_ssh_keys "$1" ;;
+			http://*|https://*) fetch_remote_ssh_keys "$1" ;;
+			ssh-rsa*|ssh-ed25519*|ssh-ecdsa*) import_sshkey "$1" ;;
 			*)
 				echo "错误：未知参数 '$1'"
 				echo "用法："

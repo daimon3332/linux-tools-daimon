@@ -66,7 +66,6 @@ ssh_import_key_file() {
 
 sshkey_panel() {
   root_use
-  send_stats "用户密钥登录"
   while true; do
 	  clear
 	  local REAL_STATUS=$(grep -i "^PubkeyAuthentication" /etc/ssh/sshd_config | tr '[:upper:]' '[:lower:]')
@@ -89,35 +88,29 @@ sshkey_panel() {
 	  read -e -p "请输入你的选择: " host_dns || return 1
 	  case $host_dns in
 		  1)
-              send_stats "生成新密钥"
               add_sshkey
 			break_end
 			  ;;
 		  2)
-			send_stats "导入已有公钥"
 			import_sshkey
 			break_end
 			  ;;
 		  3)
-			send_stats "导入GitHub远端公钥"
 			fetch_github_ssh_keys
 			break_end
 			  ;;
 		  4)
-			send_stats "导入URL远端公钥"
 			read -e -p "请输入您的远端公钥URL： " keys_url || return 1
 			fetch_remote_ssh_keys "${keys_url}"
 			break_end
 			  ;;
 
 		  5)
-			send_stats "编辑公钥文件"
 			daimon_require_cmd vim && vim ${HOME}/.ssh/authorized_keys
 			break_end
 			  ;;
 
 		  6)
-			send_stats "查看本机密钥"
 			echo "------------------------"
 			echo "公钥信息"
 			cat ${HOME}/.ssh/authorized_keys
@@ -137,7 +130,6 @@ sshkey_panel() {
 }
 
 ssh_manager() {
-	send_stats "ssh远程连接工具"
 
 	CONFIG_FILE="$HOME/.ssh_connections"
 	KEY_DIR="$HOME/.ssh/ssh_manager_keys"
@@ -1122,7 +1114,6 @@ list_connections() {
 }
 
 add_connection() {
-	send_stats "添加新连接"
 	echo "创建新连接示例："
 	echo "  - 连接名称: my_server"
 	echo "  - IP地址: 192.168.1.100"
@@ -1141,7 +1132,6 @@ add_connection() {
 }
 
 delete_connection() {
-	send_stats "删除连接"
 	read -e -p "请输入要删除的连接编号: " num || return 1
 
 	local connection=$(sed -n "${num}p" "$CONFIG_FILE")
@@ -1162,7 +1152,6 @@ delete_connection() {
 }
 
 use_connection() {
-	send_stats "使用连接"
 	read -e -p "请输入要使用的连接编号: " num || return 1
 
 	local connection=$(sed -n "${num}p" "$CONFIG_FILE")

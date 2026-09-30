@@ -237,7 +237,6 @@ one_click_auto_dns_optimize() {
 		local dns2_ipv6="2402:4e00::"
 		echo "检测到国家/地区: CN，自动使用国内 DNS 优化"
 		set_dns || return 1
-		send_stats "一键国内DNS优化"
 	else
 		local dns1_ipv4="1.1.1.1"
 		local dns2_ipv4="8.8.8.8"
@@ -245,7 +244,6 @@ one_click_auto_dns_optimize() {
 		local dns2_ipv6="2001:4860:4860::8888"
 		echo "检测到国家/地区: ${country:-未知}，自动使用国外 DNS 优化"
 		set_dns || return 1
-		send_stats "一键国外DNS优化"
 	fi
 }
 
@@ -254,7 +252,6 @@ one_click_set_timezone_locale() {
 	set_timedate Asia/Shanghai || return 1
 	update_locale "en_US.UTF-8" "en_US.UTF-8" false || return 1
 	echo "已设置时区为 Asia/Shanghai，本地语言为 en_US.UTF-8"
-	send_stats "一键配置时区和本地语言"
 }
 
 one_click_config_manager() {

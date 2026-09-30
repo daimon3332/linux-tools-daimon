@@ -4,8 +4,8 @@ daimon_exec_cached_script() {
 	local url="$1"
 	local name="$2"
 	shift 2
-	daimon_download "$url" "$name" || exit 1
-	bash -n "$DAIMON_SCRIPT_DIR/$name" || { echo "脚本语法校验失败，未执行。"; return 1; }
+	daimon_download "$url" "$name" || { echo "下载失败，未执行。"; break_end_unless x y 1; return 1; }
+	bash -n "$DAIMON_SCRIPT_DIR/$name" || { echo "脚本语法校验失败，未执行。"; break_end_unless x y 1; return 1; }
 	clear
 	echo -e "${gl_kjlan}已退出 daimon，正在运行: bash $DAIMON_SCRIPT_DIR/$name $*${gl_bai}"
 	exec bash "$DAIMON_SCRIPT_DIR/$name" "$@"
@@ -35,10 +35,11 @@ common_one_click_scripts() {
 			2) daimon_exec_cached_script "https://IP.Check.Place" "IPQuality.sh" ;;
 			3) daimon_exec_cached_script "https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh" "ecs.sh" ;;
 			4) daimon_exec_cached_script "https://Net.Check.Place" "NetQuality.sh" ;;
-			5) daimon_exec_cached_script "https://check.unlock.media" "RegionRestrictionCheck.sh" ;;
+			5) daimon_exec_cached_script "https://raw.githubusercontent.com/lmc999/RegionRestrictionCheck/main/check.sh" "RegionRestrictionCheck.sh" ;;
 			6) daimon_exec_cached_script "https://bench.sh" "bench.sh" ;;
 			7) daimon_exec_cached_script "https://yabs.sh" "yabs.sh" ;;
-			8) daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H ;;
+			8) daimon_download "https://Check.Place" "HardwareQuality.sh" && exec bash "$DAIMON_SCRIPT_DIR/HardwareQuality.sh" -H
+			   echo "下载失败，未执行。"; break_end_unless x y 1 ;;
 			9) daimon_exec_cached_script "https://raw.githubusercontent.com/yonggekkk/x-ui-yg/main/install.sh" "x-ui-yg-install.sh" ;;
 			10) exec bash -c 'bash <(curl -sL kejilion.sh)' ;;
 			11) daimon_exec_cached_script "https://raw.githubusercontent.com/daimon3332/sing-box-daimon/main/sb.sh" "sing-box-daimon.sh" ;;

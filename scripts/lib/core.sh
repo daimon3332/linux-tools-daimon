@@ -1,23 +1,5 @@
 #!/bin/bash
 
-send_stats() {
-	if [ "$ENABLE_STATS" == "false" ]; then
-		return
-	fi
-
-	local country=$(curl -s --connect-timeout 3 --max-time 5 ipinfo.io/country)
-	local os_info=$(grep PRETTY_NAME /etc/os-release | cut -d '=' -f2 | tr -d '"')
-	local cpu_arch=$(uname -m)
-
-	(
-		curl -s --connect-timeout 3 --max-time 5 -X POST "https://api.kejilion.pro/api/log" \
-			-H "Content-Type: application/json" \
-			-d "{\"action\":\"$1\",\"timestamp\":\"$(date -u '+%Y-%m-%d %H:%M:%S')\",\"country\":\"$country\",\"os_info\":\"$os_info\",\"cpu_arch\":\"$cpu_arch\",\"version\":\"$sh_v\"}" \
-		&>/dev/null
-	) &
-
-}
-
 install() {
 	if [ $# -eq 0 ]; then
 		echo "未提供软件包参数!"
