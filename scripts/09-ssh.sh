@@ -853,10 +853,12 @@ ssh_socket_to_service() {
         echo "检测到 $unit 套接字激活（Ubuntu 22.10+ 默认）。修改 SSH 需要先切换为常规 $service；当前连接不受影响。"
         read -e -p "切换为常规 $service 并继续？(y/N): " answer || return 1
         [[ "$answer" =~ ^[Yy]$ ]] || { echo "已取消，未修改 SSH。"; return 1; }
-        if systemctl disable --now "$unit" && systemctl enable --now "$service" && systemctl is-active --quiet "$service"; then
+        if systemctl disable --now "$unit" && systemctl daemon-reload && systemctl enable "$service" &&
+            systemctl restart "$service" && systemctl is-active --quiet "$service" && ! systemctl is-active --quiet "$unit"; then
             echo "已切换为常规 $service。"
         else
             echo "切换失败，正在恢复 $unit。" >&2
+            systemctl stop "$service"
             systemctl enable --now "$unit"
             return 1
         fi
