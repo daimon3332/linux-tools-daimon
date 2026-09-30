@@ -1,5 +1,7 @@
 plan.md
+docx/plan.md
 AGENTS.md
+.claude/
 .env
 .env.*
 !.env.example

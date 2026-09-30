@@ -675,12 +675,12 @@ test_tool_metadata_alignment() {
         [ "${ids[14]}" = iperf3 ] && [ "${desc[14]}" = '网络性能测试' ]
 }
 test_tool_documentation_numbering() {
-    grep -Fxq '| 13 | ncdu | 交互式磁盘占用分析工具 |' "$ROOT/README.md" &&
-        grep -Fxq '| 14 | NextTrace | 可视化路由追踪工具，通过官方 apt 源安装 |' "$ROOT/README.md" &&
-        grep -Fxq '| 15 | iperf3 | 网络性能测试工具 |' "$ROOT/README.md" &&
-        grep -Fxq '13. ncdu' "$ROOT/COMMANDS.md" &&
-        grep -Fxq '14. NextTrace' "$ROOT/COMMANDS.md" &&
-        grep -Fxq '15. iperf3' "$ROOT/COMMANDS.md"
+    grep -Fxq '| 13 | ncdu | 交互式磁盘占用分析工具 |' "$ROOT/docx/README.md" &&
+        grep -Fxq '| 14 | NextTrace | 可视化路由追踪工具，通过官方 apt 源安装 |' "$ROOT/docx/README.md" &&
+        grep -Fxq '| 15 | iperf3 | 网络性能测试工具 |' "$ROOT/docx/README.md" &&
+        grep -Fxq '13. ncdu' "$ROOT/docx/COMMANDS.md" &&
+        grep -Fxq '14. NextTrace' "$ROOT/docx/COMMANDS.md" &&
+        grep -Fxq '15. iperf3' "$ROOT/docx/COMMANDS.md"
 }
 test_bitwarden_config_privacy() {
     local output
