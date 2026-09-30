@@ -1086,6 +1086,7 @@ EOF
 
     if [ ! -s "$NVM_DIR/nvm.sh" ]; then
       if daimon_is_cn; then
+        daimon_require_cmd sudo || return 1
         bash -c "$(curl -fsSL https://gitee.com/RubyMetric/nvm-cn/raw/main/install.sh)" || return 1
       else
         curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.6/install.sh | bash || return 1

@@ -23,7 +23,7 @@ fail2ban_manager() {
 		elif [ -f /var/log/secure ]; then
 			echo "/var/log/secure"
 		else
-			if daimon_is_debian; then echo systemd; else echo "%(sshd_log)s"; fi
+			if command -v journalctl >/dev/null 2>&1; then echo systemd; else echo "%(sshd_log)s"; fi
 		fi
 	}
 
