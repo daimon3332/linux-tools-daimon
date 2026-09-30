@@ -866,7 +866,7 @@ docker_daemon_json_merge() (
 	if [ -e "$file" ] || [ -L "$file" ]; then
 		[ -f "$file" ] && [ ! -L "$file" ] && [ "$(stat -c %u:%h "$file")" = 0:1 ] || return 1
 		(( (8#$(stat -c %a "$file") & 8#022) == 0 )) || return 1
-		[ "$filter" = __edit__ ] || jq -e 'type == "object"' "$file" >/dev/null 2>&1 || { echo "现有 Docker 配置无效，未修改。"; return 1; }
+		[ "$filter" = __edit__ ] || jq -se 'length == 1 and (.[0] | type == "object")' "$file" >/dev/null 2>&1 || { echo "现有 Docker 配置无效，未修改。"; return 1; }
 		original=$(sha256sum "$file") || return 1
 	fi
 	state=$(systemctl show -p ActiveState --value docker) || return 1
@@ -916,7 +916,7 @@ docker_daemon_json_merge() (
 	else
 		chmod 600 "$work/next" || return 1
 	fi
-	jq -e 'type == "object"' "$work/next" >/dev/null 2>&1 || { echo "Docker 配置不是有效 JSON 对象，未修改。"; return 1; }
+	jq -se 'length == 1 and (.[0] | type == "object")' "$work/next" >/dev/null 2>&1 || { echo "Docker 配置不是有效 JSON 对象，未修改。"; return 1; }
 	dockerd --validate --config-file "$work/next" >/dev/null || { echo "Docker 配置验证失败，未修改。" >&2; return 1; }
 	if [ -n "$original" ] && [ "$(jq -cS . "$work/original" 2>/dev/null)" = "$(jq -cS . "$work/next")" ]; then
 		echo "Docker 配置未变化。"; return 0

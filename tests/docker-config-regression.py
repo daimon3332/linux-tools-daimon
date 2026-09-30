@@ -101,7 +101,7 @@ systemctl() {
 
     @unittest.skipUnless(shutil.which('jq') and os.name == 'posix', 'Native jq/POSIX required')
     def test_invalid_existing_configuration_untouched(self):
-        for content in ['', '[]', '{broken']:
+        for content in ['', '[]', '{broken', '{}\n{}\n']:
             self.config.write_text(content)
             p, _ = self.invoke('install_add_docker_cn')
             self.assertNotEqual(p.returncode, 0)
