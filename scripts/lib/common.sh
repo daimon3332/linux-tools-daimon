@@ -513,7 +513,7 @@ update_locale() {
 				export LANG=${lang}
 				echo -e "${gl_lv}系统语言已经修改为: $lang 重新连接SSH生效。${gl_bai}"
 				hash -r
-				[ "$pause_after" = "false" ] || break_end
+				break_end_unless "$pause_after" false
 
 				;;
 			centos|rhel|almalinux|rocky|fedora)
@@ -523,17 +523,17 @@ update_locale() {
 				export LANG="$lang"
 				echo -e "${gl_lv}系统语言已经修改为: $lang 重新连接SSH生效。${gl_bai}"
 				hash -r
-				[ "$pause_after" = "false" ] || break_end
+				break_end_unless "$pause_after" false
 				;;
 			*)
 				echo "不支持的系统: $ID"
-				[ "$pause_after" = "false" ] || break_end
+				break_end_unless "$pause_after" false 1
 				return 1
 				;;
 		esac
 	else
 		echo "不支持的系统，无法识别系统类型。"
-		[ "$pause_after" = "false" ] || break_end
+		break_end_unless "$pause_after" false 1
 		return 1
 	fi
 }

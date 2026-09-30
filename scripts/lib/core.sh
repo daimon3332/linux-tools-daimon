@@ -139,6 +139,13 @@ break_end() {
 	  clear
 }
 
+break_end_unless() {
+	local status=${3:-$?}
+	[ "$1" = "$2" ] && return "$status"
+	(exit "$status")
+	break_end
+}
+
 kejilion() {
 			cd ~
 			kejilion_sh

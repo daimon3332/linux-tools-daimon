@@ -119,28 +119,26 @@ while true; do
 		local dns2_ipv4="8.8.8.8"
 		local dns1_ipv6="2606:4700:4700::1111"
 		local dns2_ipv6="2001:4860:4860::8888"
-		set_dns
-		send_stats "国外DNS优化"
+		set_dns && send_stats "国外DNS优化"
 		;;
 	  2)
 		local dns1_ipv4="223.5.5.5"
 		local dns2_ipv4="119.29.29.29"
 		local dns1_ipv6="2400:3200::1"
 		local dns2_ipv6="2402:4e00::"
-		set_dns
-		send_stats "国内DNS优化"
+		set_dns && send_stats "国内DNS优化"
 		;;
 	  3)
 		edit_dns_config && send_stats "手动编辑DNS配置"
 		;;
 	  4)
-		restore_dns_config
-		send_stats "恢复DNS配置"
+		restore_dns_config && send_stats "恢复DNS配置"
 		;;
 	  *)
 		break
 		;;
 	esac
+	break_end
 done
 
 }
@@ -1341,6 +1339,7 @@ linux_Settings() {
 				echo "更换系统软件包镜像源"
 				echo "下载并校验后执行 LinuxMirrors 脚本；下载失败时不会执行部分内容。"
 				daimon_run_cached_script "https://linuxmirrors.cn/main.sh" "linuxmirrors-main.sh"
+				break_end
 				;;
 			3) set_dns_ui ;;
 			4)
@@ -1369,7 +1368,7 @@ linux_Settings() {
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
-					[ "$choice" = "0" ] || break_end
+					break_end_unless "$choice" 0
 				done
 				;;
 			5)
@@ -1399,7 +1398,7 @@ linux_Settings() {
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
-					[ "$choice" = "0" ] || break_end
+					break_end_unless "$choice" 0
 				done
 				;;
 			6)
@@ -1454,7 +1453,7 @@ linux_Settings() {
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
-					[ "$choice" = "0" ] || break_end
+					break_end_unless "$choice" 0
 				done
 				;;
 			7)
@@ -1519,7 +1518,7 @@ linux_Settings() {
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
-					[ "$choice" = "0" ] || break_end
+					break_end_unless "$choice" 0
 				done
 				;;
 			8)
@@ -1533,7 +1532,7 @@ linux_Settings() {
 					echo "------------------------"
 					read -e -p "请输入新的主机名（输入0退出）: " new_hostname || return 1
 					if [ -n "$new_hostname" ] && [ "$new_hostname" != "0" ]; then
-						daimon_set_hostname "$new_hostname" && send_stats "主机名已更改" || echo "主机名修改失败，请检查上方错误。"
+						daimon_set_hostname "$new_hostname" && send_stats "主机名已更改" || { echo "主机名修改失败，请检查上方错误。"; false; }
 						break_end
 					else
 						break
@@ -1562,7 +1561,7 @@ linux_Settings() {
 						0) break ;;
 						*) echo "无效的输入!" ;;
 					esac
-					[ "$host_dns" = "0" ] || break_end
+					break_end_unless "$host_dns" 0
 				done
 				;;
 			10) clear; env_menu ;;
