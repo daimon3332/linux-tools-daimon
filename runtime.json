@@ -58,7 +58,7 @@
     "scripts/lib/globals.sh": "e065273127ffa9960d2773fa13383c7118fb5835e97362be452b17c48cba3ab2",
     "scripts/lib/package.py": "9cd8ef55a68f3aa5eac805a6bcc28d7ad232bd410c79d8d944904532bb04238d",
     "scripts/lib/startup.sh": "51f6e4ded995a9cd30baebc5395d55048c0e0566e4179a9f4f4c5686d4d7f7f9",
-    "scripts/lib/tools.sh": "5ddcaa64dc717ab646a3afb1773007d9e5a3c3504fb3787326e0196502ae1435",
+    "scripts/lib/tools.sh": "a94934190deae1c751b772477d37896aa0a861746001095a9d9052b0bb98ddf8",
     "scripts/main.sh": "274eda39ed09277db7d97e76f30d2062545da5fe2efb0742bfb62d2ef9fabb22",
     "scripts/network/tcp-tuning-client.ps1": "c181a8f50f95a22fa282b1f1de83c217254bfeca4981f0370e6d63c27cccd921",
     "scripts/network/tcp-tuning-control.py": "e49d30cc6e3151d823d74d0919f85f342764a867dc8102196b9ea88b3e5eb2fe",

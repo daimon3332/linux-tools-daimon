@@ -1352,7 +1352,8 @@ EOF
           bun --version
         else
           install curl unzip || return 1
-          daimon_run_cached_script "https://bun.sh/install" "bun-install.sh" || return 1
+          ( ! daimon_is_cn || export GITHUB="https://gh-proxy.com/https://github.com"
+            daimon_run_cached_script "https://bun.sh/install" "bun-install.sh" ) || return 1
           export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
           export PATH="$BUN_INSTALL/bin:$PATH"
           reload_shell_configs_safely
@@ -1364,7 +1365,8 @@ EOF
           uv --version
         else
           install curl || return 1
-          daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh" || return 1
+          ( ! daimon_is_cn || export UV_INSTALLER_GITHUB_BASE_URL="https://gh-proxy.com/https://github.com"
+            daimon_run_cached_script "https://astral.sh/uv/install.sh" "uv-install.sh" ) || return 1
           export PATH="$HOME/.local/bin:$PATH"
           reload_shell_configs_safely
           uv --version 2>/dev/null || true
