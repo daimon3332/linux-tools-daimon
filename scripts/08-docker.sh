@@ -737,7 +737,7 @@ kj_ssh_read_host_user_port() {
 	local default_user="${4:-root}"
 	local default_port="${5:-22}"
 
-	kj_ssh_read_host_port "$host_prompt" "$port_prompt" "$default_port"
+	kj_ssh_read_host_port "$host_prompt" "$port_prompt" "$default_port" || return 1
 
 	while true; do
 		read -e -p "$user_prompt" KJ_SSH_USER || return 1
@@ -1291,6 +1291,7 @@ docker_ssh_migration() {
 		TARGET_IP="$KJ_SSH_HOST"
 		TARGET_USER="$KJ_SSH_USER"
 		TARGET_PORT="$KJ_SSH_PORT"
+		[ "$TARGET_USER" = root ] || { echo -e "${gl_hong}目标服务器还原要求备份目录属于 root，请使用 root 用户传输。${gl_bai}"; return 1; }
 		[[ "$TARGET_IP" == *:* ]] && TARGET_IP="[$TARGET_IP]"
 		BACKUP_DIR=$(docker_migration_backup_dir "$BACKUP_DIR") || return 1
 

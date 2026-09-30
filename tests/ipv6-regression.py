@@ -39,7 +39,7 @@ class IPv6(unittest.TestCase):
         return {p.parent.name: p.read_bytes() for p in (self.work / 'proc').glob('**/disable_ipv6')}
 
     def invoke(self, action='disable', failure='', ssh=''):
-        names = ['system_disable_ipv6', 'system_enable_ipv6', 'system_ipv6_status', 'daimon_config_commit']
+        names = ['system_disable_ipv6', 'system_enable_ipv6', 'system_ipv6_status', 'daimon_config_commit', 'daimon_require_cmd']
         if 'daimon_ipv6_configure()' in SOURCE:
             names.append('daimon_ipv6_configure')
         body = '\n'.join(function(n) for n in names)

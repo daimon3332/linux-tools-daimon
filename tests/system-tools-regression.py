@@ -44,7 +44,8 @@ class SystemTools(unittest.TestCase):
 
     def shell(self, names, action, inputs='', setup=''):
         optional = ['daimon_config_commit', 'daimon_env_write', 'daimon_env_name_valid', 'daimon_gai_preference',
-                    'prefer_ipv6', 'daimon_hosts_edit', 'daimon_set_hostname', 'daimon_dns_commit', 'edit_dns_config']
+                    'prefer_ipv6', 'daimon_hosts_edit', 'daimon_set_hostname', 'daimon_dns_commit', 'edit_dns_config',
+                    'daimon_require_cmd']
         for name in optional:
             if name not in names and re.search(r'(?m)^' + name + r'\(\)', SOURCE):
                 names = names + [name]
@@ -208,6 +209,21 @@ systemctl() { echo unexpected-service-change; return 99; }
         text = (self.etc / 'hosts').read_text()
         self.assertEqual(text.count('2001:db8::123'), 1)
         self.assertIn('old-host kept-alias', text)
+
+    def test_hosts_delete_matches_whole_names_only(self):
+        hosts = self.etc / 'hosts'
+        hosts.write_text(hosts.read_text() + '10.0.0.1 test.example\n10.0.0.2 mytest.example.com\n')
+        result = self.shell([], 'daimon_hosts_edit delete test.example')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        text = hosts.read_text()
+        self.assertNotIn('10.0.0.1 test.example', text)
+        self.assertIn('mytest.example.com', text)
+        for value in ('localhost', 'absent.example'):
+            with self.subTest(value=value):
+                before = hosts.read_text()
+                result = self.shell([], 'daimon_hosts_edit delete ' + value)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(hosts.read_text(), before)
 
     def test_hostname_success_preserves_aliases_without_service_restart(self):
         result = self.hostname_action('daimon_set_hostname new-host')

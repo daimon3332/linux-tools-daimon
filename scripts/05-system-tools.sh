@@ -1036,15 +1036,15 @@ daimon_ipv6_configure() (
 	if [ "$value" = 1 ] && [[ "${SSH_CONNECTION:-} ${SSH_CLIENT:-}" = *:* ]]; then
 		echo "拒绝在 IPv6 SSH 连接中禁用 IPv6，请改用 IPv4 SSH 或控制台。"; return 1
 	fi
-	command -v sysctl >/dev/null && command -v ip >/dev/null && command -v flock >/dev/null || return 1
+	daimon_require_cmd sysctl procps && daimon_require_cmd ip && daimon_require_cmd flock || return 1
 	for path in all default lo; do
 		[ -f "/proc/sys/net/ipv6/conf/$path/disable_ipv6" ] || { echo "内核未提供 IPv6 控制接口。"; return 1; }
 	done
-	[ ! -L "${file%/*}" ] && [ ! -L "$file" ] && { [ ! -e "$file" ] || [ -f "$file" ]; } || return 1
+	[ ! -L "${file%/*}" ] && [ ! -L "$file" ] && { [ ! -e "$file" ] || [ -f "$file" ]; } || { echo "$file 不是普通文件，未修改。"; return 1; }
 	mkdir -p "${file%/*}" "$DAIMON_ROOT_DIR" || return 1
 	[ ! -L "$DAIMON_ROOT_DIR/.ipv6.lock" ] || return 1
 	exec {lockfd}> "$DAIMON_ROOT_DIR/.ipv6.lock" || return 1
-	flock -n "$lockfd" || return 1
+	flock -n "$lockfd" || { echo "另一个 IPv6 设置正在进行，请稍后重试。"; return 1; }
 	for path in /proc/sys/net/ipv6/conf/*/disable_ipv6; do
 		read -r current < "$path" && [[ "$current" = 0 || "$current" = 1 ]] && [ -w "$path" ] || return 1
 		paths+=("$path"); original["$path"]=$current
@@ -1117,9 +1117,9 @@ system_enable_ipv6() {
 
 daimon_hosts_edit() {
 	local action="$1" value="$2" file=/etc/hosts staged
-	[ ! -L "$file" ] && [ -f "$file" ] || return 1
-	[ -n "$value" ] || return 1
-	command -v python3 >/dev/null 2>&1 || { install python3 || return 1; }
+	[ ! -L "$file" ] && [ -f "$file" ] || { echo "/etc/hosts 不是普通文件，未修改。"; return 1; }
+	[ -n "$value" ] || { echo "输入为空，未修改。"; return 1; }
+	daimon_require_cmd python3 || return 1
 	staged=$(mktemp "${file}.XXXXXX") || return 1
 	if ! python3 -c 'import ipaddress, re, sys
 action, value = sys.argv[1:]
@@ -1127,7 +1127,12 @@ text = sys.stdin.read()
 if any(c in value for c in "\r\n\0"):
     raise SystemExit("Invalid hosts record")
 if action == "delete":
-    result = "".join(line for line in text.splitlines(keepends=True) if value not in line)
+    if value in ("localhost", "ip6-localhost", "ip6-loopback", "127.0.0.1", "::1"):
+        raise SystemExit("Refusing to delete loopback entries")
+    lines = text.splitlines(keepends=True)
+    result = "".join(line for line in lines if value not in line.split("#", 1)[0].split())
+    if result == text:
+        raise SystemExit("No hosts entry matches " + value)
 elif action == "add":
     fields = value.split("#", 1)[0].split()
     if len(fields) < 2:
