@@ -540,6 +540,7 @@ update_locale() {
 
 rsync_cron_read() {
 	local current
+	command -v crontab >/dev/null 2>&1 || return 0
 	if current=$(LC_ALL=C crontab -l 2>&1); then
 		printf '%s\n' "$current"
 	elif [[ "$current" == 'no crontab for '* ]]; then

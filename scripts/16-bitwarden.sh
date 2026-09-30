@@ -391,7 +391,7 @@ bitwarden_manager() {
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		echo -e "rclone.conf 状态: $(bitwarden_rclone_config_status)"
 		echo -e "同步脚本状态: $(bitwarden_sync_script_status)"
-		echo -e "配置文件位置: ${gl_kjlan}$(bitwarden_rclone_conf_file)${gl_bai}"
+		echo -e "配置文件位置: ${gl_kjlan}$(bitwarden_rclone_conf_file 2>/dev/null || echo "未检测到（需要 Docker 中的 vaultwarden-backup）")${gl_bai}"
 		echo -e "同步脚本位置: ${gl_kjlan}$(bitwarden_sync_script_file)${gl_bai}"
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		echo -e "${gl_kjlan}1.   ${gl_bai}配置 rclone.conf 文件"

@@ -223,7 +223,7 @@ EOF
 
 one_click_network_auto_optimize() {
 	one_click_enable_bbr_fq || return 1
-	echo "已保留 BBR + FQ；缓冲参数需要进入系统工具的网络优化菜单，按本地 iperf3 多轮实测后再应用。"
+	echo "已保留 BBR + FQ；缓冲参数请到主菜单 21「网络自适应优化」按本地 iperf3 实测后再应用。"
 }
 
 one_click_auto_dns_optimize() {
@@ -331,7 +331,7 @@ one_click_config_manager() {
 		echo -e "${gl_kjlan}5.   ${gl_bai}优化 DNS 地址"
 		echo -e "${gl_kjlan}6.   ${gl_bai}开启 BBR 加速（BBR + FQ）"
 		echo -e "${gl_kjlan}7.   ${gl_bai}安装 Docker（自动判断国内/国外源）"
-		echo -e "${gl_kjlan}8.   ${gl_bai}应用自定义网络优化"
+		echo -e "${gl_kjlan}8.   ${gl_bai}网络优化：开启 BBR + FQ（缓冲参数到主菜单 21 实测调优）"
 		echo -e "${gl_kjlan}9.   ${gl_bai}安装第三方工具（全部安装，可在第三方工具菜单精细调整）"
 		echo -e "${gl_kjlan}10.  ${gl_bai}修改时区和本地语言（Asia/Shanghai + en_US.UTF-8）"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
