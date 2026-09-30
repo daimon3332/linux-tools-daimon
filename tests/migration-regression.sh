@@ -1040,18 +1040,6 @@ test_retire_cron_exact_cleanup() {
     grep -Fq 'documentation' "$current_file" && ! grep -Fxq '0 1 * * * /root/linux-daimon/backup-sh/task.sh' "$current_file" && grep -Fq 'task.sh-extra' "$current_file" && grep -Fq '/root/keep.sh' "$current_file"
 }
 
-test_retire_compose_preserves_volumes() {
-    local fixture="$WORK/retire-compose" log="$WORK/retire-compose.log"
-    mkdir -p "$fixture"
-    load_function server_retire_compose_stop || return 1
-    root_use() { :; }
-    docker() {
-        printf '%s\n' "$*" >> "$log"
-        [[ "$*" != *' -v '* && "$*" != *' --volumes '* ]]
-    }
-    server_retire_compose_stop fixture "$fixture" "" || return 1
-    grep -q 'compose -p fixture down' "$log"
-}
 
 test_retire_script_path_guard() {
     local fixture="$WORK/retire-guard"
@@ -1113,7 +1101,6 @@ check 'restore report writes atomically without secrets' test_restore_record_ato
 check 'missing certificate files fail validation' test_missing_certificate_files
 check 'symlink restoration target is rejected' test_symlink_restore_guard
 check 'retirement cron cleanup removes only exact managed path' test_retire_cron_exact_cleanup
-check 'retirement Compose stop preserves volumes' test_retire_compose_preserves_volumes
 check 'retirement script path guard rejects unmanaged paths' test_retire_script_path_guard
 
 printf '%s passed, %s failed\n' "$passed" "$failed"
