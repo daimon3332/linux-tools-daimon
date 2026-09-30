@@ -2138,12 +2138,10 @@ linux_docker() {
 
 			  ;;
 		  3)
-			  docker_ps
-			  [ "$?" -eq 90 ] && continue
+			  docker_ps || { [ "$?" -eq 90 ] && continue; false; }
 			  ;;
 		  4)
-			  docker_image
-			  [ "$?" -eq 90 ] && continue
+			  docker_image || { [ "$?" -eq 90 ] && continue; false; }
 			  ;;
 
 		  5)
@@ -2302,8 +2300,7 @@ linux_docker() {
 		  8)
 			  clear
 			  send_stats "Docker源"
-			  docker_mirror_menu
-			  [ "$?" -eq 90 ] && continue
+			  docker_mirror_menu || { [ "$?" -eq 90 ] && continue; false; }
 			  ;;
 
 		  9)

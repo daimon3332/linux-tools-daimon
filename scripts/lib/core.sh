@@ -123,6 +123,7 @@ remove() {
 			return 1
 		fi
 	done
+	hash -r
 }
 
 break_end() {
