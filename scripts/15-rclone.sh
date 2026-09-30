@@ -1244,7 +1244,7 @@ rclone_restore_docker_compose_projects() {
 }
 
 rclone_manager() {
-	local remote_status
+	local remote_status status
 	remote_status=$(rclone_load_remote_status 2>/dev/null) || true
 	while true; do
 		clear
@@ -1265,8 +1265,8 @@ rclone_manager() {
 		echo -e "${gl_kjlan}------------------------${gl_bai}"
 		read -e -p "请输入你的选择: " sub_choice || return 1
 		case $sub_choice in
-			1) rclone_install_tool; remote_status=$(rclone_load_remote_status 2>/dev/null) || true ;;
-			2) rclone_edit_config; remote_status=$(rclone_load_remote_status 2>/dev/null) || true ;;
+			1) rclone_install_tool ;;
+			2) rclone_edit_config ;;
 			3) rclone_uninstall_tool ;;
 			4) rclone_restore_remote_folder ;;
 			5) rclone_restore_nginx_domain_remote ;;
@@ -1275,6 +1275,9 @@ rclone_manager() {
 			0) return ;;
 			*) echo "无效的输入!" ;;
 		esac
+		status=$?
+		[[ "$sub_choice" =~ ^[1-6]$ ]] && remote_status=$(rclone_load_remote_status 2>/dev/null)
+		(exit "$status")
 		break_end
 	done
 }

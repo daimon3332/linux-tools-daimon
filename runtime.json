@@ -45,7 +45,7 @@
     "scripts/12-fail2ban.sh": "6b26e62af53599b65dd01e411bd7b1e4661dbecc078da016e44feb052d8b612e",
     "scripts/13-bbr.sh": "9b7a220ca0671c226afa0989053a2f98656ad6fc25517fa711d652a2fe7e38e4",
     "scripts/14-warp.sh": "2de5b810cd6f42b90a0bec93ac4ca0d70d22636aa092133a6a48b5f58acbce8f",
-    "scripts/15-rclone.sh": "9cd93444faf01b6609a6e069e35b86fb5fc10155219c57429a6a33afeec2b0aa",
+    "scripts/15-rclone.sh": "949a8be8038ae01247bcc9756a954b35594c875a3670e95d57891e84fe600fa2",
     "scripts/16-bitwarden.sh": "2cf1143ef7d366a2692b4d7ae79a16ddf8215fcbe1818b93eda01e0cf5667318",
     "scripts/17-cron.sh": "37e4ac0a9b7e4bde034371510f60334638a4982d0522ae47521dc978cf76aa47",
     "scripts/18-one-click-scripts.sh": "807653e2268409ece79104507f63300741ca87355dd197737affdf67f576e13f",
