@@ -42,6 +42,7 @@ for fn in crontab_sync_backup_dir crontab_sync_log_cache_file crontab_sync_log_r
     load_function "$fn" || exit 1
 done
 root_use() { :; }
+daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 passed=0 failed=0
 check() {
     local name="$1"

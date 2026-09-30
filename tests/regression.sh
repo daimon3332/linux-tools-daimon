@@ -26,6 +26,7 @@ load_function() {
 }
 
 root_use() { :; }
+daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 clear() { :; }
 send_stats() { :; }
 break_end() { :; }
