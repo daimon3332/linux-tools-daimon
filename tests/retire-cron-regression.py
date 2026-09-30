@@ -35,6 +35,7 @@ class RetireCron(unittest.TestCase):
         if 'server_retire_filter_cron()' in SOURCE:
             names.append('server_retire_filter_cron')
         body = '\n'.join(function(n) for n in names) + r'''
+daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 python3() (set -o pipefail; "$PYTHON_BIN" "$@" | tr -d '\r')
 crontab_sync_runner_file() { echo /root/linux-daimon/backup-sh/.rclone-runner.sh; }
 crontab() {

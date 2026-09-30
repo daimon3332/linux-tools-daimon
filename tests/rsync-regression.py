@@ -44,6 +44,7 @@ send_stats() { :; }
 install() { return 0; }
 shuf() { echo 7; }
 sshpass() { printf '%s\\n' "$@" > "$HOME/args"; return "${SYNC_RC:-0}"; }
+daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 rsync() { printf '%s\\n' "$@" > "$HOME/args"; return "${SYNC_RC:-0}"; }
 crontab() {
     if [ "$1" = -l ]; then

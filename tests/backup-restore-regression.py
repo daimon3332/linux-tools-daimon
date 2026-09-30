@@ -27,6 +27,7 @@ class Menu(unittest.TestCase):
             (work / 'fixture.tar.gz').touch()
             (work / 'destination').mkdir()
             body = function('restore_backup') + r'''
+daimon_require_cmd() { command -v "$1" >/dev/null 2>&1; }
 send_stats() { :; }
 tar() { printf 'UNSAFE_LIVE_EXTRACTION %s\n' "$*"; }
 daimon_backup_delete_target() { printf '%s\n' "$BACKUP_DIR/$1"; }
