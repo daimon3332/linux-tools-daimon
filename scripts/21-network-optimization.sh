@@ -422,7 +422,7 @@ daimon_tcp_tune_menu() {
 		else
 			echo -e "BBR 内核支持: ${gl_hong}不支持，请先在主菜单 13 的 BBR 管理安装兼容内核${gl_bai}"
 		fi
-		[ -s "$DAIMON_TCP_SNAPSHOT" ] && echo -e "调优前快照: ${gl_lv}已保存${gl_bai}（可恢复到调优前）"
+		[ -s "$DAIMON_TCP_SNAPSHOT" ] && echo -e "调优前快照: ${gl_lv}已保存${gl_bai}（$(date -r "$DAIMON_TCP_SNAPSHOT" '+%F %H:%M')，选 2 会恢复到该时间点的参数）"
 		daimon_tcp_family_speed_block
 		[ -s "$DAIMON_TCP_PROFILE" ] && echo "上次调优记录: $DAIMON_TCP_PROFILE"
 		if [ "$(sysctl -n vm.panic_on_oom 2>/dev/null)" = "1" ] &&

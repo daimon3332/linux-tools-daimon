@@ -845,9 +845,28 @@ if __name__ == '__main__':
 PYSSH_TXN
 }
 
+ssh_socket_to_service() {
+    local unit service answer
+    for unit in ssh.socket sshd.socket; do
+        systemctl is-active --quiet "$unit" || systemctl is-enabled --quiet "$unit" 2>/dev/null || continue
+        service="${unit%.socket}.service"
+        echo "检测到 $unit 套接字激活（Ubuntu 22.10+ 默认）。修改 SSH 需要先切换为常规 $service；当前连接不受影响。"
+        read -e -p "切换为常规 $service 并继续？(y/N): " answer || return 1
+        [[ "$answer" =~ ^[Yy]$ ]] || { echo "已取消，未修改 SSH。"; return 1; }
+        if systemctl disable --now "$unit" && systemctl enable --now "$service" && systemctl is-active --quiet "$service"; then
+            echo "已切换为常规 $service。"
+        else
+            echo "切换失败，正在恢复 $unit。" >&2
+            systemctl enable --now "$unit"
+            return 1
+        fi
+    done
+}
+
 ssh_transaction_apply() (
     umask 077
     [ "$EUID" -eq 0 ] && [ -x /usr/bin/python3 ] || { echo "SSH 安全事务需要 root 和系统 Python 3。" >&2; return 1; }
+    ssh_socket_to_service || return 1
     local program
     program=$(mktemp /run/daimon-ssh-program.XXXXXX) || return 1
     trap 'rm -f -- "$program"' EXIT
