@@ -35,6 +35,8 @@ class Config(unittest.TestCase):
     def invoke(self, action, inputs='', extra=''):
         names = ['docker_daemon_json_merge', 'install_add_docker_cn', 'docker_mirror_menu',
                  'linuxmirrors_install_docker', 'docker_ipv6_on', 'docker_ipv6_off']
+        if re.search(r'(?m)^docker_config_require_tool\(\)', SOURCE):
+            names.insert(0, 'docker_config_require_tool')
         definitions = '\n'.join(function(n) for n in names)
         definitions = definitions.replace('/etc/docker', (self.work/'docker').as_posix())
         definitions = definitions.replace('/etc/os-release', (self.work/'os-release').as_posix())
@@ -162,6 +164,34 @@ systemctl() {
         p, calls=self.invoke('docker_mirror_menu','0\n')
         self.assertEqual(p.returncode,90)
         self.assertEqual(calls,'')
+
+    def test_missing_dependency_reports_failure(self):
+        extra = '''
+command() {
+    if [ "$1" = -v ] && [ "$2" = jq ]; then return 1; fi
+    builtin command "$@"
+}
+'''
+        for action, inputs in [('docker_mirror_menu', '3\n'), ('docker_daemon_json_merge __edit__', '')]:
+            with self.subTest(action=action):
+                p, calls = self.invoke(action, inputs, extra)
+                self.assertNotEqual(p.returncode, 0)
+                self.assertIn('jq', p.stderr.decode('utf-8'))
+                self.assertEqual(self.config.read_text(), self.original)
+                self.assertNotIn('restart', calls)
+
+    def test_successful_installer_without_command_is_not_success(self):
+        extra = '''
+install() { return 0; }
+command() {
+    if [ "$1" = -v ] && [ "$2" = jq ]; then return 1; fi
+    builtin command "$@"
+}
+'''
+        p, _ = self.invoke('docker_daemon_json_merge __edit__', extra=extra)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn('jq', p.stderr.decode('utf-8'))
+        self.assertEqual(self.config.read_text(), self.original)
 
 
 if __name__ == '__main__':

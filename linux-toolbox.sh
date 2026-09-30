@@ -840,12 +840,23 @@ check_port() {
 }
 
 
+docker_config_require_tool() {
+	local tool="$1"
+	command -v "$tool" >/dev/null 2>&1 && return 0
+	echo "Docker 配置需要 $tool，正在安装..."
+	if ! install "$tool"; then
+		echo "依赖 $tool 安装失败，未修改 Docker 配置。请检查上方软件源错误。" >&2
+		return 1
+	fi
+	command -v "$tool" >/dev/null 2>&1 || { echo "安装后仍找不到 $tool，未修改 Docker 配置。" >&2; return 1; }
+}
+
 docker_daemon_json_merge() (
 	local filter="$1" file="/etc/docker/daemon.json" work="" original="" state="" written=0 done=0 fingerprint=""
 	shift
 	[ "$(id -u)" -eq 0 ] || return 1
-	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
-	command -v dockerd >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || return 1
+	docker_config_require_tool jq || return 1
+	command -v dockerd >/dev/null 2>&1 && command -v flock >/dev/null 2>&1 || { echo "缺少 dockerd 或 flock，未修改 Docker 配置。" >&2; return 1; }
 	[ ! -L /etc/docker ] && [ "$(realpath -m /etc/docker)" = /etc/docker ] || return 1
 	mkdir -p /etc/docker || return 1
 	[ "$(stat -c %u /etc/docker)" = 0 ] && (( (8#$(stat -c %a /etc/docker) & 8#022) == 0 )) || return 1
@@ -891,7 +902,7 @@ docker_daemon_json_merge() (
 		cp -p -- "$file" "$work/original" || return 1
 	fi
 	if [ "$filter" = __edit__ ]; then
-		command -v vim >/dev/null 2>&1 || install vim >/dev/null || return 1
+		docker_config_require_tool vim || return 1
 		if [ -n "$original" ]; then cp -p -- "$file" "$work/next"; else printf '{}\n' > "$work/next"; fi || return 1
 		vim "$work/next" || return 1
 	elif [ -n "$original" ]; then
@@ -906,7 +917,7 @@ docker_daemon_json_merge() (
 		chmod 600 "$work/next" || return 1
 	fi
 	jq -e 'type == "object"' "$work/next" >/dev/null 2>&1 || { echo "Docker 配置不是有效 JSON 对象，未修改。"; return 1; }
-	dockerd --validate --config-file "$work/next" >/dev/null 2>&1 || { echo "Docker 配置验证失败，未修改。"; return 1; }
+	dockerd --validate --config-file "$work/next" >/dev/null || { echo "Docker 配置验证失败，未修改。" >&2; return 1; }
 	if [ -n "$original" ] && [ "$(jq -cS . "$work/original" 2>/dev/null)" = "$(jq -cS . "$work/next")" ]; then
 		echo "Docker 配置未变化。"; return 0
 	fi
@@ -943,7 +954,7 @@ docker_mirror_menu() {
 		[[ " ${selected_mirrors[*]} " = *" ${mirrors[$((idx-1))]} "* ]] || selected_mirrors+=("${mirrors[$((idx-1))]}")
 	done
 	[ "${#selected_mirrors[@]}" -gt 0 ] || return 1
-	command -v jq >/dev/null 2>&1 || install jq >/dev/null || return 1
+	docker_config_require_tool jq || return 1
 	mirrors_json=$(printf '%s\n' "${selected_mirrors[@]}" | jq -R . | jq -s -c .) || return 1
 	docker_daemon_json_merge '."registry-mirrors" = $mirrors' --argjson mirrors "$mirrors_json"
 }
