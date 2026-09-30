@@ -5,9 +5,15 @@
 ## 运行与目录
 
 ```bash
-bash <(curl -fsSL https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
 ```
 解释：运行轻量入口，安装同一 Git 提交的完整模块包；校验文件清单、SHA256 和语法后才切换版本。大陆优先代理，错误时保留旧完整版本；已安装时日常启动从本地加载。
+
+中国大陆获取入口：
+
+```bash
+bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
+```
 
 Debian 缺少 `curl` 时，先以 root 运行：
 
@@ -499,59 +505,10 @@ journalctl --vacuum-size=500M
 ```
 解释：查看日志占用、服务最后 200 条日志、按时间/大小清理归档日志。vacuum 不删除活动 journal 文件，因此清理后的总占用不保证低于指定上限。
 
-### 5.15 系统网络自适应优化
+### 5.15 网络自适应优化兼容入口
 
-默认展示当前内核、内存、拥塞算法、队列算法、缓冲上限，以及最近一次 IPv4/IPv6 测速记录：
+跳转一级菜单 21；保留旧编号，其余系统工具编号不变。
 
-```text
-1. 动态调优（先测速，再按本机实测计算并应用参数）
-   1) iperf3 本地单线程下载：IPv4 / IPv6 / 共用配置 / 分别试调后择优
-   2) TCPquality：只做公共端点诊断，不写入 sysctl
-2. 恢复调优前参数（保留 BBR + FQ）
-3. iperf3 本地测试（只测速，不修改参数）
-0. 返回
-```
-
-菜单顶部“线路速度记录”展示最近一次 IPv4 / IPv6 实测（`/root/linux-daimon/tcp-tuning/family-speed.conf`），供选择节点协议。
-
-IPv4 与 IPv6 使用同一套 TCP 缓冲 sysctl。第 4 项会分别试验 IPv4、IPv6 推导的候选值，但最终只持久化一套不使另一协议明显变慢的配置。
-
-iperf3 测速方式：
-
-```bash
-iperf3 -s -1 -p 50280 --forceflush             # 每轮仅接受一次客户端连接
-iperf3 -c <公网IP> -p 50280 -4 -R -t 12 -O 2 -J # 本地实际接收速率见 JSON end.sum_received
-```
-
-解释：菜单会打印一条 PowerShell 命令；本地执行一次后，它从带随机令牌的临时控制端口获取客户端脚本（SHA256 校验），自动运行所有独立轮次并反馈**客户端接收端** JSON。服务器发送端的每秒数字不能当作实际下载速度。同一个 iperf3 端口在各轮重启，只有参数切换完成后才接受下一轮。结束结果通过幂等确认请求回传，服务端默认等候最多 30 秒；临时控制规则只撤销本会话新增的协议规则，不删除另一协议的已有规则。
-
-TCPquality 测速方式：
-
-```bash
-printf 'n\nn\nn\ny\nn\n' | TERM=xterm script -qec \
-  "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null
-```
-
-解释：结果仅供国内三网线路参考，无法替代本地路径的 iperf3 多轮 A/B，不参与自动持久化。
-
-应用参数：
-
-```bash
-# BDP = 本地实收带宽 × 最小 RTT；候选发送缓冲上限 = 2×BDP+2MiB 或 4×BDP+2MiB
-# 调优文件：/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf（并按同一份值写 sysctl.conf 标记块）
-sysctl -n net.core.wmem_max net.ipv4.tcp_wmem
-```
-
-解释：候选包括 BDP 目标及当前值对半/翻倍，允许上下调，并按获胜候选的新吞吐进行有限细化。最多三个探索候选，每次 `A/B/A` 独立连接对照；胜出者再做两次 `B/A` 独立确认，不能以探索峰值掩盖确认下降。只比较发送上限，默认值超出新上限时夹入合法范围；不达标则仅恢复本次修改的两项发送参数。持久化合并已有覆盖块，应用和验证只涉及本次参数，不调用全机 `sysctl --system`。纯测速不写 sysctl。
-
-复测与回滚：
-
-```bash
-cat /root/linux-daimon/tcp-tuning/profile.json          # 本次实测与前后对比
-sed -n '1,40p' /root/linux-daimon/tcp-tuning/runtime-snapshot.conf   # 调优前快照
-```
-
-解释：每会话预算 20 GB（20,000,000,000 字节），出口计数包含预热、重传和同期业务流量，预留 512 MiB 提前停止，并优先保留独立确认的预算。计数不同于精确云计费；超额、连接失败或结果无效均中止并恢复。测速端口永久放行，控制端口只临时放行。菜单第 2 项将快照中明确定义的参数持久化并复读验证，保留 BBR + FQ，不重载其他系统配置。默认 Windows PowerShell 和 PowerShell 7 均只需一次命令，结束确认后返回原提示符。
 ### 5.16 禁用 IPv6
 
 ```bash
@@ -1682,3 +1639,57 @@ SSH 公私钥管理的查看/返回不创建目录、authorized_keys 或修改�
 Docker 恢复不回显含环境变量的完整启动命令；环境变量仍通过参数数组传递。备份 inspect JSON、生成的恢复脚本仍含运行所需配置，必须按敏感备份保管；本项不证明归档或恢复语义安全。
 
 旧命令 `d backup`（别名 `bf`、`备份`）独立于 `/root` 的 rclone 定时备份。其恢复操作需要 Python 3，只向用户确认的已存在空目录解压，不再解压到 `/`。归档必须是当前用户拥有的普通单链接文件，拒绝可被其他用户写入的归档、非空或软链接目标、越界路径、重复路径、链接和特殊设备。仅恢复普通文件、目录及普通权限，不恢复属主、特殊权限或完整系统语义；读取或写入失败会报错，可能留下部分结果供人工检查，不覆盖目标中的已有文件。
+
+## 21. 网络自适应优化
+
+默认展示当前内核、内存、拥塞算法、队列算法、缓冲上限，以及最近一次 IPv4/IPv6 测速记录：
+
+```text
+1. 动态调优（先测速，再按本机实测计算并应用参数）
+   1) iperf3 本地单线程下载：IPv4 / IPv6 / 共用配置 / 分别试调后择优
+   2) TCPquality：只做公共端点诊断，不写入 sysctl
+2. 恢复调优前参数（保留 BBR + FQ）
+3. iperf3 本地测试（只测速，不修改参数）
+0. 返回
+```
+
+菜单顶部“线路速度记录”展示最近一次 IPv4 / IPv6 实测（`/root/linux-daimon/tcp-tuning/family-speed.conf`），供选择节点协议。
+
+IPv4 与 IPv6 使用同一套 TCP 缓冲 sysctl。第 4 项会分别试验 IPv4、IPv6 推导的候选值，但最终只持久化一套不使另一协议明显变慢的配置。
+
+iperf3 测速方式：
+
+```bash
+iperf3 -s -1 -p 50280 --forceflush             # 每轮仅接受一次客户端连接
+iperf3 -c <公网IP> -p 50280 -4 -R -t 12 -O 2 -J # 本地实际接收速率见 JSON end.sum_received
+```
+
+解释：菜单会打印一条 PowerShell 命令；本地执行一次后，它从带随机令牌的临时控制端口获取客户端脚本（SHA256 校验），自动运行所有独立轮次并反馈**客户端接收端** JSON。服务器发送端的每秒数字不能当作实际下载速度。同一个 iperf3 端口在各轮重启，只有参数切换完成后才接受下一轮。结束结果通过幂等确认请求回传，服务端默认等候最多 30 秒；临时控制规则只撤销本会话新增的协议规则，不删除另一协议的已有规则。
+
+TCPquality 测速方式：
+
+```bash
+printf 'n\nn\nn\ny\nn\n' | TERM=xterm script -qec \
+  "timeout --kill-after=10s 840s bash -c 'curl -fsSL https://raw.githubusercontent.com/ibsgss/TcpQuality/main/runTcpQuality.sh | bash'" /dev/null
+```
+
+解释：结果仅供国内三网线路参考，无法替代本地路径的 iperf3 多轮 A/B，不参与自动持久化。
+
+应用参数：
+
+```bash
+# BDP = 本地实收带宽 × 最小 RTT；候选发送缓冲上限 = 2×BDP+2MiB 或 4×BDP+2MiB
+# 调优文件：/etc/sysctl.d/zzzz-daimon-tcp-tuning.conf（并按同一份值写 sysctl.conf 标记块）
+sysctl -n net.core.wmem_max net.ipv4.tcp_wmem
+```
+
+解释：候选包括 BDP 目标及当前值对半/翻倍，允许上下调，并按获胜候选的新吞吐进行有限细化。最多三个探索候选，每次 `A/B/A` 独立连接对照；胜出者再做两次 `B/A` 独立确认，不能以探索峰值掩盖确认下降。只比较发送上限，默认值超出新上限时夹入合法范围；不达标则仅恢复本次修改的两项发送参数。持久化合并已有覆盖块，应用和验证只涉及本次参数，不调用全机 `sysctl --system`。纯测速不写 sysctl。
+
+复测与回滚：
+
+```bash
+cat /root/linux-daimon/tcp-tuning/profile.json          # 本次实测与前后对比
+sed -n '1,40p' /root/linux-daimon/tcp-tuning/runtime-snapshot.conf   # 调优前快照
+```
+
+解释：每会话预算 20 GB（20,000,000,000 字节），出口计数包含预热、重传和同期业务流量，预留 512 MiB 提前停止，并优先保留独立确认的预算。计数不同于精确云计费；超额、连接失败或结果无效均中止并恢复。测速端口永久放行，控制端口只临时放行。菜单第 2 项将快照中明确定义的参数持久化并复读验证，保留 BBR + FQ，不重载其他系统配置。默认 Windows PowerShell 和 PowerShell 7 均只需一次命令，结束确认后返回原提示符。

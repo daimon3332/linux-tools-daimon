@@ -11,7 +11,13 @@
 ## 一键运行
 
 ```bash
-bash <(curl -fsSL https://daimon-linux-scripts.333186.xyz/linux-toolbox.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
+```
+
+中国大陆优先使用代理获取同一仓库入口；进入安装器后还会自动切换完整包下载端点：
+
+```bash
+bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
 ```
 
 Debian 首次使用时若没有 `curl`，先以 root 执行：
@@ -157,7 +163,7 @@ Swap 只调整带本脚本 inode 归属标记的 `/swapfile`；未标记的已�
 
 IPv4/IPv6 优先级切换保留其他 gai 策略；主机名修改保留 hosts 别名并在失败时恢复。hosts 删除和 GitHub 镜像名称按字面匹配，不将输入当正则。环境变量值转义保存，拒绝特殊 Shell 类型，不执行 Shell 配置或修改当前工具箱环境；重新登录后生效。
 
-#### 系统网络自适应优化参数
+### 网络自适应优化（一级菜单 21）
 
 主菜单 `21` 提供 `1. 动态调优`、`2. 恢复调优前参数`、`3. iperf3 本地测试`；旧 `5 → 15` 保留跳转。第 3 项只测速，不修改参数。动态调优的自动持久化只使用本地 iperf3 接收端多轮结果；TCPquality 公共端点仅供线路参考。四个 TCP 组件随完整版本一起安装，不在运行该菜单时下载可能不同版本的组件。
 
