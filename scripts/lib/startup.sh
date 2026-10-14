@@ -65,15 +65,9 @@ daimon_migrate_runtime_layout() {
 quanju_canshu() {
     if [ "$canshu" = CN ] || daimon_is_cn; then
         zhushi=0
-        gh_proxy="$DAIMON_GITHUB_PROXY_PRIMARY"https://
-    elif [ "$canshu" = V6 ]; then
-        zhushi=1
-        gh_proxy="$DAIMON_GITHUB_PROXY_PRIMARY"https://
     else
         zhushi=1
-        gh_proxy="https://"
     fi
-    gh_https_url="$gh_proxy"
 }
 
 UserLicenseAgreement() {

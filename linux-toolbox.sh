@@ -58,19 +58,26 @@ daimon_bootstrap_manager() (
         python3 -c 'import json,sys; print(json.load(sys.stdin).get("country", ""))' 2>/dev/null || true)
     if [ "$revision" = master ]; then
         metadata="https://api.github.com/repos/daimon3332/linux-tools-daimon/git/ref/heads/master"
-        local -a endpoints=("$metadata" "https://gh-proxy.com/$metadata" "https://ghproxy.net/$metadata")
-        [ "$country" != CN ] || endpoints=("https://gh-proxy.com/$metadata" "https://ghproxy.net/$metadata" "$metadata")
+        # The proxies relay git's ref advertisement but not the REST API.
+        local refs="https://github.com/daimon3332/linux-tools-daimon/info/refs?service=git-upload-pack"
+        local -a endpoints=("$metadata" "$refs" "https://ghfast.top/$refs")
+        [ "$country" != CN ] || endpoints=("$metadata" "https://ghfast.top/$refs" "$refs")
         for url in "${endpoints[@]}"; do
             echo "获取版本: $url" >&2
             if curl -fsSL --connect-timeout 8 --max-time 25 "$url" -o "$temporary/ref.json"; then
-                revision=$(python3 -c 'import json,re,sys; x=json.load(open(sys.argv[1]))["object"]; assert x["type"]=="commit" and re.fullmatch("[a-f0-9]{40}",x["sha"]); print(x["sha"])' "$temporary/ref.json" 2>/dev/null) && break
+                revision=$(python3 -c 'import json,re,sys
+data = open(sys.argv[1], "rb").read()
+match = re.search(rb"([0-9a-f]{40}) refs/heads/master\n", data)
+if match: print(match.group(1).decode())
+else:
+    x = json.loads(data)["object"]; assert x["type"] == "commit" and re.fullmatch("[a-f0-9]{40}", x["sha"]); print(x["sha"])' "$temporary/ref.json" 2>/dev/null) && break
             fi
         done
         [[ "$revision" =~ ^[a-f0-9]{40}$ ]] || { echo "无法确定完整版本，未修改已安装脚本。" >&2; return 1; }
     fi
     worker="https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/$revision/scripts/lib/package.py"
-    local -a urls=("$worker" "https://gh-proxy.com/$worker" "https://ghproxy.net/$worker" "https://ghfast.top/$worker")
-    [ "$country" != CN ] || urls=("https://gh-proxy.com/$worker" "https://ghproxy.net/$worker" "https://ghfast.top/$worker" "$worker")
+    local -a urls=("$worker" "https://ghfast.top/$worker" "https://ghproxy.net/$worker")
+    [ "$country" != CN ] || urls=("https://ghfast.top/$worker" "https://ghproxy.net/$worker" "$worker")
     for url in "${urls[@]}"; do
         echo "获取完整版本安装器: $url" >&2
         if curl -fsSL --connect-timeout 8 --max-time 30 "$url" -o "$temporary/package.py" &&

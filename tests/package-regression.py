@@ -23,9 +23,20 @@ class Package(unittest.TestCase):
     def test_mainland_proxy_priority(self):
         revision = 'a'*40
         mainland = package.archive_urls(revision, 'CN')
-        self.assertTrue(mainland[0].startswith('https://gh-proxy.com/'))
+        self.assertTrue(mainland[0].startswith('https://ghfast.top/'))
+        for region in ('CN', 'HK'):
+            self.assertFalse(any('gh-proxy.com' in u for u in package.archive_urls(revision, region)))
         self.assertTrue(any('codeload.github.com' in u for u in mainland))
         self.assertTrue(package.archive_urls(revision, 'HK')[0].startswith('https://codeload.github.com/'))
+
+    def test_revision_from_api_and_git_refs(self):
+        sha = 'b' * 40
+        api = 'https://api.github.com/repos/x/y/git/ref/heads/master'
+        self.assertEqual(package.revision_from(api, json.dumps({'object': {'type': 'commit', 'sha': sha}}).encode()), sha)
+        refs = (b'001e# service=git-upload-pack\n0000015b' + b'c' * 40 + b' HEAD\x00multi_ack\n003f' +
+                sha.encode() + b' refs/heads/master\n0000')
+        self.assertEqual(package.revision_from('https://ghfast.top/https://github.com/x/y/info/refs?service=git-upload-pack', refs), sha)
+        self.assertEqual(package.revision_from('https://github.com/x/y/info/refs', b'<html>blocked</html>'), '')
 
     def test_corruption_and_missing_module_refused(self):
         with tempfile.TemporaryDirectory(dir=ROOT/'.tmp') as directory:

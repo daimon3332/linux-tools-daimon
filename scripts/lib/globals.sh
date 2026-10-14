@@ -48,8 +48,6 @@ DAIMON_REPO_URL="https://github.com/daimon3332/linux-tools-daimon"
 
 DAIMON_AGREEMENT_URL="https://github.com/daimon3332/linux-tools-daimon/blob/master/docx/USER_AGREEMENT.md"
 
-DAIMON_GITHUB_PROXY_PRIMARY="https://gh-proxy.com/"
-
 DAIMON_CERT_HELPER_MARKER="$DAIMON_ROOT_DIR/.update-cert-helper"
 
 DAIMON_BBR_FQ_CONF="/etc/sysctl.d/99-daimon-bbr-fq.conf"

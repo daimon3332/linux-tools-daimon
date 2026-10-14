@@ -33,7 +33,7 @@ daimon_is_cn() {
 daimon_strip_github_proxy() {
 	local url="$1"
 	case "$url" in
-		https://gh-proxy.com/http*) echo "${url#https://gh-proxy.com/}" ;;
+		https://gh-proxy.com/http*) echo "${url#https://gh-proxy.com/}" ;;  # retired; strips old saved URLs
 		https://ghproxy.net/http*) echo "${url#https://ghproxy.net/}" ;;
 		https://ghfast.top/http*) echo "${url#https://ghfast.top/}" ;;
 		https://gh.kejilion.pro/raw.githubusercontent.com/*) echo "https://${url#https://gh.kejilion.pro/}" ;;
@@ -72,11 +72,10 @@ daimon_github_url_candidates() {
 	fi
 	case "$url" in
 		https://raw.githubusercontent.com/*|https://github.com/*)
-			echo "https://gh-proxy.com/$url"
+			echo "https://ghfast.top/$url"
 			echo "https://ghproxy.net/$url"
 			jsdelivr=$(daimon_jsdelivr_url "$url")
 			[ -n "$jsdelivr" ] && echo "$jsdelivr"
-			echo "https://ghfast.top/$url"
 			echo "$url"
 			;;
 		*)

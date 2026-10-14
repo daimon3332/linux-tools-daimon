@@ -128,26 +128,39 @@ def country():
 
 
 def archive_urls(revision, region):
+    # Measured from mainland China: ghfast.top answers in seconds, codeload is
+    # slower, ghproxy.net is slowest; gh-proxy.com now refuses all requests.
     url = 'https://github.com/' + REPO + '/archive/' + revision + '.tar.gz'
-    direct = ['https://codeload.github.com/' + REPO + '/tar.gz/' + revision, url]
-    proxies = [prefix + url for prefix in ('https://gh-proxy.com/', 'https://ghproxy.net/', 'https://ghfast.top/')]
-    return proxies + direct if region == 'CN' else direct + proxies
+    codeload = 'https://codeload.github.com/' + REPO + '/tar.gz/' + revision
+    if region == 'CN':
+        return ['https://ghfast.top/' + url, codeload, 'https://ghproxy.net/' + url, url]
+    return [codeload, url, 'https://ghfast.top/' + url, 'https://ghproxy.net/' + url]
+
+
+def revision_from(endpoint, body):
+    if endpoint.startswith('https://api.github.com/'):
+        target = json.loads(body)['object']
+        return target['sha'] if target['type'] == 'commit' else ''
+    # Git smart-HTTP advertisement; the proxies relay it but not the REST API.
+    match = re.search(rb'([0-9a-f]{40}) refs/heads/master\n', body)
+    return match.group(1).decode() if match else ''
 
 
 def resolve(revision, region):
     if revision != 'master':
         return revision
-    url = 'https://api.github.com/repos/' + REPO + '/git/ref/heads/master'
-    proxies = ['https://gh-proxy.com/' + url, 'https://ghproxy.net/' + url]
-    for endpoint in (proxies + [url] if region == 'CN' else [url] + proxies):
+    api = 'https://api.github.com/repos/' + REPO + '/git/ref/heads/master'
+    refs = 'https://github.com/' + REPO + '/info/refs?service=git-upload-pack'
+    endpoints = [api, 'https://ghfast.top/' + refs, refs] if region == 'CN' else [api, refs, 'https://ghfast.top/' + refs]
+    for endpoint in endpoints:
         try:
             with urllib.request.urlopen(urllib.request.Request(endpoint, headers={'User-Agent': 'linux-tools-daimon'}), timeout=20) as stream:
-                target = json.loads(stream.read(65536))['object']
-            if target['type'] == 'commit' and re.fullmatch(r'[a-f0-9]{40}', target['sha']):
-                print('Latest revision: ' + target['sha'], file=sys.stderr, flush=True)
-                return target['sha']
+                sha = revision_from(endpoint, stream.read(65536))
+            if re.fullmatch(r'[a-f0-9]{40}', sha):
+                print('最新版本: ' + sha, file=sys.stderr, flush=True)
+                return sha
         except Exception as error:
-            print('Revision lookup failed: ' + endpoint + ': ' + str(error), file=sys.stderr, flush=True)
+            print('版本查询线路不可用，换下一条: ' + endpoint.split('/')[2] + ' (' + str(error) + ')', file=sys.stderr, flush=True)
     return revision
 
 
@@ -155,7 +168,7 @@ def download(revision, target):
     region = country()
     revision = resolve(revision, region)
     for url in archive_urls(revision, region):
-        print('Downloading complete package: ' + url, file=sys.stderr, flush=True)
+        print('正在下载完整组件: ' + url, file=sys.stderr, flush=True)
         try:
             with urllib.request.urlopen(urllib.request.Request(url, headers={'User-Agent': 'linux-tools-daimon'}), timeout=30) as stream:
                 content = stream.read(MAX_ARCHIVE + 1)
@@ -167,8 +180,8 @@ def download(revision, target):
                 shutil.copytree(checked, target, dirs_exist_ok=True)
             return resolved
         except Exception as error:
-            print('Download failed; trying another endpoint: ' + str(error), file=sys.stderr, flush=True)
-    raise ValueError('All package endpoints failed; installed release was not replaced')
+            print('该线路不可用，换下一条: ' + str(error), file=sys.stderr, flush=True)
+    raise ValueError('所有下载线路均失败，已安装版本未改动')
 
 
 def unpack(archive, target, requested):
@@ -304,10 +317,10 @@ def install(root, revision, publish, archive_path=None):
             finally:
                 if temporary_link.is_symlink():
                     temporary_link.unlink()
-            print('Complete release installed: ' + resolved, file=sys.stderr)
+            print('完整版本已安装: ' + resolved, file=sys.stderr)
             prune(releases, destination)
         else:
-            print('Complete release staged: ' + resolved, file=sys.stderr)
+            print('完整版本已准备: ' + resolved, file=sys.stderr)
         return destination
 
 
@@ -330,7 +343,7 @@ def acquire(fd, exclusive):
             return
         except BlockingIOError:
             if attempt == 0:
-                print('Waiting for another toolbox update to finish...', file=sys.stderr, flush=True)
+                print('另一个更新正在进行，等待完成...', file=sys.stderr, flush=True)
             time.sleep(0.1)
     raise ValueError('Another toolbox update is still running; try again later')
 

@@ -7,7 +7,7 @@
 ```bash
 bash <(curl -fsSL https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
 # 中国大陆
-bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
+bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/daimon3332/linux-tools-daimon/master/linux-toolbox.sh)
 ```
 
 - 首次运行自动补齐 `python3`、`curl`，安装完整版本到 `/root/linux-daimon`，之后输入 `d` 启动。
@@ -112,7 +112,7 @@ bash <(curl -fsSL https://gh-proxy.com/https://raw.githubusercontent.com/daimon3
 
 ## 第三方脚本引用
 
-只列下载后执行、`source`、`exec bash` 或通过管道执行的外部脚本。国内机器访问 GitHub 时依次尝试 `gh-proxy.com`、`ghproxy.net`、`testingcf.jsdelivr.net`、`ghfast.top`。
+只列下载后执行、`source`、`exec bash` 或通过管道执行的外部脚本。国内机器访问 GitHub 时依次尝试 `ghfast.top`、`ghproxy.net`、`testingcf.jsdelivr.net`，最后直连。
 
 | 菜单 | 名称 | 来源 |
 |---|---|---|

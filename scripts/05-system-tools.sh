@@ -606,10 +606,9 @@ github_proxy_init_sources() {
 	if [ ! -s "$file" ]; then
 		staged=$(mktemp "${file}.XXXXXX") || return 1
 		cat > "$staged" <<'EOF'
-gh-proxy.com|https://gh-proxy.com/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
+ghfast.top|https://ghfast.top/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 ghproxy.net|https://ghproxy.net/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 testingcf.jsdelivr.net|https://testingcf.jsdelivr.net/gh/komari-monitor/komari-agent@main/install.sh
-ghfast.top|https://ghfast.top/https://raw.githubusercontent.com/komari-monitor/komari-agent/main/install.sh
 EOF
 		daimon_config_commit "$file" "$staged" || return 1
 	fi

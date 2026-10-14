@@ -1165,14 +1165,14 @@ fetch_github_ssh_keys() {
 	local base_dir="${2:-$HOME}"
 
 	echo "操作前，请确保您已在 GitHub 账户中添加了 SSH 公钥："
-	echo "  1. 登录 ${gh_https_url}github.com/settings/keys"
+	echo "  1. 登录 https://github.com/settings/keys"
 	echo "  2. 点击 New SSH key 或 Add SSH key"
 	echo "  3. Title 可随意填写（例如：Home Laptop 2026）"
 	echo "  4. 将本地公钥内容（通常是 ~/.ssh/id_ed25519.pub 或 id_rsa.pub 的全部内容）粘贴到 Key 字段"
 	echo "  5. 点击 Add SSH key 完成添加"
 	echo ""
 	echo "添加完成后，GitHub 会公开提供您的所有公钥，地址为："
-	echo "  ${gh_https_url}github.com/您的用户名.keys"
+	echo "  https://github.com/您的用户名.keys"
 	echo ""
 
 
@@ -1180,14 +1180,30 @@ fetch_github_ssh_keys() {
 		read -e -p "请输入您的 GitHub 用户名（username，不含 @）： " username || return 1
 	fi
 
-	if [[ -z "${username}" ]]; then
-		echo "错误：GitHub 用户名不能为空" >&2
+	if [[ ! "${username}" =~ ^[A-Za-z0-9]([A-Za-z0-9-]{0,38})$ ]]; then
+		echo "错误：GitHub 用户名无效" >&2
 		return 1
 	fi
 
-	keys_url="${gh_https_url}github.com/${username}.keys"
-
-	fetch_remote_ssh_keys "${keys_url}" "${base_dir}"
+	# GitHub proxies refuse *.keys; github.com is direct but unreliable from
+	# mainland China, so the REST API is the fallback.
+	local temp_file result
+	temp_file=$(mktemp) || return 1
+	echo "正在获取 https://github.com/${username}.keys"
+	if ! curl -fsL --connect-timeout 10 --max-time 20 "https://github.com/${username}.keys" -o "$temp_file" || [ ! -s "$temp_file" ]; then
+		echo "github.com 不可用，改用 GitHub API..."
+		curl -fsSL --connect-timeout 10 --max-time 20 "https://api.github.com/users/${username}/keys" |
+			python3 -c 'import json, sys; [print(item["key"]) for item in json.load(sys.stdin)]' > "$temp_file" 2>/dev/null || : > "$temp_file"
+	fi
+	if [ ! -s "$temp_file" ]; then
+		echo "错误：无法获取 ${username} 的 GitHub 公钥（网络问题，或该账户没有公钥）" >&2
+		rm -f -- "$temp_file"
+		return 1
+	fi
+	ssh_import_key_file "$temp_file" "$base_dir"
+	result=$?
+	rm -f -- "$temp_file"
+	return "$result"
 
 }
 

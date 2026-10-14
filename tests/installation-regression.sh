@@ -47,7 +47,7 @@ region() {
     local DAIMON_COUNTRY_CACHE="$1" result
     result=$(daimon_github_url_candidates https://github.com/example/tool/releases/download/v1/tool.zip)
     case "$1" in
-        CN) [[ "$result" == https://gh-proxy.com/*$'\n'* ]] ;;
+        CN) [[ "$result" == https://ghfast.top/*$'\n'* && "$result" != *gh-proxy.com* ]] ;;
         *) [ "$result" = https://github.com/example/tool/releases/download/v1/tool.zip ] ;;
     esac
 }

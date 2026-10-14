@@ -72,7 +72,7 @@ test_regions() {
     for region in CN HK SG ''; do
         result=$(daimon_github_url_candidates "$url")
         if [ "$region" = CN ]; then
-            [[ "$result" == "https://gh-proxy.com/$url"$'\n'* ]] || return 1
+            [[ "$result" == "https://ghfast.top/$url"$'\n'* ]] || return 1
         else
             [ "$result" = "$url" ] || return 1
         fi

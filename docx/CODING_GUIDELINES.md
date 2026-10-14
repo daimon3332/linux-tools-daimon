@@ -52,7 +52,8 @@
 ## 5. GitHub 代理策略
 
 - 国内机器访问 `raw.githubusercontent.com` 和 `github.com` 时必须优先尝试代理。
-- 当前代理顺序为 `gh-proxy.com`、`ghproxy.net`、`testingcf.jsdelivr.net`、`ghfast.top`。
+- 当前代理顺序为 `ghfast.top`、`ghproxy.net`、`testingcf.jsdelivr.net`，最后直连；`gh-proxy.com` 已对外返回 403，不再使用。
+- 这些代理都不转发 GitHub REST API 和 `github.com/<用户>.keys`：查询最新版本先直连 API，再用代理转发的 git `info/refs`；导入 GitHub 公钥直连 `.keys`，失败再用 API。
 - 普通 GitHub raw 文件优先使用 `daimon_download_to`。
 - 不能只代理外层脚本，还要考虑第三方安装脚本内部二次访问 GitHub 的情况。
 - starship 是特殊案例，国内机器不能走 `starship.rs/install.sh`，因为它内部会下载 GitHub release。
@@ -109,7 +110,7 @@
 ## 11. starship 规则
 
 - 国外机器使用 `curl -sS https://starship.rs/install.sh | sh -s -- -y`。
-- 国内机器使用 `https://gh-proxy.com/https://github.com/starship/starship/releases/latest/download/starship-<arch>-unknown-linux-musl.tar.gz`。
+- 国内机器使用 `https://ghfast.top/https://github.com/starship/starship/releases/latest/download/starship-<arch>-unknown-linux-musl.tar.gz`。
 - 国内机器不要走官方安装脚本。
 - 安装成功后才写入 `eval "$(starship init bash)"`。
 - 安装失败时必须清理 `.bashrc` 中的 starship 初始化配置。
