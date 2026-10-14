@@ -318,6 +318,13 @@ def install(root, revision, publish, archive_path=None):
                 if temporary_link.is_symlink():
                     temporary_link.unlink()
             print('完整版本已安装: ' + resolved, file=sys.stderr)
+            # Any update path (menu 00, --package-update, install command) refreshes
+            # the generated certificate and backup helpers on the next start.
+            try:
+                if (root/'cert-renew.sh').exists() or (root/'daimon'/'cert_nginx.sh').exists():
+                    atomic(root/'.update-cert-helper', b'')
+            except (OSError, ValueError):
+                pass
             prune(releases, destination)
         else:
             print('完整版本已准备: ' + resolved, file=sys.stderr)

@@ -537,6 +537,7 @@ rclone_nginx_target_for_key() {
 		home-web-conf.d) printf '%s/conf.d\n' "${DAIMON_WEB_DIR:-/home/web}" ;;
 		home-web-stream.d) printf '%s/stream.d\n' "${DAIMON_WEB_DIR:-/home/web}" ;;
 		domain) printf '%s\n' "${DAIMON_DOMAIN_DIR:-${DAIMON_RESTORE_ROOT:-/root}/domain}" ;;
+		acme) printf '%s\n' "${DAIMON_ACME_DIR:-${DAIMON_RESTORE_ROOT:-/root}/.acme.sh}" ;;
 		*) return 1 ;;
 	esac
 }
@@ -556,7 +557,7 @@ rclone_nginx_write_bundle() (
 	set -o pipefail
 	local dest="$1" key src loaded keys=()
 	loaded=$(rclone_nginx_loaded_files) || { echo "Nginx 配置无法解析，未刷新迁移清单。"; return 1; }
-	for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types; do
+	for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types acme; do
 		src=$(rclone_nginx_target_for_key "$key") || return 1
 		[ -e "$src" ] || continue
 		if [ -d "$src" ]; then rclone_tree_safe "$src" || return 1; else [ ! -L "$src" ] || return 1; fi
@@ -625,9 +626,9 @@ rclone_nginx_apply() (
 	case "$mode" in
 		sites) keys=(sites-available) ;;
 		links) keys=(sites-enabled) ;;
-		domain) keys=(domain) ;;
+		domain) keys=(domain); [ ! -d "$backup/acme" ] || keys+=(acme) ;;
 		all)
-			for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types; do
+			for key in sites-available domain conf.d stream.d home-web-conf.d home-web-stream.d nginx.conf mime.types acme; do
 				[ ! -e "$backup/$key" ] || keys+=("$key")
 			done
 			[ ! -s "$backup/enabled_sites.txt" ] || keys+=(sites-enabled)
@@ -697,6 +698,18 @@ rclone_nginx_apply() (
 		else
 			cp -a -- "$backup/$key/." "$work/new/$key/" || return 1
 		fi
+		if [ "$key" = acme ] && [ -f "$backup/acme/account.conf" ] && [ -f "$work/new/acme/account.conf" ]; then
+			# Keeping this machine's account.conf must not drop the DNS API keys renewals need.
+			python3 - "$backup/acme/account.conf" "$work/new/acme/account.conf" <<'PY' || return 1
+import sys
+source, target = sys.argv[1:]
+have = {line.split('=', 1)[0] for line in open(target) if '=' in line}
+extra = [line.rstrip('\n') + '\n' for line in open(source) if line.startswith('SAVED_') and line.split('=', 1)[0] not in have]
+if extra:
+    with open(target, 'a') as stream:
+        stream.writelines(extra)
+PY
+		fi
 	done
 	if [ "$mode" = domain ] || [ "$mode" = all ]; then
 		for src in "$backup/domain"/*; do
@@ -725,10 +738,31 @@ rclone_nginx_apply() (
 	rclone_nginx_allow_ports && rclone_check_nginx_after_restore || return 1
 	systemctl enable nginx >/dev/null 2>&1 || return 1
 	echo "Nginx 恢复成功（同名文件策略: $policy）；未修改 DNS。"
-	[ -x "${DAIMON_RESTORE_ROOT:-/root}/.acme.sh/acme.sh" ] || echo "注意：acme.sh 未迁移，证书自动续期尚未验证。"
+	if [[ " ${keys[*]} " == *" acme "* ]]; then
+		rclone_nginx_restore_renewal || echo "证书文件已恢复，但自动续期任务安装失败；请在「Nginx + 域名管理」中重新进入一次以重试。"
+	else
+		echo "注意：此备份不含 acme.sh 续期记录（旧版本备份），证书需在「Nginx + 域名管理」菜单 13 重新接管续期。"
+	fi
 	printf '本次恢复项：%s\n' "${keys[*]}"
 	return 0
 )
+
+# Restored acme.sh records renew only with the toolbox renewal job in place,
+# and TLS-ALPN records also need socat on this machine.
+rclone_nginx_restore_renewal() {
+	local acme_dir
+	acme_dir=$(rclone_nginx_target_for_key acme) || return 1
+	[ -x "$acme_dir/acme.sh" ] || return 0
+	if grep -qs "^Le_Webroot='alpn'" "$acme_dir"/*/*.conf && ! command -v socat >/dev/null 2>&1; then
+		install socat >/dev/null 2>&1 || { echo "socat 安装失败，TLS 方式的证书无法续期。"; return 1; }
+	fi
+	if declare -F setup_cron >/dev/null; then
+		setup_cron || return 1
+	else
+		DAIMON_UPDATE_CERT_HELPER_ONLY=1 ssl_nginx_manager || return 1
+	fi
+	echo "证书续期记录（含 DNS 密钥）已恢复，自动续期已启用。"
+}
 
 rclone_nginx_download_apply() (
 	umask 077

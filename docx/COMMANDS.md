@@ -135,7 +135,7 @@
 | 6 配置 nginx | 生成反向代理站点 → `nginx -t` → `systemctl reload nginx` |
 | 8 / 9 测试页 | 创建 / 删除带归属标记的测试站点 |
 | 10 安装 | `apt install nginx` → `systemctl enable --now nginx` |
-| 11 / 12 备份恢复 | 打包 `sites-available`、`/root/domain` 到 `backup/nginx-domain/auto_latest`；恢复时合并并重建 `sites-enabled` |
+| 11 / 12 备份恢复 | 每天打包 `sites-available`、`/root/domain` 和 `/root/.acme.sh`（续期记录、DNS 密钥）到 `backup/nginx-domain/auto_latest`；恢复时合并、重建 `sites-enabled`，并自动启用证书续期 |
 | 13 迁移证书 | 为 Nginx 在用但无自动续期的证书重新签发、装回原路径，由 acme.sh 续期 |
 
 ## 13 BBR / 14 WARP / 18 一键脚本

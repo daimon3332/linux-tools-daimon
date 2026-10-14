@@ -7,7 +7,7 @@ ssl_nginx_manager() {
 	declare -f install ssh_current_ports rclone_restore_name_valid rclone_tree_safe rclone_assert_inactive rclone_require_space \
 		rclone_nginx_prepare rclone_nginx_allow_ports rclone_nginx_cert_valid rclone_nginx_apply \
 		rclone_nginx_target_for_key rclone_nginx_loaded_files rclone_nginx_check_manifest \
-		rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore \
+		rclone_nginx_write_bundle rclone_nginx_write_backup_script rclone_check_nginx_after_restore rclone_nginx_restore_renewal \
 		crontab_sync_backup_dir crontab_sync_log_dir crontab_sync_log_run_dir crontab_sync_log_cache_file \
 		crontab_sync_runner_file crontab_sync_write_runner crontab_sync_write_run_tools crontab_sync_cron_entry || return 1
 	declare -f server_retire_nginx_remove server_retire_nginx_reload || return 1
@@ -1358,6 +1358,10 @@ nginx_domain_migrate_existing_certs() {
 if [ "${1:-}" = "--install-renewal" ]; then
     install_acme || exit 1
     setup_cron || exit 1
+    # Regenerate the daily backup script so it carries the current backup contents.
+    if nginx_domain_has_domains; then
+        nginx_domain_enable_auto_backup || echo -e "${YELLOW}域名自动备份脚本更新失败${NC}"
+    fi
     echo -e "${GREEN}Nginx + 域名续期脚本已安装${NC}"
     exit 0
 fi
