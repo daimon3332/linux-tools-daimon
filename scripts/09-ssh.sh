@@ -501,39 +501,71 @@ def ufw_snapshot():
 
 
 def firewall_plan(old_ports, ports, enable, token):
+    # enable: the one-click setup, which also closes 22 and turns UFW on.
     baseline = ufw_snapshot()
     if not baseline['active'] and not enable:
         return None
-    require(baseline['active'], 'Enable and review UFW separately before the SSH one-click transaction')
     missing = []
     for port in dict.fromkeys(ports):
         require(option('port', port)[1] == port, 'Invalid firewall port')
         if not any(rule[:2] == ['allow', port + '/tcp'] for rule in baseline['rules']):
             missing.append(port)
-    return {'baseline': baseline, 'ports': missing, 'tag': 'daimon-ssh-' + token, 'enable': enable}
+    deny, removed = [], []
+    if enable and '22' not in ports and not any(rule[:2] == ['deny', '22/tcp'] for rule in baseline['rules']):
+        deny.append('22')
+        # UFW keeps one rule per port/protocol: an allow for 22/tcp blocks the deny,
+        # so it is taken out now and put back at the same position on recovery.
+        removed = [[rule, index] for index, rule in enumerate(baseline['rules']) if rule[1:2] == ['22/tcp']]
+    return {'baseline': baseline, 'ports': missing, 'deny': deny, 'removed': removed,
+            'tag': 'daimon-ssh-' + token, 'enable': enable, 'activate': enable and not baseline['active']}
+
+
+def firewall_owned(fw):
+    return ([['deny', port + '/tcp', 'comment', fw['tag']] for port in fw.get('deny', [])] +
+            [['allow', port + '/tcp', 'comment', fw['tag']] for port in fw['ports']])
+
+
+def firewall_config(snapshot, fw):
+    # Turning UFW on rewrites ENABLED= in ufw.conf; that is the one change we own.
+    config = dict(snapshot['config'])
+    if fw.get('activate'):
+        config.pop('/etc/ufw/ufw.conf', None)
+    return config
 
 
 def firewall_check(fw, complete=False, boot=False):
     baseline = fw['baseline']
     current = ufw_snapshot()
-    require(current['config'] == baseline['config'] and (boot or current['active'] == baseline['active']),
-            'UFW policy or active state changed externally; recovery retained')
-    owned = [['allow', port + '/tcp', 'comment', fw['tag']] for port in fw['ports']]
-    remaining = [rule for rule in current['rules'] if rule not in owned]
-    require(remaining == baseline['rules'], 'UFW rules changed externally; recovery retained')
-    require(all(current['rules'].count(rule) <= 1 for rule in owned), 'Duplicate owned UFW rule')
+    require(firewall_config(current, fw) == firewall_config(baseline, fw) and
+            (boot or fw.get('activate') or current['active'] == baseline['active']),
+            'UFW 策略或启用状态被外部修改，已保留恢复数据')
+    owned = firewall_owned(fw)
+    removed = [rule for rule, _ in fw.get('removed', [])]
+    remaining = [rule for rule in current['rules'] if rule not in owned and rule not in removed]
+    require(remaining == [rule for rule in baseline['rules'] if rule not in removed],
+            'UFW 规则被外部修改，已保留恢复数据')
+    require(all(current['rules'].count(rule) <= 1 for rule in owned + removed), 'Duplicate owned UFW rule')
     if complete:
-        require(all(rule in current['rules'] for rule in owned), 'An expected SSH firewall rule is missing')
+        require(all(rule in current['rules'] for rule in owned), 'SSH 所需的防火墙规则缺失')
+        require(not any(rule in current['rules'] for rule in removed), '端口 22 的旧放行规则仍然存在')
+        require(current['active'] or not fw.get('enable'), 'UFW 未启用')
     return current, owned
 
 
 def firewall_apply(fw):
     if fw is None:
         return
-    firewall_check(fw)
-    for port in fw['ports']:
-        command('/usr/sbin/ufw', 'insert', '1', 'allow', port + '/tcp', 'comment', fw['tag'])
-        firewall_check(fw)
+    current, _ = firewall_check(fw)
+    for rule, _ in fw.get('removed', []):
+        command('/usr/sbin/ufw', '--force', 'delete', *rule)
+        current, _ = firewall_check(fw)
+    for rule in firewall_owned(fw):
+        # A deny must precede any existing allow for 22; "insert 1" needs a rule to exist.
+        position = ['insert', '1'] if current['rules'] else []
+        command('/usr/sbin/ufw', *position, *rule)
+        current, _ = firewall_check(fw)
+    if fw.get('activate'):
+        command('/usr/sbin/ufw', '--force', 'enable', timeout=60)
     firewall_check(fw, True)
 
 
@@ -545,7 +577,16 @@ def firewall_restore(fw, boot=False):
         if rule in current['rules']:
             command('/usr/sbin/ufw', '--force', 'delete', *rule)
             current, _ = firewall_check(fw, boot=boot)
-    require(current['rules'] == fw['baseline']['rules'], 'UFW restore verification failed')
+    for rule, index in fw.get('removed', []):
+        if rule not in current['rules']:
+            position = ['insert', str(index + 1)] if index < len(current['rules']) else []
+            command('/usr/sbin/ufw', *position, *rule)
+            current, _ = firewall_check(fw, boot=boot)
+    if fw.get('activate') and current['active']:
+        command('/usr/sbin/ufw', '--force', 'disable', timeout=60)
+        current, _ = firewall_check(fw, boot=boot)
+    require(current['rules'] == fw['baseline']['rules'], 'UFW 规则恢复校验失败')
+    require(not fw.get('activate') or not current['active'], 'UFW 未能恢复为关闭状态')
 
 
 def boot_id():
@@ -586,7 +627,14 @@ def load_state():
         require(isinstance(fw, dict) and fw.get('tag') == 'daimon-ssh-' + state['token'] and
                 isinstance(fw.get('ports'), list) and len(set(fw['ports'])) == len(fw['ports']) and
                 all(option('port', port)[1] == port for port in fw['ports']) and
-                isinstance(fw.get('baseline'), dict) and fw['baseline'].get('active') is True and
+                fw.get('deny', []) in ([], ['22']) and type(fw.get('activate', False)) is bool and
+                isinstance(fw.get('removed', []), list) and
+                all(isinstance(item, list) and len(item) == 2 and isinstance(item[0], list) and
+                    item[0][1:2] == ['22/tcp'] and all(isinstance(x, str) for x in item[0]) and
+                    type(item[1]) is int and 0 <= item[1] < len(fw['baseline'].get('rules', []))
+                    for item in fw.get('removed', [])) and
+                isinstance(fw.get('baseline'), dict) and
+                fw['baseline'].get('active') is (not fw.get('activate', False)) and
                 isinstance(fw['baseline'].get('config'), dict) and isinstance(fw['baseline'].get('rules'), list),
                 'Invalid firewall recovery intent')
     require(isinstance(state.get('desired'), dict) and state['desired'] and
@@ -654,7 +702,7 @@ def recover(state):
     if state.get('firewall'):
         firewall_restore(state['firewall'], boot=boot_id() != state['boot_id'])
     cleanup(state)
-    print('Unconfirmed SSH configuration restored; inactive services were not started.')
+    print('未确认的 SSH 变更已恢复为原配置。')
 
 
 def confirm(state, token):
@@ -675,7 +723,7 @@ def confirm(state, token):
     if state.get('firewall'):
         firewall_check(state['firewall'], True)
     cleanup(state)
-    print('SSH configuration confirmed from the new connection.')
+    print('SSH 变更已确认生效。')
 
 
 def apply(changes, edited=None, base_hash=None, key_line=None, enable_ufw=False):
@@ -735,8 +783,9 @@ def apply(changes, edited=None, base_hash=None, key_line=None, enable_ufw=False)
     firewall = None
     if enable_ufw or (policy['port'] != old_policy['port'] and shutil.which('ufw')):
         firewall = firewall_plan(old_policy['port'], policy['port'], enable_ufw, token)
-    if text.encode() == original and not (firewall and firewall['ports']):
-        print('SSH configuration is already current; no service reload or recovery units were created.')
+    if text.encode() == original and not (firewall and (firewall['ports'] or firewall['deny'] or
+                                                      firewall['removed'] or firewall['activate'])):
+        print('SSH 配置已是目标状态，无需修改。')
         return
     if not PENDING.parent.exists():
         trusted_directory(PENDING.parent.parent)
@@ -746,7 +795,8 @@ def apply(changes, edited=None, base_hash=None, key_line=None, enable_ufw=False)
     trusted_directory(WANTED.parent)
     PENDING.mkdir(mode=0o700)
     unit = ('[Unit]\nDescription=Recover unconfirmed Daimon SSH configuration\nDefaultDependencies=no\n'
-            'After=local-fs.target\nBefore=ssh.service sshd.service ssh.socket sshd.socket ufw.service\n'
+            # ufw cannot edit rules before ufw.service has loaded its chains.
+            'After=local-fs.target ufw.service\nBefore=ssh.service sshd.service ssh.socket sshd.socket\n'
             'ConditionPathExists=' + str(PENDING / 'state.json') + '\n[Service]\nType=oneshot\n'
             'RuntimeDirectory=sshd\nRuntimeDirectoryMode=0755\nRuntimeDirectoryPreserve=yes\n'
             'ExecStart=/usr/bin/python3 -I ' + str(PENDING / 'worker.py') + ' rollback ' + token + '\n'
@@ -787,9 +837,9 @@ def apply(changes, edited=None, base_hash=None, key_line=None, enable_ufw=False)
         except BaseException as error:
             print('Recovery incomplete; private recovery state retained at ' + str(PENDING) + ': ' + str(error), file=sys.stderr)
         raise
-    print('SSH change is pending. Reconnect independently to port(s) ' + ','.join(state['ports']) + ' and run:')
-    print('d ssh-confirm ' + token)
-    print('Unconfirmed changes will roll back after 180 seconds or at the next boot.')
+    print('SSH 变更已应用，等待确认。请在 180 秒内新开一个终端，用端口 ' + ','.join(state['ports']) +
+          ' 重新登录，输入 d 并按提示确认（或执行 d ssh-confirm ' + token + '）。')
+    print('不确认时，180 秒后或下次重启会自动恢复原配置；当前连接不受影响，请不要关闭。')
 
 
 def main(arguments):
@@ -840,7 +890,7 @@ if __name__ == '__main__':
     try:
         main(sys.argv[1:])
     except (OSError, ValueError, subprocess.SubprocessError) as error:
-        print('ERROR: ' + str(error), file=sys.stderr)
+        print('错误: ' + str(error), file=sys.stderr)
         sys.exit(1)
 PYSSH_TXN
 }
@@ -863,6 +913,43 @@ ssh_socket_to_service() {
             return 1
         fi
     done
+}
+
+# UFW denies every unlisted inbound port once enabled; name the listeners it will cut off.
+ssh_one_click_blocked_ports() {
+	local new_port="$1" allowed ssh_ports
+	LC_ALL=C ufw status 2>/dev/null | grep -q '^Status: active' && return 0
+	allowed=$(ufw show added 2>/dev/null | awk '$2=="allow" {split($3,a,"/"); print a[1]}')
+	ssh_ports=$(ssh_current_ports 2>/dev/null)
+	ss -H -tuln 2>/dev/null | awk '{print $1, $5}' |
+		awk '$2 !~ /^(127\.|\[?::1\]?:|\[?::ffff:127\.)/ {n=split($2,a,":"); print a[n] "/" $1}' |
+		sort -t/ -k1,1n -u | while IFS=/ read -r port proto; do
+			[ "$port" = "$new_port" ] && continue
+			# DHCP client replies are already allowed by UFW's built-in rules.
+			[ "$proto" = udp ] && { [ "$port" = 68 ] || [ "$port" = 546 ]; } && continue
+			[ "$proto" = tcp ] && printf '%s\n' "$ssh_ports" | grep -qx "$port" && continue
+			printf '%s\n' "$allowed" | grep -qx "$port" && continue
+			printf '%s/%s\n' "$port" "$proto"
+		done
+}
+
+# Offered when "d" starts from the new connection a pending SSH change is waiting for.
+ssh_pending_confirm_prompt() {
+	local state=/var/lib/daimon/ssh-change/state.json info token answer
+	[ "$EUID" -eq 0 ] && [ -f "$state" ] && [ -n "${SSH_CONNECTION:-}" ] || return 0
+	info=$(/usr/bin/python3 -I -c '
+import json, os, sys
+s = json.load(open(sys.argv[1]))
+c = os.environ.get("SSH_CONNECTION", "")
+if c and c != s["connection"] and c.split()[3] in s["ports"]:
+    print(s["token"])' "$state" 2>/dev/null) || return 0
+	token=${info%%$'\n'*}
+	[[ "$token" =~ ^[a-f0-9]{32}$ ]] || return 0
+	echo -e "${gl_huang}检测到待确认的 SSH 变更，当前连接已通过新端口登录。${gl_bai}"
+	read -e -p "确认使 SSH 变更生效？[Y/n]: " answer || return 0
+	[[ "${answer:-y}" =~ ^[Yy]$ ]] || { echo "未确认，变更将在超时后自动恢复。"; return 0; }
+	bash "$DAIMON_RELEASE_DIR/linux-toolbox.sh" ssh-confirm "$token"
+	break_end
 }
 
 ssh_transaction_apply() (
@@ -962,14 +1049,14 @@ ssh_config_manager() {
 		root_use
 		echo "SSH 配置"
 		echo "------------------------"
-		echo -e "当前 SSH 端口: ${gl_huang}$(ssh_current_ports)${gl_bai}"
+		echo -e "当前 SSH 端口: ${gl_huang}$(ssh_current_ports | paste -sd, -)${gl_bai}"
 		echo -e "密码登录 PasswordAuthentication: ${gl_huang}$(ssh_auth_status passwordauthentication)${gl_bai}"
 		echo -e "密钥登录 PubkeyAuthentication: ${gl_huang}$(ssh_auth_status pubkeyauthentication)${gl_bai}"
 		echo "------------------------"
 		echo -e "${gl_kjlan}1.   ${gl_bai}修改 SSH 端口"
 		echo -e "${gl_kjlan}2.   ${gl_bai}禁用/开启密码登录"
 		echo -e "${gl_kjlan}3.   ${gl_bai}开启/禁用密钥登录"
-		echo -e "${gl_kjlan}4.   ${gl_bai}安全配置（密钥登录、新端口、联动已启用 UFW；保留旧防火墙规则）"
+		echo -e "${gl_kjlan}4.   ${gl_bai}一键配置（关闭密码登录、关闭 22、改用 $DEFAULT_SSH_PORT、开启密钥登录、开启 UFW）"
 		echo -e "${gl_kjlan}5.   ${gl_bai}公钥和私钥管理"
 		echo -e "${gl_kjlan}6.   ${gl_bai}修改 sshd_config 配置文件"
 		echo -e "${gl_kjlan}0.   ${gl_bai}返回主菜单"
@@ -1012,9 +1099,15 @@ ssh_config_manager() {
 				read -e -p "请输入 SSH 端口（默认 $DEFAULT_SSH_PORT）: " new_port || return 1
 				new_port=${new_port:-$DEFAULT_SSH_PORT}
 				if ! validate_tcp_port "$new_port"; then echo "端口不合法"; break_end; continue; fi
-				local ufw_link=()
-				LC_ALL=C ufw status 2>/dev/null | grep -q '^Status: active' && ufw_link=(--ufw)
-				ssh_transaction_apply "${ufw_link[@]}" Port "$new_port" PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password
+				daimon_require_cmd ufw || { break_end; continue; }
+				blocked=$(ssh_one_click_blocked_ports "$new_port")
+				if [ -n "$blocked" ]; then
+					echo -e "${gl_huang}开启 UFW 后，以下正在监听的端口将无法从外部访问（之后可在 UFW 管理中放行）：${gl_bai}"
+					printf '  %s\n' $blocked
+					read -e -p "继续？[Y/n]: " answer || return 1
+					[[ "${answer:-y}" =~ ^[Yy]$ ]] || { echo "已取消，未修改 SSH 和防火墙。"; break_end; continue; }
+				fi
+				ssh_transaction_apply --ufw Port "$new_port" PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password
 				;;
 			5) ssh_key_manager; continue ;;
 			6) ssh_config_edit ;;

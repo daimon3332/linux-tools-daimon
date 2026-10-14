@@ -1,6 +1,7 @@
 #!/bin/bash
 
 kejilion_sh() {
+ssh_pending_confirm_prompt
 crontab_sync_upgrade_installed || echo 'ERROR: 已安装备份任务升级未完成，请检查 cronsync'
 crontab_sync_reconcile_legacy || true
 if [ -f "$DAIMON_CERT_HELPER_MARKER" ]; then

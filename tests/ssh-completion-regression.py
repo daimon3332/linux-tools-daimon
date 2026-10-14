@@ -52,8 +52,67 @@ class Completion(unittest.TestCase):
     def test_inactive_ufw_not_enabled_implicitly(self):
         self.w.ufw_snapshot = Mock(return_value={'active': False, 'rules': [], 'config': {}})
         self.assertIsNone(self.w.firewall_plan(['22'], ['2224'], False, 'a' * 32))
+
+    def test_one_click_enables_ufw_and_closes_22(self):
+        self.w.ufw_snapshot = Mock(return_value={'active': False, 'rules': [], 'config': {}})
+        fw = self.w.firewall_plan(['22'], ['64400'], True, 'a' * 32)
+        self.assertEqual((fw['ports'], fw['deny'], fw['activate']), (['64400'], ['22'], True))
+        self.assertEqual(self.w.firewall_owned(fw)[0], ['deny', '22/tcp', 'comment', fw['tag']])
+
+    def test_one_click_keeps_existing_deny_and_active_state(self):
+        self.w.ufw_snapshot = Mock(return_value={'active': True, 'rules': [['deny', '22/tcp'], ['allow', '64400/tcp']], 'config': {}})
+        fw = self.w.firewall_plan(['64400'], ['64400'], True, 'a' * 32)
+        self.assertEqual((fw['ports'], fw['deny'], fw['activate']), ([], [], False))
+
+    def test_one_click_never_denies_the_new_port_22(self):
+        self.w.ufw_snapshot = Mock(return_value={'active': False, 'rules': [], 'config': {}})
+        self.assertEqual(self.w.firewall_plan(['22'], ['22'], True, 'a' * 32)['deny'], [])
+
+    def test_apply_enables_ufw_after_rules(self):
+        tag = 'daimon-ssh-' + 'a' * 32
+        baseline = {'active': False, 'rules': [], 'config': {'/etc/ufw/ufw.conf': 'off'}}
+        allow = ['allow', '64400/tcp', 'comment', tag]
+        deny = ['deny', '22/tcp', 'comment', tag]
+        enabled = {'active': True, 'rules': [deny, allow], 'config': {'/etc/ufw/ufw.conf': 'on'}}
+        self.w.ufw_snapshot = Mock(side_effect=[baseline, dict(baseline, rules=[deny]), dict(baseline, rules=[deny, allow]), enabled])
+        self.w.command = Mock()
+        fw = {'baseline': baseline, 'ports': ['64400'], 'deny': ['22'], 'tag': tag, 'enable': True, 'activate': True}
+        self.w.firewall_apply(fw)
+        self.assertEqual(self.w.command.call_args_list[-1][0], ('/usr/sbin/ufw', '--force', 'enable'))
+        self.assertEqual(self.w.command.call_args_list[0][0], ('/usr/sbin/ufw', *deny))
+
+    def test_restore_disables_ufw_it_enabled(self):
+        tag = 'daimon-ssh-' + 'a' * 32
+        baseline = {'active': False, 'rules': [['allow', '80/tcp']], 'config': {'/etc/ufw/ufw.conf': 'off'}}
+        allow = ['allow', '64400/tcp', 'comment', tag]
+        enabled = {'active': True, 'rules': [allow] + baseline['rules'], 'config': {'/etc/ufw/ufw.conf': 'on'}}
+        self.w.ufw_snapshot = Mock(side_effect=[enabled, dict(enabled, rules=baseline['rules']), baseline])
+        self.w.command = Mock()
+        self.w.firewall_restore({'baseline': baseline, 'ports': ['64400'], 'deny': [], 'tag': tag, 'activate': True})
+        self.assertEqual(self.w.command.call_args_list[-1][0][:3], ('/usr/sbin/ufw', '--force', 'disable'))
+
+    def test_existing_allow_22_is_swapped_for_deny_and_restored(self):
+        tag = 'daimon-ssh-' + 'a' * 32
+        baseline = {'active': True, 'rules': [['allow', '80/tcp'], ['allow', '22/tcp'], ['allow', '443/tcp']], 'config': {}}
+        self.w.ufw_snapshot = Mock(return_value=baseline)
+        fw = self.w.firewall_plan(['22'], ['64400'], True, 'a' * 32)
+        self.assertEqual(fw['removed'], [[['allow', '22/tcp'], 1]])
+        deny = ['deny', '22/tcp', 'comment', tag]
+        allow = ['allow', '64400/tcp', 'comment', tag]
+        applied = dict(baseline, rules=[allow, deny, ['allow', '80/tcp'], ['allow', '443/tcp']])
+        without = dict(baseline, rules=[['allow', '80/tcp'], ['allow', '443/tcp']])
+        self.w.ufw_snapshot = Mock(side_effect=[applied, dict(applied, rules=[allow] + without['rules']), without, baseline])
+        self.w.command = Mock()
+        self.w.firewall_restore(fw)
+        self.assertEqual(self.w.command.call_args_list[-1][0], ('/usr/sbin/ufw', 'insert', '2', 'allow', '22/tcp'))
+
+    def test_restore_fails_if_ufw_stays_enabled(self):
+        tag = 'daimon-ssh-' + 'a' * 32
+        baseline = {'active': False, 'rules': [], 'config': {}}
+        self.w.ufw_snapshot = Mock(return_value=dict(baseline, active=True))
+        self.w.command = Mock()
         with self.assertRaises(ValueError):
-            self.w.firewall_plan(['22'], ['2224'], True, 'a' * 32)
+            self.w.firewall_restore({'baseline': baseline, 'ports': [], 'deny': [], 'tag': tag, 'activate': True})
 
     def test_partial_firewall_apply_removes_only_owned_rule(self):
         tag = 'daimon-ssh-' + 'a' * 32
