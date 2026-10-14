@@ -125,18 +125,18 @@
 
 ## 11 Nginx + 域名
 
-由 `daimon/cert_nginx.sh` 执行：acme.sh webroot（`/var/www/acme-challenge`），证书位于 `/root/domain/<域名>`，续期脚本 `/root/linux-daimon/cert-renew.sh`（每天 03:00）。
+由 `daimon/cert_nginx.sh` 执行：acme.sh 证书（HTTP webroot `/var/www/acme-challenge`、TLS-ALPN 443 或 DNS API 验证），证书位于 `/root/domain/<域名>`，续期脚本 `/root/linux-daimon/cert-renew.sh`（每天 03:00）。
 
 | 选项 | 核心命令 |
 |---|---|
-| 1 / 3 申请证书 | `acme.sh --issue -w /var/www/acme-challenge -d <域名>` → `--install-cert --reloadcmd "systemctl reload nginx"` |
+| 1 / 3 申请证书 | HTTP：`acme.sh --issue -w /var/www/acme-challenge`；TLS：`--alpn` 并以 pre/post hook 暂停 Nginx；DNS：`--dns dns_tencent / dns_cf / dns_ali / 其他` → `--install-cert` 到 `/root/domain` |
 | 2 / 4 / 7 删除 | 核查共享引用后删除证书 / 站点配置，`nginx -t` 失败回滚 |
-| 5 证书列表 | `acme.sh --list` |
+| 4 / 5 证书 | 按编号列出 / 移除，显示到期日、续期方式和申请未完成的记录 |
 | 6 配置 nginx | 生成反向代理站点 → `nginx -t` → `systemctl reload nginx` |
 | 8 / 9 测试页 | 创建 / 删除带归属标记的测试站点 |
 | 10 安装 | `apt install nginx` → `systemctl enable --now nginx` |
 | 11 / 12 备份恢复 | 打包 `sites-available`、`/root/domain` 到 `backup/nginx-domain/auto_latest`；恢复时合并并重建 `sites-enabled` |
-| 13 迁移证书 | 把现有 acme.sh 证书切到 webroot 模式 |
+| 13 迁移证书 | 为 Nginx 在用但无自动续期的证书重新签发、装回原路径，由 acme.sh 续期 |
 
 ## 13 BBR / 14 WARP / 18 一键脚本
 

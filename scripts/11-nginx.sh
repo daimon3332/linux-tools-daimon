@@ -31,6 +31,9 @@ ACME_RENEW_SCRIPT="/root/linux-daimon/cert-renew.sh"
 ACME_RENEW_LOG="/var/log/acme.sh/renew.log"
 ACME_RENEW_LOCK="/run/lock/daimon-acme-renew.lock"
 CERT_EXISTED_BEFORE=false
+ISSUE_METHOD=""
+DNS_API=""
+DNS_KEYS_TYPED=false
 
 install_deps() {
     if command -v apt >/dev/null 2>&1; then
@@ -341,13 +344,103 @@ restart_nginx_if_needed() {
     fi
 }
 
+# One line per certificate, fields separated by "|":
+# domain|expiry|renewal|fullchain path|managed by acme.sh|referenced by Nginx|names
+nginx_domain_cert_rows() {
+    python3 - "$HOME/.acme.sh" <<'PYCERT_ROWS'
+import os, re, subprocess, sys
+from pathlib import Path
+
+home = Path(sys.argv[1])
+
+def values(path):
+    data = {}
+    for line in path.read_text(errors='replace').splitlines():
+        key, sep, value = line.partition('=')
+        if sep:
+            data[key.strip()] = value.strip().strip('\'"')
+    return data
+
+def info(path):
+    result = subprocess.run(['openssl', 'x509', '-in', str(path), '-noout', '-enddate', '-ext', 'subjectAltName'],
+                            capture_output=True, text=True)
+    if result.returncode:
+        return '', []
+    end = re.search(r'notAfter=(.+)', result.stdout)
+    expiry = ''
+    if end:
+        expiry = subprocess.run(['date', '-d', end.group(1).strip(), '+%F'], capture_output=True, text=True).stdout.strip()
+    return expiry, re.findall(r'DNS:([^,\s]+)', result.stdout)
+
+records = {}
+for conf in (sorted(home.glob('*/*.conf')) if home.is_dir() else []):
+    name = conf.parent.name[:-4] if conf.parent.name.endswith('_ecc') else conf.parent.name
+    if conf.name != name + '.conf':
+        continue
+    data = values(conf)
+    domain = data.get('Le_Domain')
+    if not domain:
+        continue
+    webroot = data.get('Le_Webroot', '')
+    cer = conf.parent / (domain + '.cer')
+    records[domain] = {'cer': cer if cer.is_file() else None, 'path': data.get('Le_RealFullChainPath', ''),
+                       'method': 'DNS' if webroot.startswith('dns_') else 'TLS' if webroot == 'alpn' else 'HTTP'}
+
+paths, used = {}, set()
+for base in (Path('/etc/nginx/sites-available'), Path('/etc/nginx/conf.d')):
+    for conf in (sorted(base.glob('*')) if base.is_dir() else []):
+        if conf.is_file():
+            for cert in re.findall(r'^\s*ssl_certificate\s+([^;\s]+)\s*;', conf.read_text(errors='replace'), re.M):
+                paths[cert] = True
+                used.add(cert)
+root = Path('/root/domain')
+for cert in (sorted(root.glob('*/fullchain.pem')) if root.is_dir() else []):
+    paths.setdefault(str(cert), True)
+
+rows, seen = [], set()
+for path in sorted(paths):
+    if not os.path.isfile(path):
+        continue
+    expiry, names = info(path)
+    record = next((d for d, r in records.items() if r['path'] == path), None)
+    domain = record or (names[0] if names else Path(path).parent.name)
+    managed = record is not None and records[record]['cer'] is not None
+    if record:
+        seen.add(record)
+    renew = '自动续期(' + records[record]['method'] + ')' if managed else '无'
+    ordered = [domain] + [n for n in names if n != domain]
+    rows.append([domain, expiry or '未知', renew, path, '1' if managed else '0', '1' if path in used else '0', ','.join(ordered)])
+for domain, record in sorted(records.items()):
+    if domain in seen:
+        continue
+    if record['cer']:
+        expiry, names = info(record['cer'])
+        ordered = [domain] + [n for n in names if n != domain]
+        rows.append([domain, expiry or '未知', '自动续期(' + record['method'] + ')', '', '1', '0', ','.join(ordered)])
+    else:
+        rows.append([domain, '申请未完成', '-', '', '1', '0', domain])
+for row in rows:
+    print('|'.join(row))
+PYCERT_ROWS
+}
+
+nginx_domain_print_cert_rows() {
+    local i=0 row domain expiry renew path managed used names
+    [ "$#" -gt 0 ] || { echo -e "${YELLOW}暂无证书${NC}"; return 0; }
+    printf '  %-4s %-32s %-12s %-16s %s\n' 编号 域名 到期 续期 证书路径
+    for row in "$@"; do
+        i=$((i + 1))
+        IFS='|' read -r domain expiry renew path managed used names <<< "$row"
+        printf '  %-4s %-32s %-12s %-16s %s\n' "$i" "$domain" "$expiry" "$renew" "${path:--}"
+    done
+}
+
 show_cert_list() {
+    local -a rows=()
+    mapfile -t rows < <(nginx_domain_cert_rows)
     echo -e "${GREEN}=========================================${NC}"
-    echo -e "${GREEN}acme.sh 已注册的证书列表：${NC}"
-    "$ACME" --list 2>/dev/null || echo -e "${YELLOW}暂无已注册的证书${NC}"
-    echo ""
-    echo -e "${GREEN}/root/domain 下的证书文件夹：${NC}"
-    [ -d "/root/domain" ] && ls -la /root/domain/ 2>/dev/null || echo -e "${YELLOW}目录为空${NC}"
+    echo -e "${GREEN}证书列表：${NC}"
+    nginx_domain_print_cert_rows "${rows[@]}"
     echo -e "${GREEN}=========================================${NC}"
 }
 
@@ -514,21 +607,38 @@ PYCERT_REMOVE
 }
 
 remove_cert() {
-    echo -e "${GREEN}当前已注册的证书：${NC}"
-    "$ACME" --list 2>/dev/null || echo -e "${YELLOW}暂无已注册的证书${NC}"
-    echo ""
-
-    read -p "请输入要移除的域名: " REMOVE_DOMAIN
-    [ -z "$REMOVE_DOMAIN" ] && echo -e "${RED}域名不能为空${NC}" && return 1
-
-    read -p "确认移除 $REMOVE_DOMAIN？[y/n]: " CONFIRM
-    [ "$CONFIRM" != "y" ] && return 0
-
-    validate_domain "$REMOVE_DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
-
-    local cert_dir
-    cert_dir=$(nginx_domain_cert_dir_for_domain "$REMOVE_DOMAIN") || return 1
-    nginx_domain_remove_cert_safe "$REMOVE_DOMAIN" "$cert_dir"
+    local choice domain expiry renew path managed used names confirm
+    local -a rows=() args=()
+    mapfile -t rows < <(nginx_domain_cert_rows)
+    echo -e "${GREEN}当前证书：${NC}"
+    nginx_domain_print_cert_rows "${rows[@]}"
+    [ "${#rows[@]}" -gt 0 ] || return 0
+    read -p "请输入要移除的证书编号（0 返回）: " choice || return 0
+    [ "$choice" = 0 ] && return 0
+    if ! [[ "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "${#rows[@]}" ]; then
+        echo -e "${RED}无效编号${NC}"
+        return 0
+    fi
+    IFS='|' read -r domain expiry renew path managed used names <<< "${rows[choice-1]}"
+    if [ "$used" = 1 ]; then
+        echo -e "${YELLOW}$domain 的证书正在被 Nginx 配置使用；请先用菜单 7 删除对应配置，或用菜单 2 一起删除${NC}"
+        return 0
+    fi
+    if [ -n "$path" ] && [ "$managed" != 1 ]; then
+        echo -e "${YELLOW}$domain 的证书没有 acme.sh 续期记录，不是本工具签发的，未自动删除：$path${NC}"
+        return 0
+    fi
+    read -p "确认移除 $domain 的证书？[y/N]: " confirm || return 0
+    [[ "$confirm" =~ ^[Yy]$ ]] || { echo "已取消"; return 0; }
+    if [ -z "$path" ]; then
+        # Only an acme.sh record (e.g. a request that never completed); no files are installed.
+        [ -d "$HOME/.acme.sh/${domain}_ecc" ] && args+=(--ecc)
+        "$ACME" --remove -d "$domain" "${args[@]}" || { echo -e "${RED}移除失败${NC}"; return 1; }
+        rmdir "/root/domain/${domain%%.*}" "/root/domain/$domain" 2>/dev/null || true
+        echo -e "${GREEN}已移除 $domain 的证书记录${NC}"
+    else
+        nginx_domain_remove_cert_safe "$domain" "$(dirname "$path")"
+    fi
 }
 
 remove_nginx_config() {
@@ -841,66 +951,222 @@ restore_nginx_domain() {
 
 setup_cron() {
     nginx_domain_ensure_renew_cron || return 1
-    echo -e "${GREEN}已配置 webroot 自动续期（每天凌晨3点）${NC}"
+    echo -e "${GREEN}已配置自动续期（每天凌晨3点检查）${NC}"
+}
+
+# ---- certificate validation ----
+# HTTP needs port 80 reachable from the internet, which mainland providers block
+# for domains not filed with them. TLS-ALPN answers on 443 instead (Nginx pauses
+# while acme.sh listens there); DNS goes through the DNS provider's API.
+nginx_domain_choose_method() {
+    local exclude="${1:-}" choice default=1
+    [ "$exclude" = http ] && default=2
+    echo "请选择证书验证方式："
+    [ "$exclude" = http ] || echo "  1. HTTP 验证（需要公网能通过 80 端口访问此域名）"
+    echo "  2. TLS 验证（443 端口，无需密钥；申请和续期时 Nginx 暂停约 10-30 秒）"
+    echo "  3. DNS 验证（DNS 服务商 API，不停机；支持 DNSPod、Cloudflare、阿里云等）"
+    read -p "请选择 [回车=$default]: " choice || return 1
+    case "${choice:-$default}" in
+        1) [ "$exclude" != http ] || { echo -e "${RED}无效选择${NC}"; return 1; }; ISSUE_METHOD=http ;;
+        2) ISSUE_METHOD=alpn; nginx_domain_ensure_socat || return 1 ;;
+        3) ISSUE_METHOD=dns; nginx_domain_choose_dns || return 1 ;;
+        *) echo -e "${RED}无效选择${NC}"; return 1 ;;
+    esac
+}
+
+nginx_domain_ensure_socat() {
+    command -v socat >/dev/null 2>&1 && return 0
+    echo -e "${YELLOW}TLS 验证需要 socat，正在安装...${NC}"
+    install socat >/dev/null 2>&1 || true
+    command -v socat >/dev/null 2>&1 || { echo -e "${RED}socat 安装失败，无法使用 TLS 验证${NC}"; return 1; }
+}
+
+nginx_domain_saved_value() {
+    local conf="$HOME/.acme.sh/account.conf"
+    [ -f "$conf" ] || return 0
+    nginx_domain_acme_conf_value "$conf" "SAVED_$1"
+}
+
+# acme.sh stores provider credentials in account.conf (root only) on first use,
+# and renewals read them from there.
+nginx_domain_choose_dns() {
+    local choice var value answer saved=false
+    local -a required=() optional=()
+    echo "请选择 DNS 服务商："
+    echo "  1. 腾讯云 DNSPod"
+    echo "  2. Cloudflare"
+    echo "  3. 阿里云"
+    echo "  4. 其他（acme.sh 支持的任意 DNS 服务商）"
+    read -p "请选择 [1-4]: " choice || return 1
+    case "$choice" in
+        1) DNS_API=dns_tencent; required=(Tencent_SecretId Tencent_SecretKey)
+           echo "密钥申请：腾讯云控制台 → 访问管理 → 用户列表 → 新建用户（只勾选编程访问）→ 授权 QcloudDNSPodFullAccess。" ;;
+        2) DNS_API=dns_cf; required=(CF_Token); optional=(CF_Zone_ID)
+           echo "令牌申请：Cloudflare 控制台 → 我的个人资料 → API 令牌 → 创建令牌 → 使用「编辑区域 DNS」模板。"
+           echo "该模板的令牌还需要填区域 ID（域名概览页右侧「API」处的 Zone ID）；只有令牌带「区域:读取」权限时才可留空。" ;;
+        3) DNS_API=dns_ali; required=(Ali_Key Ali_Secret)
+           echo "密钥申请：阿里云 RAM 控制台 → 创建用户（OpenAPI 调用访问）→ 授权 AliyunDNSFullAccess。" ;;
+        4) read -p "请输入 acme.sh DNS 插件名（如 dns_huaweicloud，列表见 github.com/acmesh-official/acme.sh/wiki/dnsapi）: " DNS_API || return 1
+           [[ "$DNS_API" =~ ^dns_[a-z0-9_]+$ && -f "$HOME/.acme.sh/dnsapi/$DNS_API.sh" ]] || { echo -e "${RED}找不到该 DNS 插件${NC}"; return 1; }
+           mapfile -t optional < <(sed -n "/^${DNS_API}_info=/,/^'/p" "$HOME/.acme.sh/dnsapi/$DNS_API.sh" | awk '/^ [A-Za-z_][A-Za-z0-9_]* /{print $1}')
+           ((${#optional[@]})) || { echo -e "${RED}该插件没有声明所需变量，请按 acme.sh 文档手动配置${NC}"; return 1; }
+           echo "该插件使用的变量：${optional[*]}（按插件文档填写，不需要的回车跳过）" ;;
+        *) echo -e "${RED}无效选择${NC}"; return 1 ;;
+    esac
+    if ((${#required[@]})); then
+        saved=true
+        for var in "${required[@]}"; do [ -n "$(nginx_domain_saved_value "$var")" ] || saved=false; done
+    else
+        for var in "${optional[@]}"; do [ -n "$(nginx_domain_saved_value "$var")" ] && saved=true; done
+    fi
+    if [ "$saved" = true ]; then
+        read -p "使用已保存的 $DNS_API 密钥？[Y/n]: " answer || return 1
+        if [[ "${answer:-y}" =~ ^[Yy]$ ]]; then
+            unset "${required[@]}" "${optional[@]}"
+            DNS_KEYS_TYPED=false
+            return 0
+        fi
+    fi
+    DNS_KEYS_TYPED=true
+    for var in "${required[@]}" "${optional[@]}"; do
+        read -s -p "$var（输入不显示，回车跳过）: " value || return 1
+        echo
+        if [ -n "$value" ]; then
+            export "$var=$value"
+        elif [[ " ${required[*]} " == *" $var "* ]]; then
+            echo -e "${RED}$var 不能为空${NC}"
+            return 1
+        fi
+    done
+}
+
+# Issues one certificate covering all given names with ISSUE_METHOD.
+nginx_domain_acme_issue() {
+    local keylength="$1" domain temp log status=0
+    shift
+    local -a args=() temps=()
+    for domain in "$@"; do args+=(-d "$domain"); done
+    if [ "$ISSUE_METHOD" != dns ] && [[ "$*" == *'*'* ]]; then
+        echo -e "${RED}通配符证书只能用 DNS 验证${NC}"
+        return 1
+    fi
+    case "$ISSUE_METHOD" in
+        dns) args+=(--dns "$DNS_API") ;;
+        alpn)
+            ensure_ufw_80
+            # Saved with the certificate, so renewals pause Nginx the same way.
+            args+=(--alpn --pre-hook "systemctl stop nginx 2>/dev/null; true"
+                   --post-hook "systemctl is-enabled --quiet nginx 2>/dev/null && systemctl start nginx; true")
+            systemctl is-active --quiet nginx 2>/dev/null && echo -e "${YELLOW}验证期间 Nginx 将暂停约 10-30 秒...${NC}"
+            ;;
+        *)
+            ensure_ufw_80
+            mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
+            if ! command -v nginx >/dev/null 2>&1 || ! systemctl is-active nginx >/dev/null 2>&1; then
+                install_nginx || return 1
+            fi
+            for domain in "$@"; do
+                if ! nginx_domain_ensure_challenge_route "$domain"; then
+                    if nginx_domain_config_exists "$domain"; then
+                        echo -e "${RED}$domain 已有 HTTP 配置，但无法安全加入 ACME challenge 路径，请检查对应 Nginx 配置${NC}"
+                        status=1
+                        break
+                    fi
+                    if ! temp=$(nginx_domain_temp_challenge_server "$domain"); then
+                        echo -e "${RED}无法为 $domain 配置 ACME webroot 验证路径${NC}"
+                        status=1
+                        break
+                    fi
+                    temps+=("$temp")
+                fi
+                if ! nginx_domain_verify_challenge "$domain"; then
+                    echo -e "${RED}$domain 的 webroot challenge 本机验证失败，未向 CA 发起申请${NC}"
+                    status=1
+                    break
+                fi
+            done
+            args+=(-w "$ACME_WEBROOT")
+            ;;
+    esac
+    # acme.sh saves typed keys before it knows they work; keep a wrong key from
+    # replacing a saved one or being offered again.
+    local account="$HOME/.acme.sh/account.conf" account_backup=""
+    if [ "$ISSUE_METHOD" = dns ] && [ "$DNS_KEYS_TYPED" = true ] && [ -f "$account" ]; then
+        account_backup=$(mktemp) && cp -p "$account" "$account_backup" || account_backup=""
+    fi
+    if [ "$status" -eq 0 ]; then
+        args+=(--server letsencrypt --force)
+        [ -n "$keylength" ] && [ "$keylength" != "no" ] && args+=(--keylength "$keylength")
+        log=$(mktemp)
+        { if "$ACME" --issue "${args[@]}"; then echo 0 > "$log.rc"; else echo 1 > "$log.rc"; fi; } 2>&1 | tee "$log"
+        status=$(cat "$log.rc" 2>/dev/null || echo 1)
+        if [ "$status" -ne 0 ] && [ "$ISSUE_METHOD" = http ]; then
+            if grep -qE 'dnspod\.qcloud\.com|webblock' "$log"; then
+                echo -e "${RED}HTTP 验证被服务商拦截：该域名没有在本服务器所在的云服务商备案接入，80 端口的访问被跳转到拦截页。${NC}"
+            fi
+            echo -e "${YELLOW}提示：中国大陆服务器上未备案的域名无法使用 HTTP 验证，请改用 TLS（443）或 DNS 验证。${NC}"
+        fi
+        rm -f "$log" "$log.rc"
+    fi
+    if [ -n "$account_backup" ]; then
+        if [ "$status" -ne 0 ]; then
+            cp -p "$account_backup" "$account" && echo -e "${YELLOW}本次输入的密钥未生效，未保存。${NC}"
+        else
+            DNS_KEYS_TYPED=false
+        fi
+        rm -f "$account_backup"
+    fi
+    for temp in "${temps[@]}"; do nginx_domain_remove_temp_challenge_server "$temp"; done
+    if [ "$ISSUE_METHOD" = alpn ] && systemctl is-enabled --quiet nginx 2>/dev/null && ! systemctl is-active --quiet nginx; then
+        systemctl start nginx || echo -e "${RED}Nginx 重新启动失败，请立即检查：systemctl status nginx${NC}"
+    fi
+    return "$status"
+}
+
+nginx_domain_acme_install() {
+    local domain="$1" cert_dir="$2"
+    # A stopped Nginx (fresh TLS-validated install) is not a reload failure.
+    local -a args=(--fullchain-file "$cert_dir/fullchain.pem" --key-file "$cert_dir/privkey.pem"
+                   --reloadcmd "nginx -t && systemctl reload nginx || ! systemctl is-active --quiet nginx" --force)
+    mkdir -p "$cert_dir" || return 1
+    [ -d "$HOME/.acme.sh/${domain}_ecc" ] && args+=(--ecc)
+    "$ACME" --install-cert -d "$domain" "${args[@]}"
 }
 
 # 申请证书
 issue_cert() {
-    local DOMAIN="$1" temp_challenge="" existing_conf="" keylength=""
-    local -a issue_args install_args
+    local DOMAIN="$1" existing_conf="" keylength="" retry
 
     validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; return 1; }
     install_acme || return 1
+    [ -n "${ISSUE_METHOD:-}" ] || nginx_domain_choose_method || return 1
     show_dns "$DOMAIN"
     CERT_DIR=$(nginx_domain_cert_dir_for_domain "$DOMAIN")
-    mkdir -p "$CERT_DIR"
 
     CERT_EXISTED_BEFORE=false
     if "$ACME" --list 2>/dev/null | grep -Fq "$DOMAIN" || [ -s "$CERT_DIR/fullchain.pem" ]; then
         CERT_EXISTED_BEFORE=true
-        echo -e "${YELLOW}检测到已有证书，将使用 webroot 强制更新，不删除旧证书...${NC}"
+        echo -e "${YELLOW}检测到已有证书，将强制更新，不删除旧证书...${NC}"
     fi
-
-    ensure_ufw_80
-    mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
-    if ! command -v nginx >/dev/null 2>&1 || ! systemctl is-active nginx >/dev/null 2>&1; then
-        install_nginx || return 1
-    fi
-    if ! nginx_domain_ensure_challenge_route "$DOMAIN"; then
-        if nginx_domain_config_exists "$DOMAIN"; then
-            echo -e "${RED}$DOMAIN 已有 HTTP 配置，但无法安全加入 ACME challenge 路径，请检查对应 Nginx 配置${NC}"
-            return 1
-        fi
-        if ! temp_challenge=$(nginx_domain_temp_challenge_server "$DOMAIN"); then
-            echo -e "${RED}无法为 $DOMAIN 配置 ACME webroot 验证路径${NC}"
-            return 1
-        fi
-    fi
-    if ! nginx_domain_verify_challenge "$DOMAIN"; then
-        echo -e "${RED}$DOMAIN 的 webroot challenge 本机验证失败，未向 CA 发起申请${NC}"
-        nginx_domain_remove_temp_challenge_server "$temp_challenge"
-        return 1
-    fi
-
-    issue_args=(-d "$DOMAIN" -w "$ACME_WEBROOT" --server letsencrypt --force)
     existing_conf=$(find "$HOME/.acme.sh/${DOMAIN}_ecc" "$HOME/.acme.sh/$DOMAIN" -maxdepth 1 -type f -name '*.conf' -print -quit 2>/dev/null || true)
     [ -n "$existing_conf" ] && keylength=$(nginx_domain_acme_conf_value "$existing_conf" Le_Keylength)
-    [ -n "$keylength" ] && [ "$keylength" != "no" ] && issue_args+=(--keylength "$keylength")
-    if ! "$ACME" --issue "${issue_args[@]}"; then
-        echo -e "${RED}证书申请失败${NC}"
-        nginx_domain_remove_temp_challenge_server "$temp_challenge"
-        return 1
+
+    if ! nginx_domain_acme_issue "$keylength" "$DOMAIN"; then
+        retry=n
+        if [ "$ISSUE_METHOD" = http ]; then
+            read -p "是否改用其他验证方式重试？[Y/n]: " retry || retry=n
+            retry=${retry:-y}
+        fi
+        if ! [[ "$retry" =~ ^[Yy]$ ]] || ! nginx_domain_choose_method http || ! nginx_domain_acme_issue "$keylength" "$DOMAIN"; then
+            echo -e "${RED}证书申请失败${NC}"
+            return 1
+        fi
     fi
 
-    install_args=(--fullchain-file "$CERT_DIR/fullchain.pem" --key-file "$CERT_DIR/privkey.pem" --reloadcmd "nginx -t && systemctl reload nginx" --force)
-    [ -d "$HOME/.acme.sh/${DOMAIN}_ecc" ] && install_args+=(--ecc)
-    if ! "$ACME" --install-cert -d "$DOMAIN" "${install_args[@]}"; then
+    if ! nginx_domain_acme_install "$DOMAIN" "$CERT_DIR"; then
         echo -e "${RED}证书安装失败${NC}"
-        nginx_domain_remove_temp_challenge_server "$temp_challenge"
         return 1
     fi
-
-    nginx_domain_remove_temp_challenge_server "$temp_challenge"
 
     if [ -s "$CERT_DIR/fullchain.pem" ] && [ -s "$CERT_DIR/privkey.pem" ]; then
         echo -e "${GREEN}=========================================${NC}"
@@ -937,6 +1203,9 @@ config_nginx() {
     fi
 
     install_nginx || return 1
+    if command -v ss >/dev/null 2>&1 && [ -z "$(ss -Htln "sport = :$PORT" 2>/dev/null)" ]; then
+        echo -e "${YELLOW}提示：本机端口 $PORT 当前没有服务在监听，配置完成后访问会返回 502；请确认后端服务已启动。${NC}"
+    fi
 
     NGINX_CONF="/etc/nginx/sites-available/$NGINX_NAME"
 
@@ -1011,91 +1280,58 @@ nginx_domain_acme_conf_value() {
 }
 
 nginx_domain_migrate_existing_certs() {
-    local conf domain alt keylength challenge_domain temp_challenge route_failed unsupported_alt cert_dir
-    local confirm
-    local success=0 failed=0 skipped=0
-    local -a alt_args issue_args install_args challenge_domains temp_challenges
+    local row domain expiry renew path managed used list selection item keylength conf
+    local success=0 failed=0
+    local -a rows=() candidates=() chosen=() names=()
     [ "$(id -u)" -eq 0 ] || { echo -e "${RED}请使用 root 运行${NC}"; return 1; }
-    [ -x "$ACME" ] || { echo -e "${RED}未检测到 acme.sh，请先申请或安装证书${NC}"; return 1; }
-    echo -e "${YELLOW}将逐个强制重新签发可迁移证书，可能触发 CA 频率限制。${NC}"
-    read -p "确认开始迁移？[y/N]: " confirm
-    [ "$confirm" = "y" ] || [ "$confirm" = "Y" ] || { echo "已取消"; return 0; }
-    install_nginx || return 1
-    mkdir -p "$ACME_WEBROOT/.well-known/acme-challenge"
-
-    while IFS= read -r conf; do
-        domain=$(nginx_domain_acme_conf_value "$conf" Le_Domain)
-        [ -n "$domain" ] || continue
-        if [[ "$domain" == \** ]] || ! validate_domain "$domain"; then
-            echo -e "${YELLOW}跳过不支持 webroot 的域名: $domain${NC}"
-            skipped=$((skipped + 1))
-            continue
-        fi
-        alt_args=()
-        challenge_domains=("$domain")
-        unsupported_alt=false
-        alt=$(nginx_domain_acme_conf_value "$conf" Le_Alt)
-        [ "$alt" = "no" ] && alt=""
-        while IFS= read -r alt; do
-            [ -n "$alt" ] || continue
-            if [[ "$alt" == \** ]] || ! validate_domain "$alt"; then
-                unsupported_alt=true
-                break
-            fi
-            alt_args+=(-d "$alt")
-            challenge_domains+=("$alt")
-        done < <(printf '%s' "$alt" | tr ',' '\n')
-        if [ "$unsupported_alt" = true ]; then
-            echo -e "${YELLOW}跳过包含通配符或不支持 SAN 的证书: $domain${NC}"
-            skipped=$((skipped + 1))
-            continue
-        fi
-        keylength=$(nginx_domain_acme_conf_value "$conf" Le_Keylength)
-        [ "$keylength" = "no" ] && keylength=""
-        issue_args=(-d "$domain" "${alt_args[@]}" -w "$ACME_WEBROOT" --server letsencrypt --force)
-        temp_challenges=()
-        route_failed=false
-        for challenge_domain in "${challenge_domains[@]}"; do
-            if ! nginx_domain_ensure_challenge_route "$challenge_domain"; then
-                if nginx_domain_config_exists "$challenge_domain"; then
-                    route_failed=true
-                    break
-                fi
-                temp_challenge=$(nginx_domain_temp_challenge_server "$challenge_domain" 2>/dev/null || true)
-                [ -n "$temp_challenge" ] && temp_challenges+=("$temp_challenge") || { route_failed=true; break; }
-            fi
-            nginx_domain_verify_challenge "$challenge_domain" || { route_failed=true; break; }
+    install_acme || return 1
+    mapfile -t rows < <(nginx_domain_cert_rows)
+    for row in "${rows[@]}"; do
+        IFS='|' read -r domain expiry renew path managed used list <<< "$row"
+        [ -n "$path" ] && [ "$expiry" != "未知" ] && candidates+=("$row")
+    done
+    ((${#candidates[@]})) || { echo -e "${YELLOW}没有可迁移的证书${NC}"; return 0; }
+    echo "以下证书可以重新签发、装回原路径，并由 acme.sh 自动续期："
+    nginx_domain_print_cert_rows "${candidates[@]}"
+    read -p "请输入要迁移的编号（空格分隔；回车=全部「续期:无」的证书；0 返回）: " selection || return 0
+    [ "$selection" = 0 ] && return 0
+    if [ -z "$selection" ]; then
+        for row in "${candidates[@]}"; do
+            IFS='|' read -r domain expiry renew path managed used list <<< "$row"
+            [ "$managed" = 1 ] || chosen+=("$row")
         done
-        if [ "$route_failed" = true ]; then
-            for temp_challenge in "${temp_challenges[@]}"; do nginx_domain_remove_temp_challenge_server "$temp_challenge"; done
-            echo -e "${RED}$domain 或其 SAN 没有可用的 ACME challenge 路径，已跳过${NC}"
-            skipped=$((skipped + 1))
-            continue
-        fi
-        [ -n "$keylength" ] && issue_args+=(--keylength "$keylength")
+    else
+        for item in $selection; do
+            if ! [[ "$item" =~ ^[0-9]+$ ]] || [ "$item" -lt 1 ] || [ "$item" -gt "${#candidates[@]}" ]; then
+                echo -e "${RED}无效编号: $item${NC}"
+                return 0
+            fi
+            chosen+=("${candidates[item-1]}")
+        done
+    fi
+    ((${#chosen[@]})) || { echo -e "${GREEN}所有证书都已有自动续期，无需迁移${NC}"; return 0; }
+    echo -e "${YELLOW}将重新签发 ${#chosen[@]} 张证书（Let's Encrypt 对同一主域名每周最多签发 50 张）。${NC}"
+    nginx_domain_choose_method || return 1
+    read -p "确认开始迁移？[y/N]: " item || return 0
+    [[ "$item" =~ ^[Yy]$ ]] || { echo "已取消"; return 0; }
+    for row in "${chosen[@]}"; do
+        IFS='|' read -r domain expiry renew path managed used list <<< "$row"
+        IFS=',' read -ra names <<< "$list"
+        keylength=""
+        conf=$(find "$HOME/.acme.sh/${domain}_ecc" "$HOME/.acme.sh/$domain" -maxdepth 1 -type f -name "$domain.conf" -print -quit 2>/dev/null || true)
+        [ -n "$conf" ] && keylength=$(nginx_domain_acme_conf_value "$conf" Le_Keylength)
         echo -e "${YELLOW}正在迁移证书: $domain${NC}"
-        if ! "$ACME" --issue "${issue_args[@]}"; then
-            echo -e "${RED}$domain webroot 重新签发失败，保留旧证书${NC}"
-            failed=$((failed + 1))
-            for temp_challenge in "${temp_challenges[@]}"; do nginx_domain_remove_temp_challenge_server "$temp_challenge"; done
-            continue
-        fi
-        cert_dir=$(nginx_domain_cert_dir_for_domain "$domain")
-        mkdir -p "$cert_dir"
-        install_args=(--fullchain-file "$cert_dir/fullchain.pem" --key-file "$cert_dir/privkey.pem" --reloadcmd "nginx -t && systemctl reload nginx" --force)
-        [[ "$(dirname "$conf")" == *_ecc ]] && install_args+=(--ecc)
-        if "$ACME" --install-cert -d "$domain" "${install_args[@]}"; then
+        if nginx_domain_acme_issue "$keylength" "${names[@]}" && nginx_domain_acme_install "$domain" "$(dirname "$path")"; then
             echo -e "${GREEN}$domain 迁移成功${NC}"
             success=$((success + 1))
         else
-            echo -e "${RED}$domain 证书安装失败，保留旧证书${NC}"
+            echo -e "${RED}$domain 迁移失败，原证书保留${NC}"
             failed=$((failed + 1))
         fi
-        for temp_challenge in "${temp_challenges[@]}"; do nginx_domain_remove_temp_challenge_server "$temp_challenge"; done
-    done < <(find "$HOME/.acme.sh" -mindepth 2 -maxdepth 2 -type f -name '*.conf' -print 2>/dev/null | sort)
+    done
     setup_cron || true
-    nginx -t && systemctl reload nginx || true
-    echo -e "${GREEN}迁移完成：成功 $success，失败 $failed，跳过 $skipped${NC}"
+    { nginx -t && systemctl reload nginx; } || true
+    echo -e "${GREEN}迁移完成：成功 $success，失败 $failed${NC}"
     [ "$failed" -eq 0 ]
 }
 
@@ -1118,7 +1354,7 @@ show_menu() {
     show_existing_nginx_and_certs
     echo "1) 申请证书 + 配置 nginx"
     echo "2) 删除 nginx 配置 + 证书"
-    echo "3) 申请证书 (webroot 模式)"
+    echo "3) 申请证书"
     echo "4) 移除证书"
     echo "5) 查看证书列表"
     echo "6) 配置 nginx"
@@ -1128,7 +1364,7 @@ show_menu() {
     echo "10) 安装 nginx"
     echo "11) 备份域名 + nginx 配置"
     echo "12) 恢复域名 + nginx 配置"
-    echo "13) 迁移/修复现有证书（webroot）"
+    echo "13) 迁移/修复现有证书（接管自动续期）"
     echo "0) 返回上一级菜单"
     echo -e "${GREEN}=========================================${NC}"
 }
@@ -1146,6 +1382,7 @@ while true; do
             read -p "请输入代理端口号: " PORT
             validate_port "$PORT" || { echo -e "${RED}端口号不合法${NC}"; continue; }
 
+            ISSUE_METHOD=""
             if issue_cert "$DOMAIN"; then
                 restart_nginx_if_needed
                 if ! config_nginx "$DOMAIN" "$NGINX_NAME" "$PORT"; then
@@ -1162,14 +1399,15 @@ while true; do
         3)
             read -p "请输入域名: " DOMAIN
             validate_domain "$DOMAIN" || { echo -e "${RED}域名格式不正确${NC}"; continue; }
-            issue_cert "$DOMAIN"
+            ISSUE_METHOD=""
+            issue_cert "$DOMAIN" || true
             restart_nginx_if_needed
             ;;
         4)
-            remove_cert
+            remove_cert || true
             ;;
         5)
-            show_cert_list
+            show_cert_list || true
             ;;
         6)
             read -p "请输入域名: " DOMAIN
@@ -1201,7 +1439,7 @@ while true; do
             restore_nginx_domain
             ;;
         13)
-            nginx_domain_migrate_existing_certs
+            nginx_domain_migrate_existing_certs || true
             ;;
         0)
             echo -e "${GREEN}返回上一级菜单${NC}"

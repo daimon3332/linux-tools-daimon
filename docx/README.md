@@ -43,7 +43,7 @@ bash <(curl -fsSL https://ghfast.top/https://raw.githubusercontent.com/daimon333
 | 8 | Docker 管理 | 安装、状态、容器、镜像、网络、卷、清理、镜像源、daemon.json、Compose 自动更新、IPv6、备份 / 迁移 / 还原、卸载 |
 | 9 | SSH 管理 | 端口、密码 / 密钥登录、安全配置、公钥私钥、编辑 sshd_config（事务化，需新连接确认） |
 | 10 | UFW 管理 | 安装（先放行 SSH 端口）、卸载、开放 / 删除端口 |
-| 11 | Nginx + 域名管理 | acme.sh webroot 证书、Nginx 站点、测试页、本地备份 / 恢复、证书迁移 |
+| 11 | Nginx + 域名管理 | acme.sh 证书（HTTP / TLS / DNS 验证）、Nginx 站点、测试页、本地备份 / 恢复、证书迁移 |
 | 12 | fail2ban 管理 | 安装并按当前 SSH 端口配置 sshd jail、卸载、检查修正 |
 | 13 | BBR 管理 | 运行 Linux-NetSpeed `tcpx.sh`（内核需用户在其中明确选择） |
 | 14 | WARP 管理 | 运行 fscarmen WARP 脚本、彻底删除 WARP |

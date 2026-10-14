@@ -41,7 +41,7 @@
     "scripts/08-docker.sh": "02df44597667db48d816dab7d2dc68ad0e579bd31d7351c9fad9316644e8c0d4",
     "scripts/09-ssh.sh": "4981269a5edc028fcbcda4ad05e582abf5bf3a85790b33e167b365573fadcd48",
     "scripts/10-ufw.sh": "477222417184d4e834e451839e723eaf5727f8c4a9f4da50f8b2e5a6f3023656",
-    "scripts/11-nginx.sh": "438e2f68bb0968108249fd197874e63b6fdf6576190bd20b1053a33f1c337360",
+    "scripts/11-nginx.sh": "3eeb419c472611bfacaa3cd3a651191dccfe170b9c8ff1de2fb69dbd304bf17e",
     "scripts/12-fail2ban.sh": "02fb635e4bb9177be04b31ec8f70a707c4d8e4062b429bf48b886c8d1fd9cfa1",
     "scripts/13-bbr.sh": "de1d16a56b7878cb14962f780a27220cb95a40d27eff4593728df3903893cd5b",
     "scripts/14-warp.sh": "97d1dadf0e8dd8fa0dbd40dce6262f22336a871f12764eb089f7d753eef0b314",
