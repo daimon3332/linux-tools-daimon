@@ -503,7 +503,7 @@ nginx_domain_cert_dir_for_domain() {
 }
 
 cleanup_nginx_and_cert() {
-    echo -e "${YELLOW}申请失败；无法证明旧配置或证书属于本次操作，已保留，请核查。临时挑战配置由申请流程单独清理。${NC}"
+    [ "${CERT_EXISTED_BEFORE:-false}" != true ] || echo -e "${YELLOW}原有证书和 Nginx 配置保持不变。${NC}"
 }
 
 cleanup_failed_cert_request() {
@@ -1103,6 +1103,8 @@ nginx_domain_acme_issue() {
         if [ "$status" -ne 0 ] && [ "$ISSUE_METHOD" = http ]; then
             if grep -qE 'dnspod\.qcloud\.com|webblock' "$log"; then
                 echo -e "${RED}HTTP 验证被服务商拦截：该域名没有在本服务器所在的云服务商备案接入，80 端口的访问被跳转到拦截页。${NC}"
+            elif grep -qE 'reader size limit exceeded|Invalid response from' "$log"; then
+                echo -e "${RED}Let's Encrypt 在 80 端口收到的不是验证文件，而是其他网页（国内服务器上通常是云服务商的未备案拦截页）。${NC}"
             fi
             echo -e "${YELLOW}提示：中国大陆服务器上未备案的域名无法使用 HTTP 验证，请改用 TLS（443）或 DNS 验证。${NC}"
         fi
@@ -1133,6 +1135,21 @@ nginx_domain_acme_install() {
     "$ACME" --install-cert -d "$domain" "${args[@]}"
 }
 
+# A request that never produced a certificate leaves only a key, CSR and
+# record behind; drop them so the new request starts clean.
+nginx_domain_clear_stale_request() {
+    local domain="$1" dir removed=false
+    local -a ecc
+    for dir in "$HOME/.acme.sh/${domain}_ecc" "$HOME/.acme.sh/$domain"; do
+        [ -f "$dir/$domain.conf" ] && [ ! -s "$dir/$domain.cer" ] || continue
+        ecc=()
+        [ "$dir" = "$HOME/.acme.sh/${domain}_ecc" ] && ecc=(--ecc)
+        "$ACME" --remove -d "$domain" "${ecc[@]}" >/dev/null 2>&1 && removed=true
+    done
+    rmdir "/root/domain/${domain%%.*}" "/root/domain/$domain" 2>/dev/null || true
+    [ "$removed" = false ] || echo -e "${YELLOW}已清除 $domain 之前未完成的申请记录${NC}"
+}
+
 # 申请证书
 issue_cert() {
     local DOMAIN="$1" existing_conf="" keylength="" retry
@@ -1143,10 +1160,11 @@ issue_cert() {
     show_dns "$DOMAIN"
     CERT_DIR=$(nginx_domain_cert_dir_for_domain "$DOMAIN")
 
+    nginx_domain_clear_stale_request "$DOMAIN"
     CERT_EXISTED_BEFORE=false
-    if "$ACME" --list 2>/dev/null | grep -Fq "$DOMAIN" || [ -s "$CERT_DIR/fullchain.pem" ]; then
+    if [ -s "$CERT_DIR/fullchain.pem" ] || [ -s "$HOME/.acme.sh/${DOMAIN}_ecc/$DOMAIN.cer" ] || [ -s "$HOME/.acme.sh/$DOMAIN/$DOMAIN.cer" ]; then
         CERT_EXISTED_BEFORE=true
-        echo -e "${YELLOW}检测到已有证书，将强制更新，不删除旧证书...${NC}"
+        echo -e "${YELLOW}检测到已有证书，将强制更新；新证书签发成功前不改动旧证书...${NC}"
     fi
     existing_conf=$(find "$HOME/.acme.sh/${DOMAIN}_ecc" "$HOME/.acme.sh/$DOMAIN" -maxdepth 1 -type f -name '*.conf' -print -quit 2>/dev/null || true)
     [ -n "$existing_conf" ] && keylength=$(nginx_domain_acme_conf_value "$existing_conf" Le_Keylength)

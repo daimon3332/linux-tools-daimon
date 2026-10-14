@@ -112,6 +112,15 @@ if [ "${1:-}" = --package-update ] || [ "${1:-}" = --package-stage ]; then
 fi
 if [ ! -f "$manager" ]; then
     daimon_bootstrap_manager || exit 1
+elif [ "$#" -eq 0 ]; then
+    # Rerunning the published install command (bash <(curl ...) or curl | bash)
+    # means "get the latest"; it used to boot the installed release unchanged.
+    case "${BASH_SOURCE[0]:-}" in
+        ''|/dev/fd/*|/proc/*/fd/*)
+            echo "通过安装命令运行，正在更新到最新完整版本..." >&2
+            daimon_bootstrap_manager update || echo "更新失败，继续使用已安装版本。" >&2
+            ;;
+    esac
 fi
 case "${1:-}" in
     --package-status) exec python3 "$manager" status ;;
