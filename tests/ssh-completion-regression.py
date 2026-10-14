@@ -106,6 +106,15 @@ class Completion(unittest.TestCase):
         self.w.firewall_restore(fw)
         self.assertEqual(self.w.command.call_args_list[-1][0], ('/usr/sbin/ufw', 'insert', '2', 'allow', '22/tcp'))
 
+    def test_one_click_opens_requested_ports_as_owned_rules(self):
+        self.w.ufw_snapshot = Mock(return_value={'active': False, 'rules': [['allow', '2096/tcp']], 'config': {}})
+        fw = self.w.firewall_plan(['22'], ['64400'], True, 'a' * 32, ['2096/tcp', '20000/tcp', '53245/udp', '20000/tcp'])
+        self.assertEqual(fw['open'], ['20000/tcp', '53245/udp'])
+        self.assertIn(['allow', '53245/udp', 'comment', fw['tag']], self.w.firewall_owned(fw))
+        for bad in ('0/tcp', '70000/tcp', '80', '80/icmp', '80/tcp;id'):
+            with self.subTest(bad=bad), self.assertRaises(ValueError):
+                self.w.firewall_plan(['22'], ['64400'], True, 'a' * 32, [bad])
+
     def test_restore_fails_if_ufw_stays_enabled(self):
         tag = 'daimon-ssh-' + 'a' * 32
         baseline = {'active': False, 'rules': [], 'config': {}}

@@ -57,14 +57,14 @@ command() {
         _, trace = self.invoke('4\n\n64400\n0\n', extra=extra)
         self.assertEqual(trace, ['require-ufw', 'transaction --ufw Port 64400 PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password'])
 
-    def test_one_click_lists_blocked_ports_and_can_cancel(self):
+    def test_one_click_offers_to_open_listening_ports(self):
         extra = ("validate_tcp_port() { return 0; }; daimon_require_cmd() { :; }; "
                  "ssh_one_click_blocked_ports() { printf '%s\\n' 80/tcp 443/tcp; }")
         result, trace = self.invoke('4\n\n64400\nn\n0\n', extra=extra)
         self.assertIn('80/tcp', result.stdout)
-        self.assertEqual(trace, [])
-        _, trace = self.invoke('4\n\n64400\n\n0\n', extra=extra)
         self.assertEqual(trace, ['transaction --ufw Port 64400 PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password'])
+        _, trace = self.invoke('4\n\n64400\n\n0\n', extra=extra)
+        self.assertEqual(trace, ['transaction --ufw --open 80/tcp --open 443/tcp Port 64400 PubkeyAuthentication yes AuthorizedKeysFile .ssh/authorized_keys PasswordAuthentication no KbdInteractiveAuthentication no PermitEmptyPasswords no PermitRootLogin prohibit-password'])
 
     def test_one_click_stops_when_ufw_cannot_be_installed(self):
         extra = "validate_tcp_port() { return 0; }; daimon_require_cmd() { return 1; }; ssh_one_click_blocked_ports() { :; }"

@@ -1,5 +1,55 @@
 #!/bin/bash
 
+# Effective sshd jail port as Fail2ban resolved it, wherever it is set ("ssh" = 22).
+fail2ban_effective_sshd_port() {
+	fail2ban-client -d 2>/dev/null | grep -F "['multi-set', 'sshd', 'action'," |
+		grep -o "\['port', '[^']*'\]" | head -n1 | cut -d"'" -f4 |
+		tr ',' '\n' | sed 's/^ *//;s/ *$//;s/^ssh$/22/' | sort -n -u | paste -sd, -
+}
+
+# Fail2ban only guards the ports listed in its sshd jail. After an SSH port change
+# is confirmed, point the jail at the new port; while a change awaits confirmation
+# the old port is still the right one, because an unconfirmed change rolls back.
+fail2ban_sync_sshd_port() {
+	local jail=/etc/fail2ban/jail.local ports current tmp backup had_jail=false
+	[ ! -e /var/lib/daimon/ssh-change ] || return 0
+	command -v fail2ban-client >/dev/null 2>&1 && systemctl is-active --quiet fail2ban 2>/dev/null || return 0
+	fail2ban-client status sshd >/dev/null 2>&1 || return 0
+	ports=$(sshd -T 2>/dev/null | awk '$1=="port"{print $2}' | sort -n -u | paste -sd, -)
+	[ -n "$ports" ] || return 0
+	current=$(fail2ban_effective_sshd_port)
+	[ "$current" != "$ports" ] || return 0
+	echo "Fail2ban sshd 保护端口 (${current:-未知}) 与 SSH 端口 ($ports) 不一致，正在同步..."
+	backup=$(mktemp) || return 1
+	if [ -f "$jail" ]; then had_jail=true; cp -p "$jail" "$backup" || { rm -f "$backup"; return 1; }; fi
+	tmp=$(mktemp) || { rm -f "$backup"; return 1; }
+	awk -v port="$ports" '
+		/^[[:space:]]*\[sshd\][[:space:]]*$/ {print; print "port = " port; in_sshd=1; done=1; next}
+		/^[[:space:]]*\[[^]]+\][[:space:]]*$/ {in_sshd=0}
+		in_sshd && /^[[:space:]]*port[[:space:]]*=/ {next}
+		{print}
+		END {if (!done) {print ""; print "[sshd]"; print "port = " port}}
+	' "$backup" > "$tmp"
+	if command install -m 644 "$tmp" "$jail" && fail2ban-client -t >/dev/null 2>&1 &&
+		fail2ban-client reload sshd >/dev/null 2>&1 && [ "$(fail2ban_effective_sshd_port)" = "$ports" ]; then
+		rm -f "$tmp" "$backup"
+		echo "Fail2ban sshd 已改为保护端口 $ports。"
+		return 0
+	fi
+	if [ "$had_jail" = true ]; then cp -p "$backup" "$jail"; else rm -f "$jail"; fi
+	fail2ban-client reload sshd >/dev/null 2>&1 || true
+	rm -f "$tmp" "$backup"
+	echo "Fail2ban 端口同步失败，已还原原配置；请在 Fail2ban 管理中手动检查（端口可能由 jail.d 下的 .local 文件覆盖）。" >&2
+	return 1
+}
+
+fail2ban_sync_after_confirm() {
+	local marker=/var/lib/daimon/ssh-port-confirmed
+	[ -e "$marker" ] && [ ! -e /var/lib/daimon/ssh-change ] || return 0
+	rm -f "$marker"
+	fail2ban_sync_sshd_port
+}
+
 fail2ban_manager() {
 	local F2B_JAIL="/etc/fail2ban/jail.local"
 

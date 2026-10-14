@@ -86,6 +86,7 @@ class ConfirmationTests(unittest.TestCase):
         self.w.effective = Mock(return_value={'pubkeyauthentication': ['yes']})
         self.w.root_authentication_available = Mock()
         self.w.cleanup = Mock()
+        self.w.atomic_write = Mock()
         self.clock = patch.object(self.w.time, 'monotonic', return_value=100)
         self.clock.start()
         self.addCleanup(self.clock.stop)
@@ -97,6 +98,7 @@ class ConfirmationTests(unittest.TestCase):
     def test_accept_new_connection(self):
         self.invoke()
         self.w.cleanup.assert_called_once_with(self.state)
+        self.w.atomic_write.assert_called_once_with(self.w.PENDING.parent / 'ssh-port-confirmed', b'')
 
     def test_reject_old_connection(self):
         self.connection = self.state['connection']
