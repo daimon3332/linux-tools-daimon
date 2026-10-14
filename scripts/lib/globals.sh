@@ -1,6 +1,6 @@
 #!/bin/bash
 
-sh_v="1.0.0"
+sh_v="1.1.0"
 
 gl_hui='\e[37m'
 

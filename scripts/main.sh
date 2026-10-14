@@ -17,7 +17,7 @@ echo " ║║╠═╣║║║║║ ║║║║"
 echo "═╩╝╩ ╩╩╩ ╩╚═╝╝╚╝"
 # Releases are installed per commit; the commit is what tells versions apart.
 local release=${DAIMON_RELEASE_DIR##*/}
-[[ "$release" =~ ^[0-9a-f]{40}$ ]] && echo -e "linux-tools-daimon v$sh_v（版本 ${release:0:7}）" || echo -e "linux-tools-daimon v$sh_v"
+[[ "$release" =~ ^[0-9a-f]{40}$ ]] && echo -e "linux-tools-daimon v$sh_v（提交 ${release:0:7}）" || echo -e "linux-tools-daimon v$sh_v"
 echo -e "命令行输入${gl_huang}d${gl_kjlan}可快速启动脚本${gl_bai}"
 echo -e "${gl_kjlan}------------------------${gl_bai}"
 echo -e "${gl_kjlan}1.   ${gl_bai}系统信息查询"
